@@ -240,7 +240,7 @@ export class HeroModel {
     ];
     if (!robe) {
       // Satchel strap wrapping diagonally around the chest (shoulder to opposite hip).
-      torso.push(cpart(new THREE.TorusGeometry(cw * 0.97, 0.02, 4, 20), PALETTE.leatherDark, { y: 0.2, sz: 0.86, rx: Math.PI / 2, ry: 0.62 }));
+      torso.push(cpart(new THREE.TorusGeometry(cw * 0.93, 0.02, 4, 20), PALETTE.leatherDark, { y: 0.21, sz: 0.88, rx: Math.PI / 2, ry: 0.6 }));
     }
     if (fem) torso.push(cpart(Sph(1, 10, 7), tunic, { y: 0.27, z: 0.1, sx: 0.17, sy: 0.085, sz: 0.08 }));
     if (look.cape) torso.push(cpart(lathe([[0.2, 0.42], [0.25, 0.2], [0.3, -0.25]], 10, Math.PI * 1.2), look.cape, { sz: 0.85 }));
