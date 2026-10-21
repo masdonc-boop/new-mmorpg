@@ -3,17 +3,25 @@ import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
 /**
- * Where a recipe is made. 'fletching' needs no station (a knife on logs, anywhere); 'fire' is a
- * campfire, which cooks the same recipes as a range.
+ * Where a recipe is made. 'fletching' and 'crafting' need no station (a knife on logs, a needle on
+ * leather, anywhere); 'fire' is a campfire, which cooks the same recipes as a range.
  */
-export type StationKind = 'furnace' | 'anvil' | 'range' | 'fire' | 'fletching';
+export type StationKind = 'furnace' | 'anvil' | 'range' | 'fire' | 'spinning_wheel' | 'fletching' | 'crafting';
+
+/** Production done anywhere, with tools rather than at a station. */
+export type AnywhereKind = Extract<StationKind, 'fletching' | 'crafting'>;
+export function isAnywhere(kind: StationKind): kind is AnywhereKind {
+  return kind === 'fletching' || kind === 'crafting';
+}
 
 export const STATION_INFO: Record<StationKind, { name: string; verb: string; doing: string; skill: SkillId; prompt: string }> = {
   furnace: { name: 'Furnace', verb: 'Smelt', doing: 'Smelting', skill: 'smithing', prompt: 'Smelt ore into bars' },
   anvil: { name: 'Anvil', verb: 'Forge', doing: 'Forging', skill: 'smithing', prompt: 'Forge gear (needs a hammer)' },
   range: { name: 'Cooking range', verb: 'Cook', doing: 'Cooking', skill: 'cooking', prompt: 'Cook fish and meat' },
   fire: { name: 'Campfire', verb: 'Cook', doing: 'Cooking', skill: 'cooking', prompt: 'Cook fish and meat' },
+  spinning_wheel: { name: 'Spinning wheel', verb: 'Spin', doing: 'Spinning', skill: 'crafting', prompt: 'Spin flax into bowstrings' },
   fletching: { name: 'Fletching', verb: 'Fletch', doing: 'Fletching', skill: 'fletching', prompt: 'Use a knife on logs' },
+  crafting: { name: 'Crafting', verb: 'Craft', doing: 'Crafting', skill: 'crafting', prompt: 'Use a needle on leather or a chisel on a gem' },
 };
 
 /** Whether a recipe can be made at a station of this kind (campfires cook what a range cooks). */
@@ -85,6 +93,16 @@ export const RECIPES: Record<string, RecipeDef> = {
   wooden_shield: r({ id: 'wooden_shield', station: 'fletching', skill: 'fletching', level: 8, xp: 16, inputs: [{ item: 'logs', qty: 2 }], output: { item: 'wooden_shield', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow_u: r({ id: 'oak_shortbow_u', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.2 }),
+  // ---- Crafting (needle and thread on leather; chisel on gems; flax at the spinning wheel)
+  leather_gloves: r({ id: 'leather_gloves', station: 'crafting', skill: 'crafting', level: 1, xp: 14, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_gloves', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  fang_amulet: r({ id: 'fang_amulet', station: 'crafting', skill: 'crafting', level: 4, xp: 15, inputs: [{ item: 'wolf_fang', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'fang_amulet', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_boots: r({ id: 'leather_boots', station: 'crafting', skill: 'crafting', level: 7, xp: 16, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_boots', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_cowl: r({ id: 'leather_cowl', station: 'crafting', skill: 'crafting', level: 9, xp: 18, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_cowl', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  bowstring: r({ id: 'bowstring', station: 'spinning_wheel', skill: 'crafting', level: 10, xp: 15, inputs: [{ item: 'flax', qty: 1 }], output: { item: 'bowstring', qty: 1 }, seconds: 1.8 }),
+  leather_vambraces: r({ id: 'leather_vambraces', station: 'crafting', skill: 'crafting', level: 11, xp: 22, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_vambraces', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_body: r({ id: 'leather_body', station: 'crafting', skill: 'crafting', level: 14, xp: 25, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_chaps: r({ id: 'leather_chaps', station: 'crafting', skill: 'crafting', level: 18, xp: 27, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 20, xp: 50, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking
   shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 18, output: 'burnt_fish' } }),
   cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 20, output: 'burnt_meat' } }),
@@ -105,13 +123,15 @@ export function failChance(rec: RecipeDef, level: number): number {
  * "Use X on Y" combinations that open a production interface (either order works), e.g. a knife on
  * logs opens fletching.
  */
-export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: 'fletching' }[] = [
+export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
   { a: 'knife', b: ['logs', 'oak_logs'], opens: 'fletching' },
   { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
+  { a: 'needle', b: ['leather', 'wolf_fang'], opens: 'crafting' },
+  { a: 'chisel', b: ['sapphire'], opens: 'crafting' },
 ];
 
-export function useCombo(x: ItemId, y: ItemId): 'fletching' | null {
+export function useCombo(x: ItemId, y: ItemId): AnywhereKind | null {
   for (const c of USE_COMBOS) if ((c.a === x && c.b.includes(y)) || (c.a === y && c.b.includes(x))) return c.opens;
   return null;
 }

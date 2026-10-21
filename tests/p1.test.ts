@@ -216,3 +216,143 @@ describe('Firemaking', () => {
     expect(w.groundItems.some((g) => g.item === 'ashes' && g.x === fire.x && g.z === fire.z)).toBe(true);
   });
 });
+
+describe('Equipment slots', () => {
+  it('has the eleven OSRS-style slots, and old saves load into them unchanged', () => {
+    const w = new GameWorld();
+    expect(Object.keys(w.player.equipment.slots).sort()).toEqual(['ammo', 'body', 'cape', 'feet', 'hands', 'head', 'legs', 'neck', 'ring', 'shield', 'weapon']);
+    const save = w.save();
+    save.equipment = { weapon: 'bronze_sword', head: 'bronze_helm' };
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.equipment.get('weapon')).toBe('bronze_sword');
+    expect(w2.player.equipment.get('hands')).toBeNull();
+  });
+
+  it('wears gloves, boots, cape and amulet; armour adds up and an amulet helps every style', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    for (const it of ['leather_gloves', 'leather_boots', 'travellers_cape', 'fang_amulet'] as ItemId[]) {
+      p.inventory.add(it);
+      w.issue({ type: 'equip', slot: slotOf(p.inventory, it) });
+    }
+    expect(p.equipment.get('hands')).toBe('leather_gloves');
+    expect(p.equipment.get('feet')).toBe('leather_boots');
+    expect(p.equipment.get('cape')).toBe('travellers_cape');
+    expect(p.equipment.get('neck')).toBe('fang_amulet');
+    expect(w.playerBonuses().armour).toBe(2 + 2 + 1 + 1);
+    // Training weapon (melee 12 accuracy) plus the amulet's 3; same for ranged with a real bow.
+    expect(w.playerBonuses().accuracy).toBe(12 + 3);
+    p.inventory.add('shortbow');
+    w.issue({ type: 'equip', slot: slotOf(p.inventory, 'shortbow') });
+    expect(w.playerBonuses().accuracy).toBe(itemDef('shortbow').equip!.accuracy! + 3);
+    // Gloves and vambraces share the hands slot: wearing one swaps the other into the bag.
+    p.inventory.add('leather_vambraces');
+    w.issue({ type: 'equip', slot: slotOf(p.inventory, 'leather_vambraces') });
+    expect(p.equipment.get('hands')).toBe('leather_vambraces');
+    expect(p.inventory.count('leather_gloves')).toBe(1);
+  });
+});
+
+describe('Crafting', () => {
+  const tanner = (w: GameWorld) => w.npcs.find((n) => n.def.id === 'tanner')!;
+  function atTanner(w: GameWorld) {
+    const t = tanner(w);
+    stand(w, t.x, t.z - 1.2);
+    w.issue({ type: 'interact', target: t.id });
+    run(w, 0.5);
+  }
+
+  it('wolf pelts no longer stack; old saves split a stack into slots without losing any', () => {
+    expect(itemDef('wolf_pelt').stackable).toBe(false);
+    const w = new GameWorld();
+    const save = w.save();
+    save.inventory[10] = { item: 'wolf_pelt', qty: 5 };
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.inventory.count('wolf_pelt')).toBe(5);
+  });
+
+  it('older saves get a needle and chisel on the toolbelt once', () => {
+    const w = new GameWorld();
+    const save = w.save();
+    delete save.toolbelt!.needle;
+    delete save.toolbelt!.chisel;
+    save.grants = save.grants!.filter((g) => g !== 'crafting-v1');
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.toolbelt.get('needle')).toBe('needle');
+    expect(w2.player.toolbelt.get('chisel')).toBe('chisel');
+  });
+
+  it('Rook tans pelts into leather for 2 coins each, only while you are with him', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('wolf_pelt', 4);
+    p.inventory.remove('coins', p.inventory.count('coins'));
+    p.inventory.add('coins', 7);
+    w.issue({ type: 'tan', item: 'wolf_pelt', qty: 4 });
+    expect(p.inventory.count('leather')).toBe(0);
+    atTanner(w);
+    expect(p.tannerAt).toBe(tanner(w).id);
+    w.issue({ type: 'tan', item: 'wolf_pelt', qty: 4 });
+    // 7 coins pay for 3 hides.
+    expect(p.inventory.count('leather')).toBe(3);
+    expect(p.inventory.count('wolf_pelt')).toBe(1);
+    expect(p.inventory.count('coins')).toBe(1);
+    stand(w, tanner(w).x + 8, tanner(w).z);
+    w.tick();
+    expect(p.tannerAt).toBeNull();
+  });
+
+  it('sews leather armour with a needle and thread, level by level', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('leather', 3);
+    p.inventory.add('thread', 3);
+    w.issue({ type: 'openAnywhere', kind: 'crafting' });
+    expect(w.drainEvents().some((e) => e.type === 'productionOpen' && e.station === 'crafting')).toBe(true);
+    expect(w.craftBlocker('leather_body')).toContain('Crafting level 14');
+    w.issue({ type: 'craft', recipe: 'leather_gloves', count: 1 });
+    run(w, 2.5);
+    expect(p.inventory.count('leather_gloves')).toBe(1);
+    expect(p.skills.xp.crafting).toBe(14);
+    expect(p.inventory.count('thread')).toBe(2);
+    // Without a needle anywhere, nothing can be sewn.
+    delete p.toolbelt.slots.needle;
+    expect(w.craftBlocker('leather_gloves')).toContain('needle');
+  });
+
+  it('cuts sapphires with a chisel from Crafting 20', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('sapphire');
+    expect(w.craftBlocker('cut_sapphire')).toContain('Crafting level 20');
+    p.skills.addXp('crafting', xpForLevel(20));
+    w.issue({ type: 'craft', recipe: 'cut_sapphire', count: 1 });
+    run(w, 2.5);
+    expect(p.inventory.count('cut_sapphire')).toBe(1);
+    expect(p.inventory.count('sapphire')).toBe(0);
+  });
+
+  it('flax is picked without a tool or xp, then spun into bowstrings at the wheel (Crafting 10)', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const flax = w.nodes.find((n) => n.def.id === 'flax')!;
+    expect(flax).toBeTruthy();
+    for (const k of Object.keys(p.toolbelt.slots)) delete p.toolbelt.slots[k as keyof typeof p.toolbelt.slots];
+    stand(w, flax.x + 1, flax.z);
+    setRng(w, 0.5); // picks never deplete at 0.5 (depletes below 0.17)
+    w.issue({ type: 'interact', target: flax.id });
+    run(w, 4);
+    expect(p.inventory.count('flax')).toBeGreaterThanOrEqual(2);
+    expect(p.skills.xp.crafting).toBe(0);
+    const wheel = w.stations.find((s) => s.kind === 'spinning_wheel')!;
+    stand(w, wheel.x, wheel.z + 1.2);
+    w.issue({ type: 'interact', target: wheel.id });
+    run(w, 0.5);
+    expect(w.craftBlocker('bowstring')).toContain('Crafting level 10');
+    p.skills.addXp('crafting', xpForLevel(10));
+    const before = p.inventory.count('bowstring');
+    w.issue({ type: 'craft', recipe: 'bowstring', count: 1 });
+    run(w, 2.5);
+    expect(p.inventory.count('bowstring')).toBe(before + 1);
+  });
+});

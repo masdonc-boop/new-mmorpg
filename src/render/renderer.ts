@@ -273,13 +273,13 @@ export class GameRenderer {
     let tool: HeldTool = p.style === 'melee' ? 'sword' : p.style === 'ranged' ? 'bow' : 'staff';
     if (gathering && node) {
       const sk = node.def.skill;
-      pose = sk === 'woodcutting' ? 'chop' : sk === 'fishing' ? 'work' : 'mine';
-      tool = sk === 'woodcutting' ? 'axe' : sk === 'fishing' ? 'net' : 'pickaxe';
+      pose = sk === 'woodcutting' ? 'chop' : sk === 'fishing' || sk === 'crafting' ? 'work' : 'mine';
+      tool = sk === 'woodcutting' ? 'axe' : sk === 'fishing' ? 'net' : sk === 'crafting' ? 'none' : 'pickaxe';
     }
     const making = world.crafting;
     if (making && p.anim !== 'walk') {
       pose = making.station === 'anvil' ? 'smith' : 'work';
-      tool = making.station === 'anvil' ? 'hammer' : making.station === 'fletching' ? 'knife' : 'none';
+      tool = making.station === 'anvil' ? 'hammer' : making.station === 'fletching' || making.station === 'crafting' ? 'knife' : 'none';
     }
     pm.style = p.style;
     pm.setTool(tool);

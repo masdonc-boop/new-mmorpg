@@ -2,7 +2,7 @@ import { mulberry32, randInt, type Rng } from '../core/rng';
 import { angleDiff, dist } from '../core/math';
 import { ENEMIES, type EnemyDef } from '../data/enemies';
 import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
-import { RECIPES, STATION_INFO, failChance, plural, recipeAt, type RecipeDef, type StationKind } from '../data/recipes';
+import { RECIPES, STATION_INFO, failChance, isAnywhere, plural, recipeAt, type AnywhereKind, type RecipeDef, type StationKind } from '../data/recipes';
 import { SHOPS, sellPrice, shopFor, type ShopDef } from '../data/shops';
 import { NPCS, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
@@ -11,6 +11,7 @@ import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
+import { TANNING } from '../data/tanning';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
@@ -80,12 +81,17 @@ export type Command =
   | { type: 'lightFire'; slot: number }
   /** Open the fletching interface (needs no station). */
   | { type: 'openFletching' }
+  /** Open a production interface that needs no station (fletching or crafting). */
+  | { type: 'openAnywhere'; kind: AnywhereKind }
   | { type: 'closeProduction' }
   /** Shop: buy up to qty of an item the open shop sells. */
   | { type: 'shopBuy'; item: ItemId; qty: number }
   /** Shop: sell up to qty of the item in an inventory slot. */
   | { type: 'shopSell'; slot: number; qty: number }
   | { type: 'shopClose' }
+  /** Tanner: tan up to qty hides of an item into leather (a fee each). */
+  | { type: 'tan'; item: ItemId; qty: number }
+  | { type: 'tannerClose' }
   | { type: 'acceptQuest'; quest: string }
   /** Gameplay options that are part of the character (saved with it). */
   | { type: 'setOption'; option: 'autoGather'; on: boolean }
@@ -138,6 +144,8 @@ export type GameEvent =
   /** Toolbelt contents changed. */
   | { type: 'toolbelt' }
   | { type: 'shopOpen'; shop: string }
+  | { type: 'tannerOpen' }
+  | { type: 'tannerClose' }
   | { type: 'shopClose' }
   /** A purchase or sale went through (refresh the shop interface). */
   | { type: 'shop' };
@@ -282,6 +290,8 @@ export class Player implements Mover {
   stationAt: number | null = null;
   /** Shopkeeper whose shop is open. */
   shopAt: number | null = null;
+  /** Tanner whose service is open. */
+  tannerAt: number | null = null;
   /** One-time grants already given to this character (e.g. tools added after an update). */
   grants = new Set<string>();
   /** Walk on to the next node of the same kind when one runs out (a setting; off by default, as in OSRS). */
@@ -364,7 +374,7 @@ export class Enemy implements Mover {
 export class Station {
   constructor(
     public readonly id: number,
-    public readonly kind: Exclude<StationKind, 'fletching'>,
+    public readonly kind: Exclude<StationKind, AnywhereKind>,
     public readonly x: number,
     public readonly z: number,
   ) {}
@@ -549,7 +559,7 @@ export class GameWorld {
   /** Tools every character should own once (older saves receive them after the production update). */
   static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
   /** Everything a new character starts with on the toolbelt. */
-  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox'];
+  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox', 'needle', 'chisel'];
 
   /** Once, when the toolbelt arrives: move the tools already in the bag onto it (frees their slots). */
   private introduceToolbelt() {
@@ -578,16 +588,20 @@ export class GameWorld {
     }
   }
 
-  /** Once, when Firemaking arrives: a tinderbox for characters who don't own one (on the belt if free). */
-  private grantTinderbox() {
+  /** Once per update that adds a skill: its tools for characters who don't own them (onto the belt). */
+  private grantSkillTools(grant: string, tools: ItemId[], message: string) {
     const p = this.player;
-    if (p.grants.has('firemaking-v1')) return;
-    p.grants.add('firemaking-v1');
-    const t: ItemId = 'tinderbox';
-    if (p.inventory.count(t) > 0 || p.bank.count(t) > 0 || p.toolbelt.count(t) > 0 || p.overflow.some((o) => o.item === t)) return;
-    if (!p.toolbelt.get('tinderbox')) p.toolbelt.slots.tinderbox = t;
-    else if (p.inventory.add(t, 1) !== 1) addTo(p.overflow, t, 1);
-    this.message('New skill: Firemaking! Tilly put a tinderbox on your toolbelt. Tap logs in your bag to light a fire.', 'good');
+    if (p.grants.has(grant)) return;
+    p.grants.add(grant);
+    let given = 0;
+    for (const t of tools) {
+      if (p.inventory.count(t) > 0 || p.bank.count(t) > 0 || p.toolbelt.count(t) > 0 || p.overflow.some((o) => o.item === t)) continue;
+      const c = itemDef(t).tool!.category;
+      if (!p.toolbelt.get(c)) p.toolbelt.slots[c] = t;
+      else if (p.inventory.add(t, 1) !== 1) addTo(p.overflow, t, 1);
+      given++;
+    }
+    if (given) this.message(message, 'good');
   }
 
   private grantProductionTools() {
@@ -609,6 +623,7 @@ export class GameWorld {
     this.player.grants.add('toolbelt-v1');
     this.player.grants.add('ammo-v1');
     this.player.grants.add('firemaking-v1');
+    this.player.grants.add('crafting-v1');
     for (const t of GameWorld.STARTER_BELT) this.player.toolbelt.slots[itemDef(t).tool!.category] = t;
     inv.add('bread', 2);
     this.player.equipment.slots.ammo = 'bronze_arrow';
@@ -662,7 +677,8 @@ export class GameWorld {
     this.grantProductionTools();
     this.introduceToolbelt();
     this.introduceAmmoSlot();
-    this.grantTinderbox();
+    this.grantSkillTools('firemaking-v1', ['tinderbox'], 'New skill: Firemaking! Tilly put a tinderbox on your toolbelt. Tap logs in your bag to light a fire.');
+    this.grantSkillTools('crafting-v1', ['needle', 'chisel'], 'New skill: Crafting! Tilly put a needle and a chisel on your toolbelt. Rook by the smithy tans pelts into leather.');
     p.autoGather = s.options?.autoGather === true;
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
@@ -805,6 +821,11 @@ export class GameWorld {
       case 'lightFire':
         this.startFire(cmd.slot);
         break;
+      case 'openAnywhere':
+        if (!isAnywhere(cmd.kind)) break;
+        p.stationAt = null;
+        this.emit({ type: 'productionOpen', station: cmd.kind });
+        break;
       case 'openFletching':
         p.stationAt = null;
         this.emit({ type: 'productionOpen', station: 'fletching' });
@@ -822,6 +843,15 @@ export class GameWorld {
         if (p.shopAt !== null) {
           p.shopAt = null;
           this.emit({ type: 'shopClose' });
+        }
+        break;
+      case 'tan':
+        this.tan(cmd.item, cmd.qty);
+        break;
+      case 'tannerClose':
+        if (p.tannerAt !== null) {
+          p.tannerAt = null;
+          this.emit({ type: 'tannerClose' });
         }
         break;
       case 'bankClose':
@@ -866,6 +896,10 @@ export class GameWorld {
     if (p.shopAt !== null && !this.activeShop()) {
       p.shopAt = null;
       this.emit({ type: 'shopClose' });
+    }
+    if (p.tannerAt !== null && !this.activeTanner()) {
+      p.tannerAt = null;
+      this.emit({ type: 'tannerClose' });
     }
     if (p.stationAt !== null && !this.activeStation()) {
       p.stationAt = null;
@@ -1045,7 +1079,7 @@ export class GameWorld {
     } else if (it.kind === 'node') {
       const n = it.entity;
       if (n.depleted) {
-        this.message(n.def.skill === 'woodcutting' ? 'This tree has been cut down. It will regrow soon.' : 'This rock is depleted. It will replenish soon.');
+        this.message(n.def.skill === 'woodcutting' ? 'This tree has been cut down. It will regrow soon.' : n.def.skill === 'crafting' ? 'This flax has been picked. It will grow back soon.' : 'This rock is depleted. It will replenish soon.');
         return;
       }
       if (!this.canGather(n, true)) return;
@@ -1310,7 +1344,7 @@ export class GameWorld {
     const p = this.player;
     const b = p.equipment.bonuses(p.style);
     const style = STYLES[p.style];
-    return { accuracy: b.weapon ? b.accuracy : style.accuracy, power: b.weapon ? b.power : style.power, armour: b.armour, weapon: b.weapon };
+    return { accuracy: (b.weapon ? b.accuracy : style.accuracy) + b.extraAccuracy, power: (b.weapon ? b.power : style.power) + b.extraPower, armour: b.armour, weapon: b.weapon };
   }
 
   private equip(slot: number) {
@@ -1380,7 +1414,7 @@ export class GameWorld {
     const rec = RECIPES[id];
     if (!rec) return 'Unknown recipe.';
     const at = this.activeStation();
-    if (rec.station !== 'fletching' && !(at && recipeAt(rec, at.kind))) return `You need to be at a ${STATION_INFO[rec.station].name.toLowerCase()}.`;
+    if (!isAnywhere(rec.station) && !(at && recipeAt(rec, at.kind))) return `You need to be at a ${STATION_INFO[rec.station].name.toLowerCase()}.`;
     if (rec.tool) {
       const t = this.toolFor(rec.tool);
       if (!t.tool) return t.why;
@@ -1437,7 +1471,7 @@ export class GameWorld {
       p.action = null;
       return;
     }
-    const st = rec.station !== 'fletching' ? this.activeStation() : null;
+    const st = !isAnywhere(rec.station) ? this.activeStation() : null;
     if (st) p.facing = Math.atan2(st.x - p.x, st.z - p.z);
     p.craftTimer -= dt;
     if (p.craftTimer > 0) return;
@@ -1662,6 +1696,47 @@ export class GameWorld {
     this.emit({ type: 'shop' });
   }
 
+  // ---------------------------------------------------------------- tanner
+
+  /** The tanner the player is using, while still beside them. */
+  activeTanner(): Npc | null {
+    const p = this.player;
+    if (p.tannerAt === null || p.dead) return null;
+    const n = this.byId.get(p.tannerAt);
+    if (!(n instanceof Npc) || n.def.service !== 'tanner') return null;
+    return dist(p.x, p.z, n.x, n.z) <= (n.def.reach ?? 1.9) + BANK_LEAVE_MARGIN ? n : null;
+  }
+
+  /**
+   * Tans as many hides as the player has and can pay for, up to qty. Each hide becomes leather in
+   * place (one slot each), so it always fits; coins and hides change together.
+   */
+  private tan(item: ItemId, qty: number) {
+    const p = this.player;
+    if (!this.activeTanner()) {
+      this.message('You need to be at the tanner to do that.', 'warn');
+      return;
+    }
+    const t = TANNING.find((x) => x.from === item);
+    if (!t) return;
+    const want = Math.max(0, Math.min(1000, Math.floor(Number(qty)) || 0));
+    const n = Math.min(want, p.inventory.count(item), Math.floor(p.inventory.count('coins') / t.cost));
+    if (n <= 0) {
+      this.message(p.inventory.count(item) <= 0 ? `You have no ${plural(itemDef(item).name.toLowerCase(), 2)} to tan.` : `Tanning costs ${t.cost} coins each.`, 'warn');
+      return;
+    }
+    if (p.inventory.remove('coins', n * t.cost) !== n * t.cost) throw new Error('tan invariant broken');
+    let done = 0;
+    for (let i = 0; i < p.inventory.slots.length && done < n; i++) {
+      if (p.inventory.slots[i]?.item !== item) continue;
+      p.inventory.slots[i] = { item: t.to, qty: 1 };
+      done++;
+    }
+    this.message(`Rook tans ${n} ${plural(itemDef(item).name.toLowerCase(), n)} into leather for ${n * t.cost} coins.`, 'good');
+    this.emit({ type: 'loot', item: t.to, qty: n });
+    this.emit({ type: 'shop' });
+  }
+
   // ---------------------------------------------------------------- bank
 
   /** The banker the player is using, if they are still close enough to use the bank. */
@@ -1776,8 +1851,8 @@ export class GameWorld {
       if (verbose) this.message(`You need ${SKILL_INFO[n.def.skill].name} level ${n.def.levelReq} to gather from this ${n.def.name.toLowerCase()}.`, 'warn');
       return false;
     }
-    const tool = this.toolFor(n.def.tool);
-    if (!tool.tool) {
+    const tool = n.def.tool ? this.toolFor(n.def.tool) : null;
+    if (tool && !tool.tool) {
       if (verbose) this.message(tool.why, 'warn');
       return false;
     }
@@ -1820,7 +1895,7 @@ export class GameWorld {
       return;
     }
     n.hitAge = 0;
-    const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill), this.toolFor(n.def.tool).tool?.tier ?? 1);
+    const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill), (n.def.tool ? this.toolFor(n.def.tool).tool?.tier : 1) ?? 1);
     this.emit({ type: 'gather', node: n.id, success });
     if (!success) return;
     // Better catches (e.g. anchovies) become possible as the skill rises.
@@ -1840,7 +1915,7 @@ export class GameWorld {
       return;
     }
     this.emit({ type: 'loot', item, qty: 1 });
-    this.grantXp(n.def.skill, xp);
+    if (xp > 0) this.grantXp(n.def.skill, xp);
     // A rare find only happens when there is room for it.
     if (n.def.rareDrop && this.rng() < n.def.rareDrop.chance && p.inventory.add(n.def.rareDrop.item, 1) === 1) {
       this.emit({ type: 'loot', item: n.def.rareDrop.item, qty: 1 });
@@ -1894,6 +1969,11 @@ export class GameWorld {
     if (n.def.service === 'bank') {
       p.bankAt = n.id;
       this.emit({ type: 'bankOpen', npc: n.def.id });
+      return;
+    }
+    if (n.def.service === 'tanner') {
+      p.tannerAt = n.id;
+      this.emit({ type: 'tannerOpen' });
       return;
     }
     if (n.def.service === 'shop') {

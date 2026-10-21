@@ -704,6 +704,221 @@ export function itemIcon(id: string): string {
       }
       break;
     }
+    case 'needle': {
+      g.save();
+      g.translate(32, 32);
+      g.rotate(-0.8);
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(-24, 0);
+      g.lineTo(20, -3);
+      g.lineTo(22, 0);
+      g.lineTo(20, 3);
+      g.closePath();
+      g.fill();
+      outline(2);
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.ellipse(15, 0, 3, 1.2, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+      // A loose curl of thread through the eye.
+      g.strokeStyle = '#c4482c';
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.moveTo(43, 21);
+      g.bezierCurveTo(54, 30, 40, 44, 50, 52);
+      g.stroke();
+      break;
+    }
+    case 'chisel': {
+      g.save();
+      g.translate(32, 32);
+      g.rotate(-0.8);
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(4, -6, 20, 12, 3);
+      g.fill();
+      outline();
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(4, -4);
+      g.lineTo(-20, -5);
+      g.lineTo(-24, 0);
+      g.lineTo(-20, 5);
+      g.lineTo(4, 4);
+      g.closePath();
+      g.fill();
+      outline();
+      g.restore();
+      break;
+    }
+    case 'thread': {
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(20, 14, 24, 6, 2);
+      g.roundRect(20, 44, 24, 6, 2);
+      g.fill();
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(22, 20, 20, 24, 3);
+      g.fill();
+      outline();
+      g.strokeStyle = 'rgba(0,0,0,0.18)';
+      g.lineWidth = 1.5;
+      for (let y = 24; y < 42; y += 4) {
+        g.beginPath();
+        g.moveTo(23, y);
+        g.lineTo(41, y + 2);
+        g.stroke();
+      }
+      break;
+    }
+    case 'leather': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(14, 20);
+      g.quadraticCurveTo(32, 12, 50, 20);
+      g.quadraticCurveTo(56, 34, 48, 48);
+      g.quadraticCurveTo(32, 54, 16, 48);
+      g.quadraticCurveTo(8, 34, 14, 20);
+      g.fill();
+      outline();
+      g.strokeStyle = accent;
+      g.setLineDash([3, 3]);
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.ellipse(32, 34, 13, 10, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.setLineDash([]);
+      break;
+    }
+    case 'gloves':
+    case 'vambraces': {
+      for (const ox of [-9, 9]) {
+        g.save();
+        g.translate(32 + ox, 34);
+        g.fillStyle = color;
+        g.beginPath();
+        if (shape === 'gloves') {
+          g.roundRect(-7, -6, 14, 18, 4);
+          for (let f = 0; f < 3; f++) g.roundRect(-6 + f * 4.5, -16, 3.5, 12, 2);
+        } else g.roundRect(-7, -16, 14, 30, 4);
+        g.fill();
+        outline(2.5);
+        g.fillStyle = accent;
+        g.fillRect(-7, shape === 'gloves' ? 8 : -12, 14, 4);
+        g.restore();
+      }
+      break;
+    }
+    case 'boots': {
+      for (const ox of [-10, 8]) {
+        g.fillStyle = color;
+        g.beginPath();
+        g.moveTo(26 + ox, 14);
+        g.lineTo(36 + ox, 14);
+        g.lineTo(36 + ox, 40);
+        g.lineTo(44 + ox, 44);
+        g.lineTo(44 + ox, 50);
+        g.lineTo(24 + ox, 50);
+        g.closePath();
+        g.fill();
+        outline(2.5);
+        g.fillStyle = accent;
+        g.fillRect(24 + ox, 46, 20, 4);
+      }
+      break;
+    }
+    case 'cowl': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(12, 50);
+      g.quadraticCurveTo(10, 14, 32, 12);
+      g.quadraticCurveTo(54, 14, 52, 50);
+      g.closePath();
+      g.fill();
+      outline();
+      g.fillStyle = '#2a1d14';
+      g.beginPath();
+      g.ellipse(32, 36, 11, 13, 0, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'cape': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(22, 12);
+      g.lineTo(42, 12);
+      g.quadraticCurveTo(50, 34, 52, 52);
+      g.lineTo(12, 52);
+      g.quadraticCurveTo(14, 34, 22, 12);
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      g.beginPath();
+      g.arc(32, 15, 4, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'amulet': {
+      g.strokeStyle = accent;
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(32, 22, 15, 0.15 * Math.PI, 0.85 * Math.PI, true);
+      g.stroke();
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(27, 34);
+      g.quadraticCurveTo(32, 32, 37, 34);
+      g.lineTo(33, 54);
+      g.closePath();
+      g.fill();
+      outline(2.5);
+      break;
+    }
+    case 'flax': {
+      for (const [x, lean] of [[24, -0.25], [32, 0], [40, 0.25]] as const) {
+        g.strokeStyle = color;
+        g.lineWidth = 3;
+        g.beginPath();
+        g.moveTo(32, 54);
+        g.quadraticCurveTo(x, 34, x + lean * 20, 16);
+        g.stroke();
+        g.fillStyle = accent;
+        g.beginPath();
+        g.arc(x + lean * 20, 15, 4.5, 0, Math.PI * 2);
+        g.fill();
+        outline(1.5);
+      }
+      g.fillStyle = '#c9a06a';
+      g.fillRect(26, 40, 12, 5);
+      break;
+    }
+    case 'cutgem': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(16, 26);
+      g.lineTo(24, 16);
+      g.lineTo(40, 16);
+      g.lineTo(48, 26);
+      g.lineTo(32, 50);
+      g.closePath();
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      g.globalAlpha = 0.65;
+      g.beginPath();
+      g.moveTo(24, 16);
+      g.lineTo(28, 26);
+      g.lineTo(36, 26);
+      g.lineTo(40, 16);
+      g.closePath();
+      g.fill();
+      g.globalAlpha = 1;
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

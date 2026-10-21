@@ -19,7 +19,7 @@ export interface EquipResult {
  * stack (OSRS-style), counted in `ammoQty`.
  */
 export class Equipment {
-  readonly slots: Record<EquipSlot, ItemId | null> = { head: null, body: null, legs: null, weapon: null, shield: null, ammo: null };
+  readonly slots: Record<EquipSlot, ItemId | null> = { head: null, cape: null, neck: null, ammo: null, weapon: null, shield: null, body: null, legs: null, hands: null, feet: null, ring: null };
   ammoQty = 0;
 
   get(slot: EquipSlot): ItemId | null {
@@ -45,17 +45,28 @@ export class Equipment {
     this.ammoQty = 0;
   }
 
-  /** Total bonuses for a combat style: the weapon only counts when used with its own style. */
-  bonuses(style: CombatStyle): { weapon: ItemId | null; accuracy: number; power: number; armour: number } {
+  /**
+   * Total bonuses for a combat style: the weapon only counts when used with its own style; other
+   * gear (an amulet) adds its accuracy and power to every style (`extra*`).
+   */
+  bonuses(style: CombatStyle): { weapon: ItemId | null; accuracy: number; power: number; armour: number; extraAccuracy: number; extraPower: number } {
     let armour = 0;
+    let extraAccuracy = 0;
+    let extraPower = 0;
     for (const s of EQUIP_SLOTS) {
       const it = this.slots[s];
-      if (it) armour += itemDef(it).equip?.armour ?? 0;
+      if (!it) continue;
+      const e = itemDef(it).equip;
+      armour += e?.armour ?? 0;
+      if (s !== 'weapon') {
+        extraAccuracy += e?.accuracy ?? 0;
+        extraPower += e?.power ?? 0;
+      }
     }
     const w = this.slots.weapon;
     const we = w ? itemDef(w).equip : undefined;
     const matches = !!we && we.style === style;
-    return { weapon: matches ? w : null, accuracy: matches ? (we!.accuracy ?? 0) : 0, power: matches ? (we!.power ?? 0) : 0, armour };
+    return { weapon: matches ? w : null, accuracy: matches ? (we!.accuracy ?? 0) : 0, power: matches ? (we!.power ?? 0) : 0, armour, extraAccuracy, extraPower };
   }
 
   toJSON(): Partial<Record<EquipSlot, ItemId>> {

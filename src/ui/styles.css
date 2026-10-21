@@ -1780,6 +1780,11 @@ button.danger {
 .equip-slot {
   position: relative;
 }
+.tan-icon {
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
 .eq-qty {
   position: absolute;
   left: 3px;

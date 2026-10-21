@@ -1,4 +1,4 @@
-export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker';
+export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner';
 
 export interface NpcDef {
   id: NpcId;
@@ -9,7 +9,7 @@ export interface NpcDef {
   /** Generic lines used when no quest dialogue applies. */
   idleLines: string[];
   /** Service this NPC provides when talked to (opens that interface instead of dialogue). */
-  service?: 'bank' | 'shop';
+  service?: 'bank' | 'shop' | 'tanner';
   /** How close the player must be to use the NPC (e.g. across a counter). Default 1.9. */
   reach?: number;
 }
@@ -50,6 +50,12 @@ export const NPCS: Record<NpcId, NpcDef> = {
       'Bring me ore once my forge is rebuilt and I will teach you to smith. For now, keep mining!',
       'A good pickaxe is worth more than a good sword. Well — almost.',
     ],
+  },
+  tanner: {
+    id: 'tanner', name: 'Rook Hidewell', title: 'Tanner',
+    look: { skin: '#b07a52', hair: '#3b2a1c', hairStyle: 2, tunic: '#6b4a2c', trousers: '#3a2e24', beard: true },
+    idleLines: ['Bring me pelts and a couple of coins, and I will give you good leather.'],
+    service: 'tanner',
   },
   banker: {
     id: 'banker', name: 'Wendell Coinsworth', title: 'Banker',

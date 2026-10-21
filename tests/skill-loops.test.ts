@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GameWorld } from '../src/sim/world';
 import { INVENTORY_SLOTS, type Inventory } from '../src/sim/inventory';
 import { RESOURCES } from '../src/data/resources';
-import { RECIPES } from '../src/data/recipes';
+import { RECIPES, isAnywhere } from '../src/data/recipes';
 import { SHOPS, sellPrice } from '../src/data/shops';
 import { SKILL_IDS, SKILL_INFO, xpForLevel } from '../src/data/skills';
 import { itemDef, type ItemId } from '../src/data/items';
@@ -63,7 +63,7 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
   });
 
   it('every tool category a skill needs is on the starter toolbelt and sold by Tilly', () => {
-    const cats = new Set([...Object.values(RESOURCES).map((r) => r.tool), ...Object.values(RECIPES).flatMap((r) => (r.tool ? [r.tool] : []))]);
+    const cats = new Set([...Object.values(RESOURCES).flatMap((r) => (r.tool ? [r.tool] : [])), ...Object.values(RECIPES).flatMap((r) => (r.tool ? [r.tool] : []))]);
     for (const c of cats) {
       expect(w.player.toolbelt.get(c), `starter belt has a ${c}`).toBeTruthy();
       expect([...sold].some((it) => itemDef(it).tool?.category === c), `Tilly sells a ${c}`).toBe(true);
@@ -80,7 +80,7 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
       const ok = SIDES.some(([a, b]) => !isBlocked(w.map, node!.x + a, node!.z + b) && !!findPath(w.map, spawn.x, spawn.z, node!.x + a, node!.z + b));
       expect(ok, `${type} reachable`).toBe(true);
     }
-    for (const kind of ['furnace', 'anvil', 'range', 'fire']) {
+    for (const kind of ['furnace', 'anvil', 'range', 'fire', 'spinning_wheel']) {
       const st = w.stations.find((s) => s.kind === kind);
       expect(st, kind).toBeTruthy();
       expect(SIDES.some(([a, b]) => !isBlocked(w.map, st!.x + a, st!.z + b) && !!findPath(w.map, spawn.x, spawn.z, st!.x + a, st!.z + b)), `${kind} reachable`).toBe(true);
@@ -89,7 +89,7 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
 
   it('every recipe can be made at a placed station (or needs none)', () => {
     for (const r of Object.values(RECIPES)) {
-      if (r.station === 'fletching') continue;
+      if (isAnywhere(r.station)) continue;
       expect(w.stations.some((s) => s.kind === r.station), r.id).toBe(true);
     }
   });

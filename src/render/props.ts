@@ -69,6 +69,24 @@ function pinePrefab(seed: number): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** A clump of flax: thin stalks with little blue flowers (picked: short stubble). */
+function flaxPrefab(seed: number, picked: boolean): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const n = picked ? 6 : 9;
+  for (let i = 0; i < n; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = 0.06 + rng() * 0.2;
+    const h = picked ? 0.1 + rng() * 0.06 : 0.55 + rng() * 0.3;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    const lean = (rng() - 0.5) * 0.3;
+    parts.push(part(Cyl(0.014, 0.02, h, 4), picked ? '#a08a4a' : '#6f9e3c', { x, y: h / 2, z, rx: lean, rz: lean, jitter: 0 }));
+    if (!picked) parts.push(part(blob(0.045, 0, 0.1, rng()), rng() < 0.7 ? '#7fa8e8' : '#9fc0f2', { x: x + lean * h * 0.5, y: h, z: z - lean * h * 0.5, jitter: 0 }));
+  }
+  return merge(parts);
+}
+
 function rockPrefab(seed: number, ore: string | null, depleted: boolean): THREE.BufferGeometry {
   const rng = mulberry32(seed);
   const parts: THREE.BufferGeometry[] = [];
@@ -294,6 +312,27 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
         part(Box(0.5, 1.7, 0.35), '#a39d93', { y: 1.0, rz: 0.05, jitter: 0.08 }),
         part(Box(0.25, 0.25, 0.05), '#6fe0ff', { y: 1.2, z: 0.19, rz: Math.PI / 4, jitter: 0 }),
       ]);
+    case 'spinning_wheel': {
+      // Wooden bench with a big spoked wheel on one end and the spindle post on the other.
+      const parts: THREE.BufferGeometry[] = [
+        part(Box(0.9, 0.08, 0.3), '#8a5a34', { y: 0.42 }),
+        part(Cyl(0.035, 0.035, 0.42, 5), '#6e4a2c', { x: -0.38, y: 0.21, z: 0.1 }),
+        part(Cyl(0.035, 0.035, 0.42, 5), '#6e4a2c', { x: -0.38, y: 0.21, z: -0.1 }),
+        part(Cyl(0.035, 0.035, 0.42, 5), '#6e4a2c', { x: 0.38, y: 0.21, z: 0 }),
+        part(Box(0.06, 0.5, 0.06), '#6e4a2c', { x: 0.25, y: 0.7 }),
+        part(Box(0.06, 0.34, 0.06), '#6e4a2c', { x: -0.3, y: 0.62 }),
+        part(Cyl(0.05, 0.05, 0.24, 6), '#efe8d6', { x: -0.3, y: 0.82, rx: Math.PI / 2 }),
+        part(Cyl(0.05, 0.05, 0.12, 8), '#5b3a22', { x: 0.25, y: 0.95, rx: Math.PI / 2 }),
+      ];
+      // Rim of the wheel as short segments, plus spokes.
+      const R = 0.36;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        parts.push(part(Box(0.05, 0.05, 0.2), '#a0703f', { x: 0.25, y: 0.95 + Math.sin(a) * R, z: Math.cos(a) * R, rx: a + Math.PI / 2 }));
+      }
+      for (let i = 0; i < 4; i++) parts.push(part(Box(0.03, R * 2, 0.03), '#8a5a34', { x: 0.25, y: 0.95, rx: (i / 4) * Math.PI }));
+      return merge(parts);
+    }
     case 'anvil':
       return merge([part(Box(0.4, 0.4, 0.3), '#5b3a22', { y: 0.2 }), part(Box(0.7, 0.2, 0.3), '#4a4d55', { y: 0.5 }), part(Cone(0.12, 0.3, 4), '#4a4d55', { x: 0.45, y: 0.5, rz: Math.PI / 2 })]);
     case 'furnace':
@@ -628,8 +667,13 @@ export class ResourceView {
         this.addCopperV2(list, material);
         continue;
       }
-      const variants = isTree ? [0, 1, 2].map((v) => treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak')) : [0, 1].map((v) => rockPrefab(900 + v * 7 + type.length, ORE_COLORS[type] ?? null, false));
-      const depletedGeo = isTree ? stumpPrefab(type === 'oak') : rockPrefab(950, null, true);
+      const flax = type === 'flax';
+      const variants = isTree
+        ? [0, 1, 2].map((v) => treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak'))
+        : flax
+          ? [0, 1].map((v) => flaxPrefab(400 + v * 11, false))
+          : [0, 1].map((v) => rockPrefab(900 + v * 7 + type.length, ORE_COLORS[type] ?? null, false));
+      const depletedGeo = isTree ? stumpPrefab(type === 'oak') : flax ? flaxPrefab(450, true) : rockPrefab(950, null, true);
       // Split each type by variant so silhouettes vary.
       variants.forEach((geo, v) => {
         const subset = list.filter((_, i) => i % variants.length === v);

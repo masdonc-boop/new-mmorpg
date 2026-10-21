@@ -34,6 +34,7 @@ export type DecorKind =
   | 'tent'
   | 'totem'
   | 'campfire'
+  | 'spinning_wheel'
   | 'fountain'
   | 'shrine'
   | 'haystack'
@@ -97,7 +98,7 @@ export interface WorldMap {
   /** `patrol`: waypoints for NPCs that walk a route (their tile is left unblocked). */
   npcs: { id: NpcId; x: number; z: number; facing: number; patrol?: { x: number; z: number }[] }[];
   /** Production stations players can use (furnace, anvil, cooking range). */
-  stations: { kind: Exclude<StationKind, 'fletching'>; x: number; z: number; facing: number }[];
+  stations: { kind: Exclude<StationKind, 'fletching' | 'crafting'>; x: number; z: number; facing: number }[];
   spawn: { x: number; z: number };
   regions: Region[];
   checkpoints: Checkpoint[];
@@ -470,6 +471,11 @@ export function generateWorld(seed = 1337): WorldMap {
   };
   // Coal deep in the Ironcrag Hills, past the iron (Mining 30, for steel).
   placeLater('coal_rock', 99, 70, 5, 3.5, 0xc0a1);
+  // A flax patch south-east of the wheat fields (Crafting: spin into bowstrings).
+  placeLater('flax', 72, 87, 8, 3, 0xf1a5);
+  // The crafting corner beside the smithy: a spinning wheel (the tanner stands just south).
+  addDecor('spinning_wheel', 70.5, 73.5, true, -S / 2, 1, 0);
+  stations.push({ kind: 'spinning_wheel', x: 70.5, z: 73.5, facing: -S / 2 });
 
   // --- NPCs ---
   const npcs: WorldMap['npcs'] = [
@@ -489,6 +495,7 @@ export function generateWorld(seed = 1337): WorldMap {
     },
     { id: 'smith', x: 62.6, z: 73.4, facing: -S / 2 },
     { id: 'banker', x: BANKER.x, z: BANKER.z, facing: S / 2 },
+    { id: 'tanner', x: 70.5, z: 76.2, facing: S },
   ];
   for (const n of npcs) if (!n.patrol) blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
 

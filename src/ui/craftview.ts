@@ -32,7 +32,7 @@ export class CraftView {
   ) {
     const skill = STATION_INFO[station].skill;
     const lvl = world.player.skills.level(skill);
-    this.root.append(el('div', 'craft-head', `<span>${SKILL_INFO[skill].glyph} ${SKILL_INFO[skill].name} level <b>${lvl}</b></span><span class="craft-sub">${station === 'fletching' ? 'Carve logs anywhere' : `At the ${STATION_INFO[station].name.toLowerCase()}`}</span>`), this.list, this.bar);
+    this.root.append(el('div', 'craft-head', `<span>${SKILL_INFO[skill].glyph} ${SKILL_INFO[skill].name} level <b>${lvl}</b></span><span class="craft-sub">${station === 'fletching' ? 'Carve logs anywhere' : station === 'crafting' ? 'Sew leather and cut gems anywhere' : `At the ${STATION_INFO[station].name.toLowerCase()}`}</span>`), this.list, this.bar);
     // Preselect the best recipe the player can make right now.
     const recipes = recipesFor(station);
     this.selected = [...recipes].reverse().find((r) => !world.craftBlocker(r.id))?.id ?? recipes[0]?.id ?? null;

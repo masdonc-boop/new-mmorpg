@@ -30,17 +30,33 @@ export type IconShape =
   | 'unbow'
   | 'fish'
   | 'tinderbox'
-  | 'ashes';
+  | 'ashes'
+  | 'needle'
+  | 'chisel'
+  | 'thread'
+  | 'leather'
+  | 'gloves'
+  | 'boots'
+  | 'cape'
+  | 'amulet'
+  | 'flax'
+  | 'cutgem'
+  | 'cowl'
+  | 'vambraces';
 
-export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo';
-export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'body', 'legs', 'weapon', 'shield', 'ammo'];
+export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo' | 'cape' | 'neck' | 'hands' | 'feet' | 'ring';
+/** Display order (two rows of the equipment box). */
+export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'cape', 'neck', 'ammo', 'weapon', 'shield', 'body', 'legs', 'hands', 'feet', 'ring'];
 
 /** Wearable stats. Weapons boost the combat style they are made for; armour adds to defence. */
 export interface EquipDef {
   slot: EquipSlot;
   /** Weapons only: the combat style the weapon is used with. */
   style?: 'melee' | 'ranged' | 'magic';
-  /** Accuracy and power bonuses (replace the training weapon's when this weapon is used). */
+  /**
+   * Accuracy and power bonuses. On a weapon they replace the training weapon's (with its own style);
+   * on other gear (amulets) they add to every style.
+   */
   accuracy?: number;
   power?: number;
   /** Armour bonus (adds to the wearer's defence roll). */
@@ -91,7 +107,7 @@ export const ITEMS = {
   bronze_arrow: def({ id: 'bronze_arrow', name: 'Bronze arrows', examine: 'Fired from a bow. Wear them in your ammo slot.', stackable: true, kind: 'ammo', value: 1, equip: { slot: 'ammo', ammoFor: 'ranged' }, icon: { shape: 'arrow', color: '#c98a4b', accent: '#f2f2f2' } }),
   air_rune: def({ id: 'air_rune', name: 'Air runes', examine: 'Fuel for basic spells. Consumed on cast.', stackable: true, kind: 'ammo', value: 2, icon: { shape: 'rune', color: '#d9e6f2', accent: '#6bb8ff' } }),
   slime_gel: def({ id: 'slime_gel', name: 'Slime gel', examine: 'Wobbly. Alchemists might want it.', stackable: true, kind: 'material', value: 3, icon: { shape: 'gel', color: '#6fdc5a', accent: '#d8ffd0' } }),
-  wolf_pelt: def({ id: 'wolf_pelt', name: 'Wolf pelt', examine: 'Thick grey fur.', stackable: true, kind: 'material', value: 15, icon: { shape: 'pelt', color: '#8c8f99', accent: '#d7d9de' } }),
+  wolf_pelt: def({ id: 'wolf_pelt', name: 'Wolf pelt', examine: 'Thick grey fur. A tanner can make leather from it.', stackable: false, kind: 'material', value: 15, icon: { shape: 'pelt', color: '#8c8f99', accent: '#d7d9de' } }),
   wolf_fang: def({ id: 'wolf_fang', name: 'Wolf fang', examine: 'Sharp as a dagger.', stackable: true, kind: 'trophy', value: 8, icon: { shape: 'fang', color: '#f1ecd9', accent: '#b8ad8a' } }),
   bones: def({ id: 'bones', name: 'Bones', examine: 'Remains of a fallen foe.', stackable: true, kind: 'material', value: 2, icon: { shape: 'bone', color: '#efe8d6', accent: '#b9ad90' } }),
   bread: def({ id: 'bread', name: 'Bread', examine: 'Warm village bread. Heals 30 HP.', stackable: false, kind: 'food', value: 6, heal: 30, icon: { shape: 'bread', color: '#d99a4e', accent: '#f6d7a0' } }),
@@ -137,6 +153,20 @@ export const ITEMS = {
   knife: def({ id: 'knife', name: 'Knife', examine: 'Use it on logs to fletch shafts and bows.', stackable: false, kind: 'tool', tool: { category: 'knife', tier: 1 }, value: 6, icon: { shape: 'knife', color: '#d6dbe2', accent: '#4e321e' } }),
   tinderbox: def({ id: 'tinderbox', name: 'Tinderbox', examine: 'Flint and steel. Use it on logs to light a fire.', stackable: false, kind: 'tool', tool: { category: 'tinderbox', tier: 1 }, value: 4, icon: { shape: 'tinderbox', color: '#8a5a34', accent: '#d6dbe2' } }),
   ashes: def({ id: 'ashes', name: 'Ashes', examine: 'All that is left of a fire.', stackable: false, kind: 'material', value: 1, icon: { shape: 'ashes', color: '#8c8a86', accent: '#cfccc6' } }),
+  needle: def({ id: 'needle', name: 'Needle', examine: 'Use it with thread on leather.', stackable: false, kind: 'tool', tool: { category: 'needle', tier: 1 }, value: 2, icon: { shape: 'needle', color: '#d6dbe2', accent: '#8d949c' } }),
+  chisel: def({ id: 'chisel', name: 'Chisel', examine: 'For cutting gems.', stackable: false, kind: 'tool', tool: { category: 'chisel', tier: 1 }, value: 2, icon: { shape: 'chisel', color: '#a3aab3', accent: '#8a5a34' } }),
+  thread: def({ id: 'thread', name: 'Thread', examine: 'Strong thread for sewing leather.', stackable: true, kind: 'material', value: 1, icon: { shape: 'thread', color: '#efe8d6', accent: '#8a5a34' } }),
+  leather: def({ id: 'leather', name: 'Leather', examine: 'Tanned wolf hide, ready to sew.', stackable: false, kind: 'material', value: 10, icon: { shape: 'leather', color: '#a8743f', accent: '#5e3d1f' } }),
+  flax: def({ id: 'flax', name: 'Flax', examine: 'Spin it into a bowstring at a spinning wheel.', stackable: false, kind: 'material', value: 3, icon: { shape: 'flax', color: '#7fae4a', accent: '#7fa8e8' } }),
+  cut_sapphire: def({ id: 'cut_sapphire', name: 'Sapphire', examine: 'A cut and polished sapphire.', stackable: false, kind: 'material', value: 120, icon: { shape: 'cutgem', color: '#3a6fe8', accent: '#d6e4ff' } }),
+  leather_gloves: def({ id: 'leather_gloves', name: 'Leather gloves', examine: 'Soft leather gloves.', stackable: false, kind: 'armour', value: 12, equip: { slot: 'hands', armour: 2 }, icon: { shape: 'gloves', color: '#a8743f', accent: '#5e3d1f' } }),
+  leather_boots: def({ id: 'leather_boots', name: 'Leather boots', examine: 'Sturdy walking boots.', stackable: false, kind: 'armour', value: 14, equip: { slot: 'feet', armour: 2 }, icon: { shape: 'boots', color: '#a8743f', accent: '#5e3d1f' } }),
+  leather_cowl: def({ id: 'leather_cowl', name: 'Leather cowl', examine: 'A hooded leather cowl.', stackable: false, kind: 'armour', value: 18, equip: { slot: 'head', armour: 3, tint: '#a8743f' }, icon: { shape: 'cowl', color: '#a8743f', accent: '#5e3d1f' } }),
+  leather_vambraces: def({ id: 'leather_vambraces', name: 'Leather vambraces', examine: 'Bracers that steady an archer’s arm.', stackable: false, kind: 'armour', value: 22, equip: { slot: 'hands', armour: 3 }, icon: { shape: 'vambraces', color: '#a8743f', accent: '#5e3d1f' } }),
+  leather_body: def({ id: 'leather_body', name: 'Leather body', examine: 'A stitched leather jerkin.', stackable: false, kind: 'armour', value: 30, equip: { slot: 'body', armour: 8, tint: '#a8743f' }, icon: { shape: 'platebody', color: '#a8743f', accent: '#5e3d1f' } }),
+  leather_chaps: def({ id: 'leather_chaps', name: 'Leather chaps', examine: 'Tough leather leggings.', stackable: false, kind: 'armour', value: 26, equip: { slot: 'legs', armour: 5, tint: '#a8743f' }, icon: { shape: 'platelegs', color: '#a8743f', accent: '#5e3d1f' } }),
+  fang_amulet: def({ id: 'fang_amulet', name: 'Fang amulet', examine: 'A wolf fang on a cord. Its wearer strikes a little truer.', stackable: false, kind: 'armour', value: 30, equip: { slot: 'neck', accuracy: 3, power: 1, armour: 1 }, icon: { shape: 'amulet', color: '#f1ecd9', accent: '#8a5a34' } }),
+  travellers_cape: def({ id: 'travellers_cape', name: "Traveller's cape", examine: 'A warm woollen cape for the road.', stackable: false, kind: 'armour', value: 20, equip: { slot: 'cape', armour: 1 }, icon: { shape: 'cape', color: '#2f6f8a', accent: '#c9a06a' } }),
   small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),

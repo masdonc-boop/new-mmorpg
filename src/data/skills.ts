@@ -12,6 +12,7 @@ export const SKILL_IDS = [
   'fletching',
   'cooking',
   'firemaking',
+  'crafting',
 ] as const;
 
 export type SkillId = (typeof SKILL_IDS)[number];
@@ -40,6 +41,7 @@ export const SKILL_INFO: Record<SkillId, SkillInfo> = {
   smithing: { name: 'Smithing', color: '#c98a4b', glyph: '⚒', category: 'production', available: true, howTo: 'Smelt ore into bars at the furnace by the smithy (steel: iron ore + 2 coal, level 30), then forge gear at the anvil (needs a hammer).' },
   fletching: { name: 'Fletching', color: '#5fae8c', glyph: '🏹', category: 'production', available: true, howTo: 'Use a knife on logs: arrow shafts, unstrung bows, shields. String bows with a bowstring.' },
   firemaking: { name: 'Firemaking', color: '#f0743a', glyph: '🔥', category: 'production', available: true, howTo: 'Needs a tinderbox. Tap logs in your bag to light a fire where you stand (oak from level 15). Cook on your fire before it burns out.' },
+  crafting: { name: 'Crafting', color: '#c9a06a', glyph: '🧵', category: 'production', available: true, howTo: 'Tan wolf pelts into leather at Rook the tanner, then use a needle and thread on leather. Pick flax south-east of the village and spin it into bowstrings at the spinning wheel. Cut sapphires with a chisel.' },
   cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production', available: true, howTo: 'Cook raw fish or meat at the range outside the inn or the campfire by the river.' },
 };
 

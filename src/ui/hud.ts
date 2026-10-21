@@ -12,11 +12,12 @@ import { BankView } from './bankview';
 import { CraftView } from './craftview';
 import { ShopView } from './shopview';
 import { SHOPS } from '../data/shops';
-import { RECIPES, STATION_INFO, useCombo, usable, type StationKind } from '../data/recipes';
+import { RECIPES, STATION_INFO, isAnywhere, useCombo, usable, type AnywhereKind, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
 import { TOOL_SLOTS } from '../data/tools';
 import { GRAVE_SECONDS, KEEP_ON_DEATH } from '../sim/death';
 import { FIRE_LOGS } from '../data/firemaking';
+import { TANNING } from '../data/tanning';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -25,7 +26,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -312,6 +313,10 @@ export class Hud {
       this.shopDirty = false;
       this.shopView.refresh();
     }
+    if (settled && this.openPanel === 'tanner' && this.shopDirty) {
+      this.shopDirty = false;
+      this.renderTanner();
+    }
     this.updatePrompt();
     if (settled && this.openPanel === 'craft' && this.craftDirty && this.craftView) {
       this.craftDirty = false;
@@ -341,7 +346,8 @@ export class Hud {
       if (e) text = `${STYLE_ICON[w.player.style]} Fighting ${e.def.name}`;
     } else if (a?.type === 'gather') {
       const n = w.gatheringNode;
-      if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
+      if (n && n.def.skill === 'crafting') text = `🌿 Picking flax${w.isGathering ? '…' : ''}`;
+      else if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
     } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
     else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
     else if (a?.type === 'firemaking') text = '🔥 Lighting a fire…';
@@ -512,6 +518,12 @@ export class Hud {
         this.shopId = e.shop;
         this.toggle('shop');
         break;
+      case 'tannerOpen':
+        this.toggle('tanner');
+        break;
+      case 'tannerClose':
+        if (this.openPanel === 'tanner') this.toggle(null);
+        break;
       case 'shopClose':
         if (this.openPanel === 'shop') {
           this.shopView = null;
@@ -526,7 +538,7 @@ export class Hud {
         this.openCraft(e.station);
         break;
       case 'productionClose':
-        if (this.openPanel === 'craft' && this.craftStation !== 'fletching') {
+        if (this.openPanel === 'craft' && !isAnywhere(this.craftStation)) {
           this.craftView = null;
           this.toggle(null);
         }
@@ -700,6 +712,7 @@ export class Hud {
       this.shopView = null;
       this.cb.command({ type: 'shopClose' });
     }
+    if (this.openPanel === 'tanner' && id !== 'tanner') this.cb.command({ type: 'tannerClose' });
     if (this.openPanel === 'craft' && this.craftView) {
       // Closed by the player (not by starting production): release the station.
       this.craftView = null;
@@ -717,7 +730,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: 'Tannery' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -728,6 +741,7 @@ export class Hud {
     else if (id === 'craft') this.renderCraft();
     else if (id === 'shop') this.renderShop();
     else if (id === 'toolbelt') this.renderToolbelt();
+    else if (id === 'tanner') this.renderTanner();
     else this.renderSettings();
   }
 
@@ -755,6 +769,34 @@ export class Hud {
     );
     this.panelBody.appendChild(this.craftView.root);
     this.craftDirty = false;
+  }
+
+  /** Rook's tannery: hides in the bag become leather for a fee each. */
+  private renderTanner() {
+    const body = this.panelBody;
+    clearKeepingScroll(body);
+    const inv = this.world.player.inventory;
+    const coins = inv.count('coins');
+    body.appendChild(el('div', 'ii-desc tb-intro', `“Good hides make good leather.” Leather is sewn into armour with a needle and thread (Crafting). You have ${coins} coins.`));
+    for (const t of TANNING) {
+      const have = inv.count(t.from);
+      const afford = Math.min(have, Math.floor(coins / t.cost));
+      const box = el('div', 'inv-info');
+      box.innerHTML = `<div class="ii-name"><img class="tan-icon" src="${itemIcon(t.from)}" alt=""> ${itemDef(t.from).name} → <img class="tan-icon" src="${itemIcon(t.to)}" alt=""> ${itemDef(t.to).name}</div><div class="ii-desc">${t.cost} coins each · you have ${have}</div>`;
+      const btns = el('div', 'ii-btns');
+      for (const [label, n] of [['Tan 1', 1], [`Tan all (${afford})`, afford]] as const) {
+        const b = el('button', n === 1 ? '' : 'primary', label);
+        b.disabled = afford < 1;
+        b.addEventListener('click', () => {
+          this.cb.command({ type: 'tan', item: t.from, qty: n });
+          this.renderTanner();
+        });
+        btns.appendChild(b);
+      }
+      box.appendChild(btns);
+      if (have === 0) box.appendChild(el('div', 'ii-desc', 'Timber wolves in the Whispering Woods drop pelts.'));
+      body.appendChild(box);
+    }
   }
 
   private renderShop() {
@@ -847,6 +889,13 @@ export class Hud {
       if (usable(sel.item)) {
         const use = el('button', 'primary', FIRE_LOGS[sel.item] ? '🔪 Fletch' : 'Use');
         use.addEventListener('click', () => {
+          // With the partner already at hand (bag or toolbelt), go straight to making things.
+          const kind = this.partnerKind(this.selectedSlot!);
+          if (kind) {
+            this.selectedSlot = null;
+            this.cb.command({ type: 'openAnywhere', kind });
+            return;
+          }
           this.usingSlot = this.selectedSlot;
           this.renderInventory();
         });
@@ -897,8 +946,10 @@ export class Hud {
       for (const n of w.npcs) {
         if (n.def.service === 'bank') consider(n.id, n.x, n.z, '🏦 Bank · open your bank', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
+        if (n.def.service === 'tanner') consider(n.id, n.x, n.z, '🧵 Rook the tanner · tan pelts into leather', (n.def.reach ?? 1.9) + 1);
       }
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);
+      for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Flax · pick it to spin bowstrings', 2.2);
     }
     const b = best as { id: number; text: string; d: number } | null;
     this.promptTarget = b ? b.id : null;
@@ -977,8 +1028,9 @@ export class Hud {
       this.usingSlot = null;
       this.selectedSlot = null;
       if (a && s && i !== from) {
-        if (useCombo(a.item, s.item) === 'fletching') {
-          this.cb.command({ type: 'openFletching' });
+        const kind = useCombo(a.item, s.item);
+        if (kind) {
+          this.cb.command({ type: 'openAnywhere', kind });
           return;
         }
         this.addLog('Nothing interesting happens.', 'info');
@@ -1021,8 +1073,7 @@ export class Hud {
       this.renderInventory();
       return true;
     }
-    const belt = Object.values(this.world.player.toolbelt.slots);
-    const partner = usable(st.item) && (inv.slots.some((o, j) => o && j !== slot && useCombo(st.item, o.item)) || belt.some((b) => b && useCombo(st.item, b)));
+    const partner = this.partnerKind(slot);
     const canLight = !!FIRE_LOGS[st.item] && !!this.world.toolFor('tinderbox').tool;
     if (partner && canLight) {
       // Logs with both a knife and a tinderbox: let the player choose (Light or Fletch).
@@ -1036,8 +1087,12 @@ export class Hud {
       return true;
     }
     if (partner) {
-      this.cb.command({ type: 'openFletching' });
+      this.cb.command({ type: 'openAnywhere', kind: partner });
       return true;
+    }
+    if (st.item === 'leather' || st.item === 'sapphire') {
+      this.addLog(`You need ${st.item === 'leather' ? 'a needle' : 'a chisel'} (in your bag or toolbelt) for that. Tilly sells them.`, 'warn');
+      return false;
     }
     if (FIRE_LOGS[st.item]) {
       this.addLog('You need a tinderbox to light logs, or a knife to fletch them (in your bag or toolbelt). Tilly sells both.', 'warn');
@@ -1050,6 +1105,22 @@ export class Hud {
       return true;
     }
     return false;
+  }
+
+  /** What "using" the item in a bag slot opens: a matching partner in the bag or on the toolbelt. */
+  private partnerKind(slot: number): AnywhereKind | null {
+    const p = this.world.player;
+    const st = p.inventory.slots[slot];
+    if (!st || !usable(st.item)) return null;
+    for (const [j, o] of p.inventory.slots.entries()) {
+      const k = o && j !== slot ? useCombo(st.item, o.item) : null;
+      if (k) return k;
+    }
+    for (const b of Object.values(p.toolbelt.slots)) {
+      const k = b ? useCombo(st.item, b) : null;
+      if (k) return k;
+    }
+    return null;
   }
 
   /** Toolbelt: one slot per tool kind (future kinds shown locked), plus bag tools you can add. */
@@ -1102,7 +1173,7 @@ export class Hud {
     const w = this.world;
     const eq = w.player.equipment;
     const box = el('div', 'equip');
-    const labels: Record<EquipSlot, string> = { head: 'Head', body: 'Body', legs: 'Legs', weapon: 'Weapon', shield: 'Shield', ammo: 'Ammo' };
+    const labels: Record<EquipSlot, string> = { head: 'Head', cape: 'Cape', neck: 'Neck', ammo: 'Ammo', weapon: 'Weapon', shield: 'Shield', body: 'Body', legs: 'Legs', hands: 'Hands', feet: 'Feet', ring: 'Ring' };
     const row = el('div', 'equip-row');
     for (const slot of EQUIP_SLOTS) {
       const it = eq.get(slot);
