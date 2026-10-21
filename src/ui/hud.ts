@@ -71,8 +71,6 @@ export class Hud {
   private shopDirty = false;
   /** Inventory slot being "used" on another item (e.g. a knife, waiting for logs to be tapped). */
   private usingSlot: number | null = null;
-  /** Set by a press-and-hold: the click that ends that same touch must not count as a tap. */
-  private suppressTap = false;
   private prompt!: HTMLButtonElement;
   private promptTarget: number | null = null;
   private panel!: HTMLDivElement;
@@ -105,6 +103,7 @@ export class Hud {
     this.buildDialogue();
     this.buildDeath();
     this.buildMinimapBase(world.map);
+    this.watchBagPresses();
   }
 
   // ---------------------------------------------------------------- layout
@@ -780,64 +779,11 @@ export class Hud {
       if (s) {
         cell.innerHTML = `<img src="${itemIcon(s.item)}" alt="${itemDef(s.item).name}">${s.qty > 1 || itemDef(s.item).stackable ? `<span class="qty">${formatQty(s.qty)}</span>` : ''}`;
       }
-      // Tap = the item's main action (eat, wield/wear, fletch); press and hold (or right-click) = options.
-      let timer = 0;
-      let start = { x: 0, y: 0 };
-      const showOptions = () => {
-        this.suppressTap = true;
-        this.usingSlot = null;
-        this.selectedSlot = s ? i : null;
-        this.renderInventory();
-      };
-      cell.addEventListener('pointerdown', (ev) => {
-        this.suppressTap = false;
-        start = { x: ev.clientX, y: ev.clientY };
-        window.clearTimeout(timer);
-        if (s) {
-          timer = window.setTimeout(showOptions, 450);
-        }
-      });
-      cell.addEventListener('pointermove', (ev) => {
-        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 10) window.clearTimeout(timer);
-      });
-      for (const t of ['pointerup', 'pointercancel', 'pointerleave'] as const) cell.addEventListener(t, () => window.clearTimeout(timer));
-      cell.addEventListener('contextmenu', (ev) => {
-        ev.preventDefault();
-        window.clearTimeout(timer);
-        showOptions();
-      });
-      cell.addEventListener('click', () => {
-        if (this.suppressTap) {
-          this.suppressTap = false;
-          return;
-        }
-        if (this.usingSlot !== null) {
-          // Finish "Use X on Y" (started from the options menu).
-          const from = this.usingSlot;
-          const a = inv.slots[from];
-          this.usingSlot = null;
-          this.selectedSlot = null;
-          if (a && s && i !== from) {
-            if (useCombo(a.item, s.item) === 'fletching') {
-              this.cb.command({ type: 'openFletching' });
-              return;
-            }
-            this.addLog('Nothing interesting happens.', 'info');
-          }
-          this.renderInventory();
-          return;
-        }
-        if (this.selectedSlot !== null && this.selectedSlot !== i && !s) {
-          // Move the item picked in the options menu to this empty slot.
-          this.cb.command({ type: 'swapItems', a: this.selectedSlot, b: i });
-          this.selectedSlot = null;
-          this.renderInventory();
-          return;
-        }
-        if (!s) return;
-        if (this.quickUse(i)) return;
-        this.selectedSlot = this.selectedSlot === i ? null : i;
-        this.renderInventory();
+      // Taps and holds are handled at document level (see watchBagPresses) using the slot index, so a
+      // re-render during the touch can't lose it. Keyboard activation (no pointer) still taps.
+      cell.dataset.slot = String(i);
+      cell.addEventListener('click', (ev) => {
+        if (ev.detail === 0) this.tapSlot(i);
       });
       if (this.usingSlot === i) cell.classList.add('using');
       grid.appendChild(cell);
@@ -931,6 +877,98 @@ export class Hud {
     const text = b ? `${b.text}  ›` : '';
     if (this.prompt.textContent !== text) this.prompt.textContent = text;
     this.prompt.classList.toggle('hidden', !b);
+  }
+
+  private press: { id: number; slot: number; x: number; y: number; t: number; moved: boolean } | null = null;
+
+  /**
+   * Bag touch handling. Tap vs press-and-hold is decided from the browser's own event timestamps
+   * when the finger lifts, so a busy frame can't turn a quick tap into a hold (or swallow it), and
+   * the slot index is remembered from the press, so re-rendering the bag mid-touch is harmless.
+   */
+  private watchBagPresses() {
+    const slotAt = (t: EventTarget | null) => (t instanceof Element ? t.closest<HTMLElement>('.inv-grid .inv-slot[data-slot]') : null);
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        const c = slotAt(e.target);
+        this.press = c && e.isPrimary && e.button === 0 ? { id: e.pointerId, slot: Number(c.dataset.slot), x: e.clientX, y: e.clientY, t: e.timeStamp, moved: false } : null;
+      },
+      true,
+    );
+    document.addEventListener(
+      'pointermove',
+      (e) => {
+        const p = this.press;
+        if (p && e.pointerId === p.id && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 12) p.moved = true;
+      },
+      true,
+    );
+    document.addEventListener('pointercancel', () => (this.press = null), true);
+    document.addEventListener(
+      'pointerup',
+      (e) => {
+        const p = this.press;
+        if (!p || e.pointerId !== p.id) return;
+        this.press = null;
+        if (p.moved || this.openPanel !== 'inventory') return;
+        if (e.timeStamp - p.t >= 450) this.showSlotOptions(p.slot);
+        else this.tapSlot(p.slot);
+      },
+      true,
+    );
+    // Long-press menus (Android) and right-click (desktop) open the options instead.
+    document.addEventListener(
+      'contextmenu',
+      (e) => {
+        const c = slotAt(e.target);
+        if (!c) return;
+        e.preventDefault();
+        this.press = null;
+        this.showSlotOptions(Number(c.dataset.slot));
+      },
+      true,
+    );
+  }
+
+  /** Options for an item (Use, Drop, Eat, Wield…), and pick it up to move it to an empty slot. */
+  private showSlotOptions(slot: number) {
+    this.usingSlot = null;
+    this.selectedSlot = this.world.player.inventory.slots[slot] ? slot : null;
+    this.renderInventory();
+  }
+
+  /** A tap on a bag slot. */
+  private tapSlot(i: number) {
+    const inv = this.world.player.inventory;
+    const s = inv.slots[i];
+    if (this.usingSlot !== null) {
+      // Finish "Use X on Y" (started from the options menu).
+      const from = this.usingSlot;
+      const a = inv.slots[from];
+      this.usingSlot = null;
+      this.selectedSlot = null;
+      if (a && s && i !== from) {
+        if (useCombo(a.item, s.item) === 'fletching') {
+          this.cb.command({ type: 'openFletching' });
+          return;
+        }
+        this.addLog('Nothing interesting happens.', 'info');
+      }
+      this.renderInventory();
+      return;
+    }
+    if (this.selectedSlot !== null && this.selectedSlot !== i && !s) {
+      // Move the item picked in the options menu to this empty slot.
+      this.cb.command({ type: 'swapItems', a: this.selectedSlot, b: i });
+      this.selectedSlot = null;
+      this.renderInventory();
+      return;
+    }
+    if (!s) return;
+    if (this.quickUse(i)) return;
+    this.selectedSlot = this.selectedSlot === i ? null : i;
+    this.renderInventory();
   }
 
   /**
