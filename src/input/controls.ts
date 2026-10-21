@@ -9,10 +9,17 @@ export interface ControlHandlers {
 const TAP_SLOP = 12;
 const JOY_RADIUS = 56;
 
+/** Decides whether an event target belongs to the 3D world (as opposed to HUD panels and buttons). */
+export type WorldTargetTest = (target: EventTarget | null) => boolean;
+
 /**
  * Unified touch / mouse / keyboard input.
  * - Left part of the screen: floating virtual joystick (drag) or tap.
  * - Elsewhere: tap to move / interact; drag rotates (if enabled); pinch zooms.
+ *
+ * Only gestures that *start* on the world (the game canvas) are handled. Touches that
+ * start on HUD elements are never tracked or default-prevented, so panels keep their
+ * native scrolling and their own gestures (e.g. the world map's pan/zoom).
  */
 export class Controls {
   rotationEnabled = false;
@@ -27,7 +34,11 @@ export class Controls {
   private keys = new Set<string>();
   private mouseDown: { x: number; y: number; moved: boolean; button: number } | null = null;
 
-  constructor(private surface: HTMLElement, private h: ControlHandlers) {
+  constructor(
+    surface: HTMLElement,
+    private h: ControlHandlers,
+    private isWorldTarget: WorldTargetTest = (t) => t === surface,
+  ) {
     this.joyBase = document.createElement('div');
     this.joyBase.className = 'joy-base idle';
     this.joyKnob = document.createElement('div');
@@ -44,7 +55,9 @@ export class Controls {
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mouseup', this.onMouseUp);
     surface.addEventListener('wheel', this.onWheel, { passive: false });
-    surface.addEventListener('contextmenu', (e) => e.preventDefault());
+    surface.addEventListener('contextmenu', (e) => {
+      if (this.isWorldTarget(e.target)) e.preventDefault();
+    });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', () => {
@@ -68,8 +81,11 @@ export class Controls {
   }
 
   private onTouchStart = (ev: TouchEvent) => {
+    const world = Array.from(ev.changedTouches).filter((t) => this.isWorldTarget(t.target));
+    if (world.length === 0) return;
+    // Stops the browser from synthesising mouse events / double-tap zoom for world touches only.
     ev.preventDefault();
-    for (const t of Array.from(ev.changedTouches)) {
+    for (const t of world) {
       this.touches.set(t.identifier, { x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, t: performance.now(), moved: false });
       if (this.joyId === null && this.inJoyZone(t.clientX, t.clientY) && this.touches.size === 1) {
         this.joyId = t.identifier;
@@ -87,8 +103,12 @@ export class Controls {
   }
 
   private onTouchMove = (ev: TouchEvent) => {
-    ev.preventDefault();
-    for (const t of Array.from(ev.changedTouches)) {
+    const changed = Array.from(ev.changedTouches);
+    const tracked = changed.filter((t) => this.touches.has(t.identifier));
+    if (tracked.length === 0) return;
+    // Never block a simultaneous panel scroll: only prevent when every moving finger is ours.
+    if (tracked.length === changed.length) ev.preventDefault();
+    for (const t of tracked) {
       const s = this.touches.get(t.identifier);
       if (!s) continue;
       const dx = t.clientX - s.x;
@@ -149,8 +169,10 @@ export class Controls {
   }
 
   private onTouchEnd = (ev: TouchEvent) => {
+    const tracked = Array.from(ev.changedTouches).filter((t) => this.touches.has(t.identifier));
+    if (tracked.length === 0) return;
     ev.preventDefault();
-    for (const t of Array.from(ev.changedTouches)) {
+    for (const t of tracked) {
       const s = this.touches.get(t.identifier);
       this.touches.delete(t.identifier);
       if (t.identifier === this.joyId) {
@@ -172,6 +194,7 @@ export class Controls {
   };
 
   private onMouseDown = (ev: MouseEvent) => {
+    if (!this.isWorldTarget(ev.target)) return;
     this.mouseDown = { x: ev.clientX, y: ev.clientY, moved: false, button: ev.button };
   };
 
@@ -188,10 +211,11 @@ export class Controls {
   private onMouseUp = (ev: MouseEvent) => {
     const m = this.mouseDown;
     this.mouseDown = null;
-    if (m && !m.moved && m.button === 0 && ev.target instanceof Node && this.surface.contains(ev.target)) this.h.tap(ev.clientX, ev.clientY);
+    if (m && !m.moved && m.button === 0 && this.isWorldTarget(ev.target)) this.h.tap(ev.clientX, ev.clientY);
   };
 
   private onWheel = (ev: WheelEvent) => {
+    if (!this.isWorldTarget(ev.target)) return;
     ev.preventDefault();
     this.h.zoom(Math.exp(ev.deltaY * 0.0012));
   };

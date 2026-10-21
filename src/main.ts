@@ -185,14 +185,10 @@ async function boot() {
       if (k === 'm') hud.toggle('map');
       if (k === 'escape') hud.toggle(null);
     },
-  });
+  }, (target) => target === canvas);
   controls.rotationEnabled = settings.rotation;
 
-  // Keep HUD buttons from triggering world taps.
-  hud.root.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
-  hud.root.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
-  hud.root.addEventListener('mousedown', (e) => e.stopPropagation());
-  hud.root.addEventListener('mouseup', (e) => e.stopPropagation());
+  // HUD gestures never reach the world: Controls only handles gestures that start on the canvas.
   hud.root.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).closest('button')) audio.play('click');
   });

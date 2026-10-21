@@ -6,6 +6,8 @@ import { T, type WorldMap } from '../sim/worldmap';
 import type { Dialogue, GameEvent, GameWorld } from '../sim/world';
 import { TILE_COLORS } from '../render/terrain';
 import { itemIcon } from './icons';
+import { MapViewer } from './mapview';
+import { clearKeepingScroll } from './dom';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -57,6 +59,10 @@ export class Hud {
   private regionEl!: HTMLDivElement;
   private questTracker!: HTMLDivElement;
   private invDirty = true;
+  /** True while a finger is down on the panel; re-renders wait so they never interrupt a scroll. */
+  private panelTouching = false;
+  private lastPanelScroll = 0;
+  private mapViewer: MapViewer | null = null;
   private skillsDirty = true;
   private selectedSlot: number | null = null;
   private fpsEl!: HTMLDivElement;
@@ -159,6 +165,15 @@ export class Hud {
     head.append(this.panelTitle, close);
     this.panelBody = el('div', 'panel-body');
     this.panel.append(head, this.panelBody);
+    const body = this.panelBody;
+    body.addEventListener('touchstart', () => (this.panelTouching = true), { passive: true });
+    const release = () => {
+      this.panelTouching = false;
+      this.lastPanelScroll = performance.now();
+    };
+    body.addEventListener('touchend', release, { passive: true });
+    body.addEventListener('touchcancel', release, { passive: true });
+    body.addEventListener('scroll', () => (this.lastPanelScroll = performance.now()), { passive: true });
     this.root.appendChild(this.panel);
   }
 
@@ -246,8 +261,10 @@ export class Hud {
     this.updateStatus();
     this.drawMinimap();
     this.updateQuestTracker();
-    if (this.openPanel === 'inventory' && this.invDirty) this.renderInventory();
-    if (this.openPanel === 'skills' && this.skillsDirty) this.renderSkills();
+    // Live updates (loot, xp) wait until the player is not touching or flinging the panel.
+    const settled = !this.panelTouching && performance.now() - this.lastPanelScroll > 250;
+    if (settled && this.openPanel === 'inventory' && this.invDirty) this.renderInventory();
+    if (settled && this.openPanel === 'skills' && this.skillsDirty) this.renderSkills();
     this.updateDeath();
 
     this.fpsAcc.frames++;
@@ -502,6 +519,8 @@ export class Hud {
   // ---------------------------------------------------------------- panels
 
   toggle(id: PanelId | null) {
+    this.mapViewer?.dispose();
+    this.mapViewer = null;
     if (id === null || this.openPanel === id) {
       this.openPanel = null;
       this.panel.classList.add('hidden');
@@ -515,6 +534,7 @@ export class Hud {
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
     const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings' };
     this.panelTitle.textContent = titles[id];
+    this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
     else if (id === 'skills') this.renderSkills();
     else if (id === 'quests') this.renderQuests();
@@ -530,7 +550,7 @@ export class Hud {
     this.invDirty = false;
     const inv = this.world.player.inventory;
     const body = this.panelBody;
-    body.innerHTML = '';
+    clearKeepingScroll(body);
     const grid = el('div', 'inv-grid');
     inv.slots.forEach((s, i) => {
       const cell = el('button', `inv-slot${this.selectedSlot === i ? ' selected' : ''}`);
@@ -581,7 +601,7 @@ export class Hud {
     this.skillsDirty = false;
     const s = this.world.player.skills;
     const body = this.panelBody;
-    body.innerHTML = '';
+    clearKeepingScroll(body);
     const grid = el('div', 'skills-grid');
     for (const id of SKILL_IDS) {
       const info = SKILL_INFO[id];
@@ -607,7 +627,7 @@ export class Hud {
   private renderQuests() {
     const w = this.world;
     const body = this.panelBody;
-    body.innerHTML = '';
+    clearKeepingScroll(body);
     for (const q of Object.values(QUESTS)) {
       const prog = w.questProgress(q.id);
       const status = !prog ? 'Not started' : prog.done ? 'Complete' : 'In progress';
@@ -633,10 +653,9 @@ export class Hud {
   private renderMap() {
     const map = this.world.map;
     const body = this.panelBody;
-    body.innerHTML = '';
-    const wrap = el('div', 'world-map');
-    const c = el('canvas');
-    const S = 3;
+    clearKeepingScroll(body);
+    const S = 6;
+    const c = el('canvas', 'map-canvas');
     c.width = map.width * S;
     c.height = map.height * S;
     const g = c.getContext('2d')!;
@@ -646,8 +665,8 @@ export class Hud {
     for (const r of map.regions) {
       g.strokeStyle = dangerCol[r.danger];
       g.globalAlpha = 0.7;
-      g.lineWidth = 2;
-      g.setLineDash([6, 5]);
+      g.lineWidth = 4;
+      g.setLineDash([12, 10]);
       g.beginPath();
       g.arc(r.x * S, r.z * S, r.radius * S * 0.8, 0, Math.PI * 2);
       g.stroke();
@@ -657,34 +676,55 @@ export class Hud {
     for (const cp of map.checkpoints) {
       g.fillStyle = this.world.player.checkpoints.has(cp.id) ? '#6fe0ff' : '#9fb4bf';
       g.beginPath();
-      g.arc(cp.x * S, cp.z * S, 5, 0, Math.PI * 2);
+      g.arc(cp.x * S, cp.z * S, 9, 0, Math.PI * 2);
       g.fill();
       g.strokeStyle = '#123';
-      g.lineWidth = 1.5;
+      g.lineWidth = 3;
       g.stroke();
     }
     const p = this.world.player;
     g.fillStyle = '#fff';
     g.strokeStyle = '#000';
-    g.lineWidth = 2;
+    g.lineWidth = 4;
     g.beginPath();
-    g.arc(p.x * S, p.z * S, 6, 0, Math.PI * 2);
+    g.arc(p.x * S, p.z * S, 11, 0, Math.PI * 2);
     g.fill();
     g.stroke();
-    wrap.appendChild(c);
+
+    const viewport = el('div', 'map-view');
+    const stage = el('div', 'map-stage');
+    stage.appendChild(c);
+    const labels: HTMLElement[] = [];
     for (const r of map.regions) {
       const lbl = el('div', `map-label d${r.danger}`, `<b>${r.name}</b><span>${r.levels}</span>`);
       lbl.style.left = `${(r.x / map.width) * 100}%`;
       lbl.style.top = `${(r.z / map.height) * 100}%`;
-      wrap.appendChild(lbl);
+      stage.appendChild(lbl);
+      labels.push(lbl);
     }
-    body.appendChild(wrap);
-    body.appendChild(el('div', 'map-legend', '<span class="d0">● Safe</span><span class="d1">● Low</span><span class="d2">● Medium</span><span class="d3">● Dangerous</span><span class="cp">● Waystone</span>'));
+    viewport.appendChild(stage);
+    const tools = el('div', 'map-tools');
+    const mk = (label: string, title: string, fn: () => void) => {
+      const b = el('button', 'map-tool', label);
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.addEventListener('click', fn);
+      tools.appendChild(b);
+    };
+    viewport.appendChild(tools);
+    body.appendChild(viewport);
+    body.appendChild(el('div', 'map-legend', '<span class="d0">● Safe</span><span class="d1">● Low</span><span class="d2">● Medium</span><span class="d3">● Dangerous</span><span class="cp">● Waystone</span><span class="hint">Drag to pan · pinch or double-tap to zoom</span>'));
+    const viewer = new MapViewer(viewport, stage, labels, () => ({ fx: p.x / map.width, fy: p.z / map.height }));
+    mk('+', 'Zoom in', () => viewer.zoom(1.5));
+    mk('−', 'Zoom out', () => viewer.zoom(1 / 1.5));
+    mk('◎', 'Centre on me', () => viewer.centerOnFocus());
+    mk('⤢', 'Show whole map', () => viewer.reset());
+    this.mapViewer = viewer;
   }
 
   private renderSettings() {
     const body = this.panelBody;
-    body.innerHTML = '';
+    clearKeepingScroll(body);
     const q = this.cb.getQuality();
     const row = (label: string, control: HTMLElement, hint = '') => {
       const r = el('div', 'set-row', `<div class="set-label">${label}${hint ? `<small>${hint}</small>` : ''}</div>`);
