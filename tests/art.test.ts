@@ -400,4 +400,32 @@ describe('Arm swing and bow carry clearance', () => {
     expect(tip.z - h2.z).toBeGreaterThan(0.25);
     m.dispose();
   });
+
+  it('runs a real shot cycle: the draw hand returns to the string, nocks, and pulls it back to the chin', () => {
+    const T = 1.8; // ranged attack interval
+    // Drive the rig with the game's timing for `until` seconds and report the bow state.
+    const run = (until: number) => {
+      const m = new HeroModel(look);
+      m.setTool('bow');
+      m.style = 'ranged';
+      for (let tt = 0; tt < until; tt += 1 / 60) {
+        const sa = tt % T;
+        m.setCombat(1, 1, Math.min(1, Math.max(0, 1 - (T - sa - 0.05) / 0.8)));
+        m.update(1 / 60, 'attack', 0, tt < T ? 99 : sa, tt);
+      }
+      const b = m.debugBow();
+      m.dispose();
+      return b;
+    };
+    // Just after a release the hand has flicked back, off the string.
+    const rel = run(T * 2 + 0.08);
+    expect(rel.handR.distanceTo(rel.nock)).toBeGreaterThan(0.2);
+    // Nocking, before the draw starts: the hand is back on the string.
+    const nocked = run(T * 2 + 0.85);
+    expect(nocked.handR.distanceTo(nocked.nock)).toBeLessThan(0.12);
+    // Full draw: the hand holds the string well back from the grip.
+    const full = run(T * 3 - 0.03);
+    expect(full.handR.distanceTo(full.nock)).toBeLessThan(0.12);
+    expect(full.nock.distanceTo(full.grip)).toBeGreaterThan(0.5);
+  });
 });

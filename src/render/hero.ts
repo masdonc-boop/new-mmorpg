@@ -193,7 +193,6 @@ const smoothstep = (a: number, b: number, x: number) => {
 };
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const tmpV = new THREE.Vector3();
-const tmpV2 = new THREE.Vector3();
 const tmpQa = new THREE.Quaternion();
 const tmpQb = new THREE.Quaternion();
 const tmpMb = new THREE.Matrix4();
@@ -231,6 +230,13 @@ export class HeroModel {
   private wandTip: THREE.Object3D | null = null;
   private bowString: THREE.Mesh[] = [];
   private nockedArrow = new THREE.Group();
+  // Archery cycle state: how far the bow arm is pushed out, how far the draw hand has returned to the
+  // string after a release, and where the nock was last frame (the draw hand's target).
+  private archExt = 0;
+  private archRecover = 1;
+  private lastNock = new THREE.Vector3();
+  private nockWorld = new THREE.Vector3();
+  private armRBaseZ = 0;
   private bowTip = { x: 0, y: 0 };
   style: CombatStyle = 'melee';
 
@@ -277,6 +283,7 @@ export class HeroModel {
       knee.add(ankle);
       const arm = j[`arm${side}`];
       arm.position.set(sx * this.shoulderX, 0.355, -0.005);
+      this.armRBaseZ = -0.005;
       j.spine.add(arm);
       const elbow = j[`elbow${side}`];
       elbow.position.y = -0.27;
@@ -783,7 +790,17 @@ export class HeroModel {
     }
 
     // ---- archery (driven by aim/draw so the draw happens BEFORE the arrow is released)
-    if (archer) this.applyArchery(swingAge);
+    this.joints.armR.position.z = this.armRBaseZ;
+    if (archer) {
+      const released = swingAge < 0.14;
+      if (released) this.archRecover = 0;
+      else this.archRecover = Math.min(1, this.archRecover + dt / 0.42);
+      this.archExt = released ? this.archExt : Math.max(this.drawIn, this.archExt - dt * 2.2);
+      this.applyArchery(swingAge);
+    } else {
+      this.archExt = 0;
+      this.archRecover = 1;
+    }
 
     if (pose === 'attack' && !(this.held === 'bow')) {
       snap = 30;
@@ -875,6 +892,10 @@ export class HeroModel {
     this.joints.hips.position.set(this.hipOffset.x, RIG.hipY + this.hipOffset.y, this.hipOffset.z);
 
     this.updateCarry(swingAge);
+    if (this.held === 'bow' && this.nockedArrow.parent) {
+      this.root.updateWorldMatrix(true, true);
+      this.lastNock.set(this.nockedArrow.position.x, 0, 0).applyMatrix4(this.nockedArrow.parent.matrixWorld);
+    }
 
     // Blink
     this.blinkT -= dt;
@@ -891,8 +912,10 @@ export class HeroModel {
   private applyArchery(swingAge: number) {
     const a = this.aim;
     const released = swingAge < 0.14;
-    const draw = released ? 0 : this.drawIn;
-    const turn = 0.85;
+    // Set-up: while nocking, the chest faces the target more and the bow arm is bent so the drawing
+    // hand can reach the string; the bow arm then pushes out as the string comes back to the chin.
+    const e = this.archExt;
+    const turn = lerp(0.4, 0.88, e);
     this.add('spine', 0, turn * a, 0);
     this.add('hips', 0, 0.3 * a, 0);
     this.add('head', 0, -(turn + 0.3) * a, 0);
@@ -901,14 +924,23 @@ export class HeroModel {
     const tL = this.target.get('armL')!;
     tL.set(lerp(tL.x, 0, a), lerp(tL.y, beta, a), lerp(tL.z, -Math.PI / 2, a));
     const eL = this.target.get('elbowL')!;
-    eL.x = lerp(eL.x, -0.06, a);
-    // Draw hand target: along the arrow line from the bow hand back toward the chin.
-    const dir = tmpV.set(-Math.cos(beta), 0, Math.sin(beta));
-    const armLen = RIG.upperArm + 0.255;
-    const sL = tmpV2.set(-this.shoulderX, 0.355, 0);
-    const reachBack = 0.18 + draw * 0.5 + (released ? 0.08 : 0);
-    const T = { x: sL.x + dir.x * (armLen - reachBack), z: sL.z + dir.z * (armLen - reachBack) };
-    const S = { x: this.shoulderX, z: 0 };
+    eL.x = lerp(eL.x, lerp(-1.0, -0.06, e), a);
+    // Draw hand: on the string (where the nock was last frame, in spine space) while nocked and
+    // drawing; on release it flicks back past the chin, then returns to the string to nock again.
+    const protract = 0.07 * a * (1 - 0.6 * e);
+    this.joints.armR.position.z = this.armRBaseZ + protract;
+    const spine = this.joints.spine;
+    const nock = spine.worldToLocal(this.nockWorld.copy(this.lastNock));
+    const anchor = { x: -0.02, z: -0.02 };
+    const follow = { x: anchor.x + 0.12, z: anchor.z - 0.12 };
+    let T: { x: number; z: number };
+    if (released) {
+      T = follow;
+    } else {
+      const r = this.archRecover;
+      T = { x: lerp(follow.x, nock.x, r), z: lerp(follow.z, nock.z, r) };
+    }
+    const S = { x: this.shoulderX, z: protract };
     const vx = T.x - S.x;
     const vz = T.z - S.z;
     const a1 = RIG.upperArm;
@@ -977,7 +1009,8 @@ export class HeroModel {
     const released = swingAge < 0.14;
     const draw = this.aim > 0.6 && !released ? this.drawIn : 0;
     this.updateBowString(draw * this.aim);
-    this.nockedArrow.visible = this.aim > 0.6 && !released && this.drawIn > 0.02;
+    // A fresh arrow is nocked once the draw hand is back on the string.
+    this.nockedArrow.visible = this.aim > 0.6 && !released && this.archRecover > 0.85;
   }
 
   enableSilhouette(color = '#3b5bdb') {
