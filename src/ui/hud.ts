@@ -71,6 +71,8 @@ export class Hud {
   private shopDirty = false;
   /** Inventory slot being "used" on another item (e.g. a knife, waiting for logs to be tapped). */
   private usingSlot: number | null = null;
+  /** Set by a press-and-hold: the click that ends that same touch must not count as a tap. */
+  private suppressTap = false;
   private prompt!: HTMLButtonElement;
   private promptTarget: number | null = null;
   private panel!: HTMLDivElement;
@@ -778,9 +780,39 @@ export class Hud {
       if (s) {
         cell.innerHTML = `<img src="${itemIcon(s.item)}" alt="${itemDef(s.item).name}">${s.qty > 1 || itemDef(s.item).stackable ? `<span class="qty">${formatQty(s.qty)}</span>` : ''}`;
       }
+      // Tap = the item's main action (eat, wield/wear, fletch); press and hold (or right-click) = options.
+      let timer = 0;
+      let start = { x: 0, y: 0 };
+      const showOptions = () => {
+        this.suppressTap = true;
+        this.usingSlot = null;
+        this.selectedSlot = s ? i : null;
+        this.renderInventory();
+      };
+      cell.addEventListener('pointerdown', (ev) => {
+        this.suppressTap = false;
+        start = { x: ev.clientX, y: ev.clientY };
+        window.clearTimeout(timer);
+        if (s) {
+          timer = window.setTimeout(showOptions, 450);
+        }
+      });
+      cell.addEventListener('pointermove', (ev) => {
+        if (Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 10) window.clearTimeout(timer);
+      });
+      for (const t of ['pointerup', 'pointercancel', 'pointerleave'] as const) cell.addEventListener(t, () => window.clearTimeout(timer));
+      cell.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault();
+        window.clearTimeout(timer);
+        showOptions();
+      });
       cell.addEventListener('click', () => {
+        if (this.suppressTap) {
+          this.suppressTap = false;
+          return;
+        }
         if (this.usingSlot !== null) {
-          // Finish "Use X on Y".
+          // Finish "Use X on Y" (started from the options menu).
           const from = this.usingSlot;
           const a = inv.slots[from];
           this.usingSlot = null;
@@ -796,9 +828,15 @@ export class Hud {
           return;
         }
         if (this.selectedSlot !== null && this.selectedSlot !== i && !s) {
+          // Move the item picked in the options menu to this empty slot.
           this.cb.command({ type: 'swapItems', a: this.selectedSlot, b: i });
           this.selectedSlot = null;
-        } else this.selectedSlot = s ? (this.selectedSlot === i ? null : i) : null;
+          this.renderInventory();
+          return;
+        }
+        if (!s) return;
+        if (this.quickUse(i)) return;
+        this.selectedSlot = this.selectedSlot === i ? null : i;
         this.renderInventory();
       });
       if (this.usingSlot === i) cell.classList.add('using');
@@ -862,7 +900,7 @@ export class Hud {
       btns.appendChild(drop);
       info.appendChild(btns);
     } else {
-      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br>Tap an item to inspect, eat or drop it. Tap an empty slot to move a selected item. Logs, ores and gems take one slot each.</div>`;
+      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br><b>Tap</b> an item to use it: eat food, wield or wear gear, fletch logs (with a knife). <b>Press and hold</b> for options such as drop or move. Logs, ores and gems take one slot each.</div>`;
     }
     body.appendChild(info);
     this.renderOverflow(body);
@@ -893,6 +931,41 @@ export class Hud {
     const text = b ? `${b.text}  ›` : '';
     if (this.prompt.textContent !== text) this.prompt.textContent = text;
     this.prompt.classList.toggle('hidden', !b);
+  }
+
+  /**
+   * The main action for tapping an item: eat food, wield/wear gear, fletch (a knife with logs, a
+   * bowstring with an unstrung bow, …). Returns false when the item has no main action, in which
+   * case the tap just shows its details.
+   */
+  private quickUse(slot: number): boolean {
+    const inv = this.world.player.inventory;
+    const st = inv.slots[slot];
+    if (!st) return false;
+    const d = itemDef(st.item);
+    this.selectedSlot = null;
+    this.usingSlot = null;
+    if (d.kind === 'food') {
+      this.cb.command({ type: 'useItem', slot });
+      this.renderInventory();
+      return true;
+    }
+    if (d.equip) {
+      this.cb.command({ type: 'equip', slot });
+      this.renderInventory();
+      return true;
+    }
+    if (usable(st.item)) {
+      const partner = inv.slots.some((o, j) => o && j !== slot && useCombo(st.item, o.item));
+      if (partner) {
+        this.cb.command({ type: 'openFletching' });
+        return true;
+      }
+      if (st.item === 'knife') this.addLog('Tap logs to fletch them with your knife (you have no logs).', 'info');
+      else if (st.item === 'logs' || st.item === 'oak_logs') this.addLog('You need a knife to fletch logs. Tilly sells them.', 'warn');
+      return false;
+    }
+    return false;
   }
 
   /** Worn gear: five slots above the inventory, with the combined combat bonuses. */

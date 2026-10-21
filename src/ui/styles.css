@@ -679,6 +679,10 @@ button {
 .inv-slot {
   position: relative;
   aspect-ratio: 1;
+  /* Press-and-hold opens item options, so no browser callout, selection or image drag. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.3);
@@ -1923,4 +1927,9 @@ button.danger {
 }
 .su-na {
   color: var(--bad);
+}
+
+.inv-slot img {
+  -webkit-user-drag: none;
+  pointer-events: none;
 }

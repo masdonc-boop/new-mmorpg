@@ -84,6 +84,8 @@ Every skill shown in the Skills panel can be trained end to end. Tools are real 
 | Fletching | knife (logs), bowstring (stringing) | anywhere: use a knife on logs | Arrow shafts, unstrung bows → strung bows, wooden shield, arrows (shafts + bronze bar) |
 | Cooking | none | range outside the inn, campfire by the fishing spots | Raw fish or meat → food (can burn at low levels) |
 
+**Bag.** Tapping an item does its main action: eat food, wield or wear gear, or fletch (logs with a knife in the bag, or a bowstring with an unstrung bow). Press and hold (or right-click) for options: Use, Drop, or move to an empty slot.
+
 **Interaction.** Tap a station, NPC or fishing spot to walk over and use it. A contextual prompt appears when you stand near one, and tapping the prompt works too. Production panels show level, XP, materials, tools and quantities.
 
 ## Production and equipment (design notes)
