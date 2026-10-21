@@ -11,6 +11,7 @@ import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
+import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
 import { toolLabel, type ToolCategory } from '../data/tools';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
@@ -83,6 +84,8 @@ export type Command =
   | { type: 'shopSell'; slot: number; qty: number }
   | { type: 'shopClose' }
   | { type: 'acceptQuest'; quest: string }
+  /** Gameplay options that are part of the character (saved with it). */
+  | { type: 'setOption'; option: 'autoGather'; on: boolean }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
 
 export interface Dialogue {
@@ -139,6 +142,7 @@ export type AnimState = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 
 export type PlayerAction =
   | { type: 'attack'; target: number }
   | { type: 'pickup'; ground: number }
+  | { type: 'grave'; grave: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
@@ -185,6 +189,40 @@ export class GroundItem {
       untilGone: Math.max(0, LOOT_PRIVATE_SECONDS + LOOT_PUBLIC_SECONDS - this.age),
     };
   }
+}
+
+/**
+ * Where a player's at-risk items go when they die (OSRS-style gravestone). Only its owner can loot
+ * it, and it crumbles, with whatever is left, after GRAVE_SECONDS of play.
+ */
+export class Gravestone {
+  age = 0;
+  constructor(
+    public readonly id: number,
+    public readonly x: number,
+    public readonly z: number,
+    public readonly owner: number,
+    public items: ItemStack[],
+  ) {}
+
+  get expired(): boolean {
+    return this.age >= GRAVE_SECONDS || this.items.length === 0;
+  }
+
+  get secondsLeft(): number {
+    return Math.max(0, GRAVE_SECONDS - this.age);
+  }
+
+  get count(): number {
+    return this.items.reduce((a, s) => a + s.qty, 0);
+  }
+}
+
+export interface SavedGrave {
+  x: number;
+  z: number;
+  age: number;
+  items: ItemStack[];
 }
 
 export interface SavedGroundItem {
@@ -240,6 +278,10 @@ export class Player implements Mover {
   shopAt: number | null = null;
   /** One-time grants already given to this character (e.g. tools added after an update). */
   grants = new Set<string>();
+  /** Walk on to the next node of the same kind when one runs out (a setting; off by default, as in OSRS). */
+  autoGather = false;
+  /** What happened to the player's items at their latest death (for the death screen). */
+  lastDeath: { kept: ItemStack[]; lost: number; grave: number | null } | null = null;
   craftTimer = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
@@ -375,6 +417,7 @@ export type Interactable =
   | { kind: 'node'; entity: ResourceNode }
   | { kind: 'npc'; entity: Npc }
   | { kind: 'ground'; entity: GroundItem }
+  | { kind: 'grave'; entity: Gravestone }
   | { kind: 'station'; entity: Station };
 
 export interface SaveData {
@@ -393,6 +436,12 @@ export interface SaveData {
   bank?: ItemStack[];
   /** Worn equipment (optional for older saves). */
   equipment?: Partial<Record<EquipSlot, ItemId>>;
+  /** Size of the worn ammo stack. */
+  ammoQty?: number;
+  /** Gameplay options (optional for older saves). */
+  options?: { autoGather?: boolean };
+  /** Gravestones still standing (optional for older saves). */
+  graves?: SavedGrave[];
   /** One-time grants already received (optional for older saves). */
   grants?: string[];
   /** Toolbelt contents by category (optional for older saves). */
@@ -411,12 +460,13 @@ export class GameWorld {
   readonly npcs: Npc[] = [];
   readonly stations: Station[] = [];
   groundItems: GroundItem[] = [];
+  graves: Gravestone[] = [];
   private nextGroundId = 20000;
   readonly rng: Rng;
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null } = {}) {
     this.map = generateWorld(opts.seed ?? 1337);
@@ -456,6 +506,19 @@ export class GameWorld {
       }
       this.groundItems = this.groundItems.filter((g) => !g.expired);
     }
+    if (s && Array.isArray(s.graves)) {
+      for (const g of s.graves) {
+        if (!g || !Number.isFinite(g.x) || !Number.isFinite(g.z) || !Array.isArray(g.items)) continue;
+        const items: ItemStack[] = [];
+        for (const it of g.items) {
+          const qty = Math.floor(Number(it?.qty));
+          if (it && typeof it.item === 'string' && isItemId(it.item) && qty > 0) addTo(items, it.item, qty);
+        }
+        const grave = this.spawnGrave(g.x, g.z, items);
+        grave.age = Number.isFinite(g.age) && g.age > 0 ? g.age : 0;
+      }
+      this.graves = this.graves.filter((g) => !g.expired);
+    }
   }
 
   /** Tools every character should own once (older saves receive them after the production update). */
@@ -476,6 +539,20 @@ export class GameWorld {
    * Gives existing characters the production tools once. Anything already owned (bag, bank or worn)
    * is skipped; tools that don't fit go to "held for you" rather than being lost.
    */
+  /** Once, when the ammo slot arrives: arrows in the bag move into it (bows now fire from there). */
+  private introduceAmmoSlot() {
+    const p = this.player;
+    if (p.grants.has('ammo-v1')) return;
+    p.grants.add('ammo-v1');
+    if (p.equipment.slots.ammo) return;
+    const i = p.inventory.slots.findIndex((s) => s && itemDef(s.item).equip?.slot === 'ammo');
+    if (i < 0) return;
+    const n = p.inventory.slots[i]!.qty;
+    if (equipFromInventory(p.equipment, p.inventory, i, (sk) => p.skills.level(sk)).ok) {
+      this.message(`New: the ammo slot! Your ${n} arrows moved into it. Bows fire from the ammo slot now.`, 'good');
+    }
+  }
+
   private grantProductionTools() {
     const p = this.player;
     if (p.grants.has('tools-v1')) return;
@@ -493,9 +570,11 @@ export class GameWorld {
     const inv = this.player.inventory;
     this.player.grants.add('tools-v1');
     this.player.grants.add('toolbelt-v1');
+    this.player.grants.add('ammo-v1');
     for (const t of GameWorld.STARTER_BELT) this.player.toolbelt.slots[itemDef(t).tool!.category] = t;
     inv.add('bread', 2);
-    inv.add('bronze_arrow', 60);
+    this.player.equipment.slots.ammo = 'bronze_arrow';
+    this.player.equipment.ammoQty = 60;
     inv.add('air_rune', 60);
     inv.add('coins', 25);
   }
@@ -517,6 +596,9 @@ export class GameWorld {
       overflow: p.overflow.map((o) => ({ ...o })),
       bank: p.bank.toJSON(),
       equipment: p.equipment.toJSON(),
+      ammoQty: p.equipment.ammoQty,
+      options: { autoGather: p.autoGather },
+      graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
       grants: [...p.grants],
       toolbelt: p.toolbelt.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
@@ -532,7 +614,7 @@ export class GameWorld {
     const restored = Inventory.restore(s.inventory);
     p.inventory = restored.inventory;
     p.overflow = restored.overflow;
-    const worn = Equipment.restore(s.equipment);
+    const worn = Equipment.restore(s.equipment, s.ammoQty);
     p.equipment = worn.equipment;
     for (const d of worn.displaced) addTo(p.overflow, d.item, d.qty);
     p.grants = new Set(Array.isArray(s.grants) ? s.grants.filter((g) => typeof g === 'string') : []);
@@ -541,6 +623,8 @@ export class GameWorld {
     for (const d of belt.displaced) addTo(p.overflow, d.item, d.qty);
     this.grantProductionTools();
     this.introduceToolbelt();
+    this.introduceAmmoSlot();
+    p.autoGather = s.options?.autoGather === true;
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
         const qty = Math.floor(Number(o?.qty));
@@ -577,7 +661,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | undefined {
     return this.byId.get(id);
   }
 
@@ -588,6 +672,7 @@ export class GameWorld {
     if (e instanceof Npc) return { kind: 'npc', entity: e };
     if (e instanceof GroundItem) return e.visibleTo(this.player.id) ? { kind: 'ground', entity: e } : null;
     if (e instanceof Station) return { kind: 'station', entity: e };
+    if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
   }
 
@@ -712,6 +797,9 @@ export class GameWorld {
       case 'acceptQuest':
         this.acceptQuest(cmd.quest);
         break;
+      case 'setOption':
+        if (cmd.option === 'autoGather') p.autoGather = cmd.on === true;
+        break;
       case 'respawn':
         if (p.dead) this.respawnPlayer(cmd.at);
         break;
@@ -731,6 +819,7 @@ export class GameWorld {
     }
     this.updatePlayer(dt);
     this.updateGroundItems(dt);
+    this.updateGraves(dt);
     if (p.shopAt !== null && !this.activeShop()) {
       p.shopAt = null;
       this.emit({ type: 'shopClose' });
@@ -836,6 +925,7 @@ export class GameWorld {
     else if (action?.type === 'gather') this.updateGather(action.node, dt);
     else if (action?.type === 'talk') this.updateTalk(action.npc);
     else if (action?.type === 'pickup') this.updatePickup(action.ground);
+    else if (action?.type === 'grave') this.updateGrave(action.grave);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
 
@@ -919,6 +1009,8 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'grave') {
+      p.action = { type: 'grave', grave: id };
     } else if (it.kind === 'station') {
       p.action = { type: 'station', station: id };
     } else {
@@ -955,12 +1047,18 @@ export class GameWorld {
     if (!joystickActive) p.facing = Math.atan2(e.x - p.x, e.z - p.z);
     if (p.attackTimer > 0) return;
 
-    if (style.ammo && !p.inventory.has(style.ammo)) {
-      this.message(`You have no ${itemDef(style.ammo).name.toLowerCase()} left. Switch style or find more.`, 'warn');
+    if (style.ammo && this.ammoLeft() <= 0) {
+      const name = itemDef(style.ammo).name.toLowerCase();
+      if (style.ammoWorn && p.inventory.has(style.ammo)) this.message(`Equip your ${name} first: bows fire from the ammo slot. Tap them in your bag.`, 'warn');
+      else this.message(`You have no ${name} left. Switch style or find more.`, 'warn');
       p.action = null;
       return;
     }
-    if (style.ammo) p.inventory.remove(style.ammo, 1);
+    if (style.ammo) {
+      if (style.ammoWorn) p.equipment.useAmmo(style.ammo);
+      else p.inventory.remove(style.ammo, 1);
+      if (style.ammoWorn && !p.equipment.slots.ammo) this.emit({ type: 'equipment' });
+    }
 
     p.facing = Math.atan2(e.x - p.x, e.z - p.z);
     p.attackTimer = style.attackSeconds;
@@ -982,6 +1080,14 @@ export class GameWorld {
     } else {
       this.pending.push({ at: this.time + 0.22, target: e.id, style: p.style, damage: result.damage, hit: result.hit });
     }
+  }
+
+  /** Shots or casts left for the current style (worn ammo for bows, bag runes for magic). */
+  ammoLeft(): number {
+    const p = this.player;
+    const style = STYLES[p.style];
+    if (!style.ammo) return Infinity;
+    return style.ammoWorn ? (p.equipment.slots.ammo === style.ammo ? p.equipment.ammoQty : 0) : p.inventory.count(style.ammo);
   }
 
   private damageEnemy(e: Enemy, damage: number, hit: boolean, style: CombatStyle) {
@@ -1064,6 +1170,62 @@ export class GameWorld {
     if (removed) this.groundItems = this.groundItems.filter((g) => !g.expired);
   }
 
+  spawnGrave(x: number, z: number, items: ItemStack[]): Gravestone {
+    const g = new Gravestone(this.nextGroundId++, x, z, this.player.id, items);
+    this.graves.push(g);
+    this.byId.set(g.id, g);
+    return g;
+  }
+
+  private updateGraves(dt: number) {
+    let removed = false;
+    for (const g of this.graves) {
+      g.age += dt;
+      if (g.expired) {
+        if (g.items.length) this.message('Your gravestone has crumbled away, and the items in it are gone.', 'bad');
+        this.byId.delete(g.id);
+        removed = true;
+      }
+    }
+    if (removed) this.graves = this.graves.filter((g) => !g.expired);
+  }
+
+  private updateGrave(id: number) {
+    const p = this.player;
+    const g = this.byId.get(id);
+    if (!(g instanceof Gravestone) || g.expired) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(g.x, g.z, 1.2, true)) return;
+    p.action = null;
+    this.lootGrave(g);
+  }
+
+  /** Takes back as much from a gravestone as fits; the rest waits in it. */
+  private lootGrave(g: Gravestone) {
+    const p = this.player;
+    let moved = 0;
+    for (const s of g.items) {
+      const added = p.inventory.add(s.item, s.qty);
+      s.qty -= added;
+      moved += added;
+    }
+    g.items = g.items.filter((s) => s.qty > 0);
+    if (moved === 0) {
+      this.inventoryFull();
+      return;
+    }
+    if (g.items.length === 0) {
+      this.message(`You take back all ${moved} item${moved === 1 ? '' : 's'} from your gravestone.`, 'good');
+      this.byId.delete(g.id);
+      this.graves = this.graves.filter((x) => x !== g);
+    } else {
+      this.message(`You take back ${moved} item${moved === 1 ? '' : 's'}. ${g.count} still wait in your gravestone: make room and tap it again.`, 'warn');
+      this.emit({ type: 'inventoryFull' });
+    }
+  }
+
   private updatePickup(id: number) {
     const p = this.player;
     const g = this.byId.get(id);
@@ -1126,7 +1288,8 @@ export class GameWorld {
       p.style = e.style;
       this.message(`Combat style: ${STYLES[e.style].name}.`);
     }
-    this.message(`You ${e.slot === 'weapon' ? 'wield' : 'wear'} the ${name.toLowerCase()}.`);
+    if (e.slot === 'ammo') this.message(`You equip your ${name.toLowerCase()} (${p.equipment.ammoQty} in your ammo slot).`);
+    else this.message(`You ${e.slot === 'weapon' ? 'wield' : 'wear'} the ${name.toLowerCase()}.`);
     this.emit({ type: 'equipment' });
   }
 
@@ -1565,8 +1728,8 @@ export class GameWorld {
       n.respawnTimer = n.def.respawnSeconds;
       this.emit({ type: 'nodeDepleted', node: n.id });
       p.action = null;
-      // Automatically continue on a nearby node of the same type, like an attentive auto-gatherer.
-      const next = full ? null : this.nearestNode(n.def.id, p.x, p.z, 6);
+      // Optional (setting, off by default as in OSRS): carry on at a nearby node of the same type.
+      const next = full || !p.autoGather ? null : this.nearestNode(n.def.id, p.x, p.z, 6);
       if (next && this.canGather(next, false)) {
         p.action = { type: 'gather', node: next.id };
         p.gatherTimer = next.def.actionSeconds * 0.8;
@@ -1781,7 +1944,22 @@ export class GameWorld {
     p.joy.x = p.joy.z = 0;
     this.pending.length = 0;
     this.emit({ type: 'death', id: p.id });
-    this.message('Oh dear, you have been defeated! Your belongings are safe.', 'bad');
+    p.stationAt = null;
+    const { kept, lost } = takeLostOnDeath(p.inventory, p.equipment, KEEP_ON_DEATH);
+    const lostCount = lost.reduce((a, s) => a + s.qty, 0);
+    let grave: Gravestone | null = null;
+    if (lost.length) {
+      const at = this.walkableNear(p.x, p.z, this.map.spawn.x, this.map.spawn.z);
+      grave = this.spawnGrave(at.x, at.z, lost);
+    }
+    p.lastDeath = { kept, lost: lostCount, grave: grave?.id ?? null };
+    this.emit({ type: 'equipment' });
+    const keptText = kept.length ? kept.map((k) => `${k.qty > 1 ? `${k.qty} x ` : ''}${itemDef(k.item).name}`).join(', ') : 'nothing';
+    this.message(`Oh dear, you have been defeated! You keep your ${KEEP_ON_DEATH} most valuable items: ${keptText}.`, 'bad');
+    if (grave) {
+      const r = regionAt(grave.x, grave.z);
+      this.message(`Your other ${lostCount} item${lostCount === 1 ? ' is' : 's are'} in a gravestone where you fell${r ? ` (${r.name})` : ''}. Reach it within ${GRAVE_SECONDS / 60} minutes to take them back.`, 'warn');
+    }
     for (const e of this.enemies) {
       if (e.target === p.id) {
         e.target = null;

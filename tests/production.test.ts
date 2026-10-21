@@ -43,7 +43,8 @@ describe('Skills and saves', () => {
     expect(sk.level('hitpoints')).toBe(12);
     expect(sk.level('smithing')).toBe(1);
     expect(sk.level('cooking')).toBe(1);
-    expect(w2.player.equipment.toJSON()).toEqual({});
+    // Only the starter arrows are worn (new characters start with them in the ammo slot).
+    expect(w2.player.equipment.toJSON()).toEqual({ ammo: 'bronze_arrow' });
   });
 
   it('every recipe and wearable has consistent data', () => {
@@ -56,6 +57,11 @@ describe('Skills and saves', () => {
     }
     for (const d of Object.values(ITEMS)) {
       if (!d.equip) continue;
+      if (d.equip.slot === 'ammo') {
+        expect(d.kind).toBe('ammo');
+        expect(d.stackable).toBe(true);
+        continue;
+      }
       expect(['weapon', 'armour']).toContain(d.kind);
       expect(d.stackable).toBe(false);
       if (d.equip.slot === 'weapon') expect(d.equip.style).toBeTruthy();
@@ -252,7 +258,8 @@ describe('Production rules', () => {
     run(w, 2);
     expect(p.inventory.count('shortbow')).toBe(1);
     expect(p.inventory.count('arrow_shafts')).toBe(0);
-    expect(p.inventory.count('bronze_arrow')).toBe(60 + 15);
+    expect(p.inventory.count('bronze_arrow')).toBe(15);
+    expect(p.equipment.count('bronze_arrow')).toBe(60);
     w.issue({ type: 'equip', slot: slotOf(p.inventory, 'shortbow') });
     expect(p.style).toBe('ranged');
     expect(w.playerBonuses().weapon).toBe('shortbow');

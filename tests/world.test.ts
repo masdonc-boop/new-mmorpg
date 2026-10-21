@@ -135,11 +135,11 @@ describe('Simulation', () => {
     expect(w.npcMarker('elder')).toBeNull();
   });
 
-  it('kills the player, keeps items, and respawns at a chosen checkpoint', () => {
+  it('kills the player, keeps 3 items with the rest in a gravestone, and respawns at a chosen checkpoint', () => {
     const w = new GameWorld();
     const p = w.player;
     const boss = w.enemies.find((e) => e.def.id === 'goblin_warlord')!;
-    const logsBefore = p.inventory.count('bronze_arrow');
+    const arrowsBefore = p.equipment.ammoQty + p.inventory.count('bronze_arrow');
     p.x = boss.x + 1;
     p.z = boss.z;
     p.hp = 5;
@@ -148,7 +148,9 @@ describe('Simulation', () => {
     w.issue({ type: 'respawn', at: 'home' });
     expect(p.dead).toBe(false);
     expect(p.hp).toBe(p.maxHp);
-    expect(p.inventory.count('bronze_arrow')).toBe(logsBefore);
+    const inGrave = w.graves.reduce((n, g) => n + (g.items.find((i) => i.item === 'bronze_arrow')?.qty ?? 0), 0);
+    expect(p.equipment.ammoQty + p.inventory.count('bronze_arrow') + inGrave).toBe(arrowsBefore);
+    expect(w.graves.length).toBe(1);
     expect(Math.hypot(p.x - w.map.checkpoints[0].respawnX, p.z - w.map.checkpoints[0].respawnZ)).toBeLessThan(0.01);
   });
 
@@ -180,10 +182,12 @@ describe('Simulation', () => {
     p.x = s.x + 3;
     p.z = s.z;
     if (isBlocked(w.map, p.x, p.z)) p.x = s.x - 3;
-    const arrows = p.inventory.count('bronze_arrow');
+    // Bows fire from the worn ammo slot.
+    const arrows = p.equipment.ammoQty;
+    expect(arrows).toBe(60);
     w.issue({ type: 'interact', target: s.id });
     run(w, 8);
-    expect(p.inventory.count('bronze_arrow')).toBeLessThan(arrows);
+    expect(p.equipment.ammoQty).toBeLessThan(arrows);
     expect(p.skills.xp.ranged).toBeGreaterThan(0);
     expect(p.skills.xp.attack).toBe(0);
   });

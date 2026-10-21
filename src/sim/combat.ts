@@ -14,6 +14,8 @@ export interface StyleDef {
   accuracy: number;
   power: number;
   ammo?: ItemId;
+  /** Ammo is drawn from the worn ammo slot (arrows) rather than the bag (runes). */
+  ammoWorn?: boolean;
   /** Projectile speed in tiles per second; undefined = instant (melee). */
   projectileSpeed?: number;
   xpSkills: SkillId[];
@@ -21,7 +23,7 @@ export interface StyleDef {
 
 export const STYLES: Record<CombatStyle, StyleDef> = {
   melee: { id: 'melee', name: 'Melee', weapon: 'Training sword', range: 1.5, attackSeconds: 1.6, accuracy: 12, power: 10, xpSkills: ['attack', 'strength', 'defence'] },
-  ranged: { id: 'ranged', name: 'Ranged', weapon: 'Training bow', range: 7, attackSeconds: 1.8, accuracy: 14, power: 8, ammo: 'bronze_arrow', projectileSpeed: 16, xpSkills: ['ranged'] },
+  ranged: { id: 'ranged', name: 'Ranged', weapon: 'Training bow', range: 7, attackSeconds: 1.8, accuracy: 14, power: 8, ammo: 'bronze_arrow', ammoWorn: true, projectileSpeed: 16, xpSkills: ['ranged'] },
   magic: { id: 'magic', name: 'Magic', weapon: 'Apprentice wand', range: 6.5, attackSeconds: 2.2, accuracy: 18, power: 14, ammo: 'air_rune', projectileSpeed: 11, xpSkills: ['magic'] },
 };
 

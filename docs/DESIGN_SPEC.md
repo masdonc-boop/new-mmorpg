@@ -29,14 +29,14 @@
 | Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking (12) | 23 skills | Missing: Prayer, Firemaking, Crafting, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction |
 | Inventory | 28 slots; resources one per slot; coins, ammo and runes stack | Same | Noted (inventory item) and drag-to-reorder missing; we use press-and-hold then tap to move |
 | Bank | 200 slots, all items stack, search, categories, deposit and withdraw 1/5/X/all | 800 slots (fewer on free worlds), tabs, placeholders, noted withdrawal, deposit worn items | Tabs, placeholders, withdraw-as-note, deposit-equipment button |
-| Equipment | 5 slots: head, body, legs, weapon, shield | 11 slots: head, cape, neck, ammo, weapon, body, shield, legs, hands, feet, ring | Cape, neck, ammo, hands, feet, ring slots. Arrows are used from the bag instead of an ammo slot |
+| Equipment | 6 slots: head, body, legs, weapon, shield, ammo (arrows worn as a stack; bows fire from it) | 11 slots: head, cape, neck, ammo, weapon, body, shield, legs, hands, feet, ring | Cape, neck, hands, feet, ring slots |
 | Gathering | Trees, rocks, net fishing; tool tiers (bronze, iron); depletion and respawn; rare gems | Same pattern | More tiers (steel and above), more resources, rod and bait fishing, harpoon |
 | Smithing | Furnace (bronze, iron), anvil (weapons, armour, axes, pickaxes) with hammer | Same pattern | Steel and above; more items (arrowtips, nails, bolts) |
 | Fletching | Knife on logs: shafts, unstrung bows; bowstring stringing; arrows | Same pattern | Feathers and headless arrows, longbows, more log tiers; bowstrings from Crafting (flax) |
 | Cooking | Range and fire; burn chance falls with level; food heals | Same | More foods, multi-step food (bread, pies), stop-burn by level per food |
 | Shops | Fixed price, unlimited stock, buy and sell | Stock levels that restock; price changes with stock | Stock and restock, dynamic pricing |
 | Ground items | Drops on the ground, owner-only then public, then despawn | Same structure (shorter timers) | Timers differ (approved, 4.2) |
-| Death | You keep everything, respawn at the shrine | Keep a few most valuable items; others go to a gravestone or reclaim system | **Needs owner decision** (roadmap P0) |
+| Death | Keep the 3 most valuable items; the rest go to a gravestone for 15 minutes of play (owner only), then are lost. Toolbelt is never at risk | Keep 3; gravestone, then Death's Office reclaim for a fee | No reclaim office; no protect-item prayer or skulls yet |
 | Quests | 1 quest with item and XP rewards | Many quests; quest points; requirements | More quests, quest points, quest requirements on content |
 | Economy | Coins, shop buy and sell | Player trading, Grand Exchange | Trading and an exchange arrive with multiplayer |
 | Combat | Custom real-time system (section 5) | Tick-based OSRS combat | Intentional exception |
@@ -45,7 +45,7 @@
 ## 3. Missing OSRS-style features (not yet scheduled)
 
 - **Skills:** Firemaking, Crafting, Prayer, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction.
-- **Equipment:** remaining slots, an ammo slot, and equipment stat tables (stab, slash and crush style bonuses, adapted to custom combat).
+- **Equipment:** remaining slots and equipment stat tables (stab, slash and crush style bonuses, adapted to custom combat).
 - **Banking:** tabs, placeholders, noting, deposit worn items.
 - **Economy:** shop stock and restock, player trading, an exchange.
 - **Quests:** a quest point system and more quests with original stories.
@@ -61,7 +61,7 @@ Only items marked **Approved** are design-final. Everything else is in the game 
 | 4.2 | Ground-drop timers: 10 minutes owner-only, then 5 minutes public | **Approved** (owner request) | Longer than OSRS for mobile play |
 | 4.3 | Tap an item to use it (eat, wield, fletch, add to belt); press and hold for options | **Approved** (owner request) | Mobile equivalent of OSRS left-click default actions |
 | 4.4 | Contextual "nearby" prompt chip for stations, bank, shop and fishing spots | Pending | Mobile accessibility aid |
-| 4.5 | Auto-continue gathering onto the nearest node of the same type when one depletes | Pending | OSRS does not auto-switch nodes; candidate for removal or a setting |
+| 4.5 | Auto-continue gathering onto the nearest node of the same type when one depletes | **Approved as a setting, off by default** | Off matches OSRS; saved with the character |
 | 4.6 | "Held for you" overflow when a save migration can't fit items | Pending (technical) | Safety net for data changes; not a gameplay system |
 | 4.7 | Bank shows "room for N" and the bank-full and inventory-full notices | Pending | Pure interface |
 | 4.8 | Fletching anywhere without a station, knife on logs | Matches OSRS | Listed for clarity |
@@ -84,10 +84,10 @@ When an OSRS feature touches combat (Prayer, special attacks, Slayer and so on),
 
 Each step is a separate development pass with its own tests and an Android check.
 
-**P0: consistency decisions (small, do first)**
-1. **Death rule.** Owner decision: keep the current "keep everything", or adopt OSRS-style keep-3 with a gravestone or reclaim.
-2. **Auto-continue gathering (4.5).** Keep as a setting, or remove to match OSRS.
-3. **Ammo slot.** Equip arrows like OSRS instead of drawing them from the bag. Small, contained change.
+**P0: consistency decisions (done)**
+1. **Death rule:** OSRS-style keep-3 with a gravestone (section 8). The owner had no preference, so the recommended option was used.
+2. **Auto-continue gathering (4.5):** a setting, off by default.
+3. **Ammo slot:** arrows are worn as a stack and bows fire from it; runes stay in the bag, as in OSRS.
 
 **P1: complete existing loops the OSRS way**
 4. **Firemaking:** logs and tinderbox (a new toolbelt slot), lighting fires anywhere. Gives Cooking OSRS's fire loop.
@@ -121,3 +121,12 @@ Each step is a separate development pass with its own tests and an Android check
   - **Existing saves:** on first load, tools already in the bag move onto empty belt slots once (`grants: toolbelt-v1`).
   - **New characters:** start with bronze pickaxe, bronze axe, hammer, knife and small net on the belt.
 - **Banking:** tools move between the bank and the belt through the bag. Take off the belt to bank; withdraw, then tap to add.
+
+## 8. Death and gravestones (implemented)
+
+- **What you keep:** your 3 most valuable items by value, counted one unit at a time across the bag and worn gear (ammo included), so a stack can be partly kept. Worn gear wins ties. Kept items stay where they were.
+- **What goes to the gravestone:** everything else you carried. Toolbelt tools are never at risk (a QoL store for tools), and neither are the bank or "held for you" items.
+- **The gravestone:** stands where you fell, shows a countdown, and only its owner can use it. Tap it to take back as much as fits; the rest waits. It lasts 15 minutes of play (the timer is saved and only runs while playing, as in OSRS), then crumbles with whatever is left. Dying again makes a separate gravestone.
+- **No gravestone** appears if you carried 3 items or fewer.
+- **Code:** `src/sim/death.ts` (`takeLostOnDeath`, `KEEP_ON_DEATH`, `GRAVE_SECONDS`); `Gravestone` in `src/sim/world.ts`; saved as `graves`.
+- **Not yet:** a reclaim office for expired graves, Protect Item, and PvP skull rules (they need Prayer and multiplayer).

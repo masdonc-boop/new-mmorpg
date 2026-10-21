@@ -282,7 +282,8 @@ describe('Quest rewards respect capacity', () => {
     expect(w.questProgress('elders_request')?.done).toBe(false);
     expect(w.drainEvents().some((e) => e.type === 'inventoryFull')).toBe(true);
     const coins = p.inventory.count('coins');
-    for (let k = 0; k < 3; k++) {
+    // The reward needs 3 slots for bread and 1 for the arrows (worn arrows don't share a bag stack).
+    for (let k = 0; k < 4; k++) {
       const i = p.inventory.slots.findIndex((s) => s?.item === 'bread');
       w.issue({ type: 'dropItem', slot: i });
     }

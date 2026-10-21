@@ -14,12 +14,35 @@ export interface EquipResult {
   removed: ItemId[];
 }
 
-/** Worn gear: one item per slot, kept apart from the 28-slot inventory. */
+/**
+ * Worn gear: one item per slot, kept apart from the 28-slot inventory. The ammo slot holds a whole
+ * stack (OSRS-style), counted in `ammoQty`.
+ */
 export class Equipment {
-  readonly slots: Record<EquipSlot, ItemId | null> = { head: null, body: null, legs: null, weapon: null, shield: null };
+  readonly slots: Record<EquipSlot, ItemId | null> = { head: null, body: null, legs: null, weapon: null, shield: null, ammo: null };
+  ammoQty = 0;
 
   get(slot: EquipSlot): ItemId | null {
     return this.slots[slot];
+  }
+
+  /** How many of an item are worn (the ammo stack counts in full). */
+  count(item: ItemId): number {
+    let n = 0;
+    for (const s of EQUIP_SLOTS) if (this.slots[s] === item) n += s === 'ammo' ? this.ammoQty : 1;
+    return n;
+  }
+
+  /** Uses one piece of worn ammo of this item (false if none is worn). */
+  useAmmo(item: ItemId): boolean {
+    if (this.slots.ammo !== item || this.ammoQty <= 0) return false;
+    if (--this.ammoQty <= 0) this.clearAmmo();
+    return true;
+  }
+
+  clearAmmo() {
+    this.slots.ammo = null;
+    this.ammoQty = 0;
   }
 
   /** Total bonuses for a combat style: the weapon only counts when used with its own style. */
@@ -45,15 +68,19 @@ export class Equipment {
    * Rebuilds worn gear from a save. Anything that is no longer wearable in that slot is returned in
    * `displaced` (so the caller can keep it rather than delete it).
    */
-  static restore(data: unknown): { equipment: Equipment; displaced: ItemStack[] } {
+  static restore(data: unknown, ammoQty?: unknown): { equipment: Equipment; displaced: ItemStack[] } {
     const eq = new Equipment();
     const displaced: ItemStack[] = [];
     if (!data || typeof data !== 'object') return { equipment: eq, displaced };
     for (const s of EQUIP_SLOTS) {
       const it = (data as Record<string, unknown>)[s];
       if (typeof it !== 'string' || !isItemId(it)) continue;
-      if (itemDef(it).equip?.slot === s) eq.slots[s] = it;
-      else displaced.push({ item: it, qty: 1 });
+      const qty = s === 'ammo' ? Math.floor(Number(ammoQty)) : 1;
+      if (!(qty > 0)) continue;
+      if (itemDef(it).equip?.slot === s) {
+        eq.slots[s] = it;
+        if (s === 'ammo') eq.ammoQty = qty;
+      } else displaced.push({ item: it, qty });
     }
     return { equipment: eq, displaced };
   }
@@ -72,6 +99,7 @@ export function equipFromInventory(eq: Equipment, inv: Inventory, slot: number, 
   for (const [skill, lvl] of Object.entries(e.req ?? {}) as [SkillId, number][]) {
     if (level(skill) < lvl) return { ok: false, reason: 'level', need: { skill, level: lvl }, removed: [] };
   }
+  if (e.slot === 'ammo') return equipAmmo(eq, inv, slot);
   const off: EquipSlot[] = [];
   if (eq.slots[e.slot]) off.push(e.slot);
   if (e.slot === 'weapon' && e.twoHanded && eq.slots.shield) off.push('shield');
@@ -90,10 +118,38 @@ export function equipFromInventory(eq: Equipment, inv: Inventory, slot: number, 
   return { ok: true, removed };
 }
 
+/**
+ * Wears a whole ammo stack. The same ammo adds to the worn stack; different ammo swaps, with the old
+ * stack going back into the bag (the new stack's slot has just been freed, so it always fits).
+ */
+function equipAmmo(eq: Equipment, inv: Inventory, slot: number): EquipResult {
+  const st = inv.removeAt(slot);
+  if (!st) return { ok: false, reason: 'empty', removed: [] };
+  const old = eq.slots.ammo;
+  if (old === st.item) {
+    // A worn stack can't pass the stack limit; any surplus stays in the bag slot it came from.
+    const add = Math.min(st.qty, itemDef(st.item).maxStack - eq.ammoQty);
+    eq.ammoQty += add;
+    if (add < st.qty) inv.slots[slot] = { item: st.item, qty: st.qty - add };
+    return { ok: true, removed: [] };
+  }
+  const oldQty = eq.ammoQty;
+  eq.slots.ammo = st.item;
+  eq.ammoQty = st.qty;
+  if (old && inv.add(old, oldQty) !== oldQty) throw new Error('ammo swap invariant broken');
+  return { ok: true, removed: old ? [old] : [] };
+}
+
 /** Takes off the item in an equipment slot, if there is room for it in the inventory. */
 export function unequipToInventory(eq: Equipment, inv: Inventory, slot: EquipSlot): EquipResult {
   const it = eq.slots[slot];
   if (!it) return { ok: false, reason: 'empty', removed: [] };
+  if (slot === 'ammo') {
+    if (inv.capacityFor(it) < eq.ammoQty) return { ok: false, reason: 'space', removed: [] };
+    if (inv.add(it, eq.ammoQty) !== eq.ammoQty) throw new Error('unequip invariant broken');
+    eq.clearAmmo();
+    return { ok: true, removed: [it] };
+  }
   if (inv.capacityFor(it) < 1) return { ok: false, reason: 'space', removed: [] };
   if (inv.add(it, 1) !== 1) throw new Error('unequip invariant broken');
   eq.slots[slot] = null;

@@ -15,6 +15,7 @@ import { SHOPS } from '../data/shops';
 import { RECIPES, STATION_INFO, useCombo, usable, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
 import { TOOL_SLOTS } from '../data/tools';
+import { GRAVE_SECONDS, KEEP_ON_DEATH } from '../sim/death';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -293,7 +294,7 @@ export class Hud {
     } else this.targetFrame.classList.add('hidden');
 
     const st = STYLES[p.style];
-    const ammo = st.ammo ? p.inventory.count(st.ammo) : null;
+    const ammo = st.ammo ? w.ammoLeft() : null;
     const label = `<span class="si">${STYLE_ICON[p.style]}</span><span class="sl">${st.name}</span>${ammo !== null ? `<span class="ammo">${ammo}</span>` : ''}`;
     if (this.styleBtn.innerHTML !== label) this.styleBtn.innerHTML = label;
     this.styleBtn.dataset.style = p.style;
@@ -341,6 +342,7 @@ export class Hud {
       const n = w.gatheringNode;
       if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
     } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
+    else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
     else if (a?.type === 'craft') {
       const r = RECIPES[a.recipe];
       if (r) text = `${SKILL_INFO[r.skill].glyph} ${STATION_INFO[r.station].doing} ${itemDef(r.station === 'range' ? r.inputs[0].item : r.output.item).name.toLowerCase()}${a.remaining > 1 ? ` · ${a.remaining} left` : '…'}`;
@@ -383,6 +385,7 @@ export class Hud {
       else dot(n.x, n.z, m === 'available' || m === 'ready' ? '#ffd84d' : '#fff59d', m ? 1.3 : 0.9);
     }
     for (const c of this.world.map.checkpoints) dot(c.x, c.z, this.world.player.checkpoints.has(c.id) ? '#6fe0ff' : '#9fb4bf', 1);
+    for (const gr of this.world.graves) if (!gr.expired) dot(gr.x, gr.z, '#e8e8e8', 1.4);
     g.restore();
     // Player arrow (always pointing up = camera forward, rotated by facing).
     g.save();
@@ -433,10 +436,16 @@ export class Hud {
     if (this.death.classList.contains('hidden')) {
       this.death.classList.remove('hidden');
       const nearest = this.world.nearestCheckpoint();
+      const d = p.lastDeath;
+      const kept = d?.kept.length ? d.kept.map((k) => `<img src="${itemIcon(k.item)}" alt=""> ${k.qty > 1 ? `${k.qty} × ` : ''}${itemDef(k.item).name}`).join('<br>') : 'Nothing';
+      const lost = d?.grave
+        ? `Your other ${d.lost} item${d.lost === 1 ? ' is' : 's are'} in a gravestone where you fell. Reach it within ${GRAVE_SECONDS / 60} minutes of play and tap it to take ${d.lost === 1 ? 'it' : 'them'} back. After that, ${d.lost === 1 ? 'it is' : 'they are'} gone.`
+        : 'You carried nothing else, so nothing was lost.';
       this.death.innerHTML = `
         <div class="death-card">
           <div class="death-title">You have fallen</div>
-          <div class="death-sub">Your belongings are safe. In future updates, equipped gear will lose durability on death.</div>
+          <div class="death-kept"><b>Kept (your ${KEEP_ON_DEATH} most valuable items)</b><div>${kept}</div></div>
+          <div class="death-sub">${lost} Your toolbelt is always kept.</div>
           <div class="death-btns">
             <button data-at="home">🏠 Respawn at Brightwater Shrine</button>
             ${nearest.id !== 'home' ? `<button data-at="checkpoint">🗿 Respawn at ${nearest.name}</button>` : ''}
@@ -1070,12 +1079,13 @@ export class Hud {
     const w = this.world;
     const eq = w.player.equipment;
     const box = el('div', 'equip');
-    const labels: Record<EquipSlot, string> = { head: 'Head', body: 'Body', legs: 'Legs', weapon: 'Weapon', shield: 'Shield' };
+    const labels: Record<EquipSlot, string> = { head: 'Head', body: 'Body', legs: 'Legs', weapon: 'Weapon', shield: 'Shield', ammo: 'Ammo' };
     const row = el('div', 'equip-row');
     for (const slot of EQUIP_SLOTS) {
       const it = eq.get(slot);
-      const cell = el('button', `equip-slot${it ? ' worn' : ''}`, it ? `<img src="${itemIcon(it)}" alt="${itemDef(it).name}">` : `<span>${labels[slot]}</span>`);
-      cell.setAttribute('aria-label', it ? `${labels[slot]}: ${itemDef(it).name}` : `${labels[slot]} (empty)`);
+      const qty = slot === 'ammo' && it ? `<span class="eq-qty">${eq.ammoQty}</span>` : '';
+      const cell = el('button', `equip-slot${it ? ' worn' : ''}`, it ? `<img src="${itemIcon(it)}" alt="${itemDef(it).name}">${qty}` : `<span>${labels[slot]}</span>`);
+      cell.setAttribute('aria-label', it ? `${labels[slot]}: ${slot === 'ammo' ? `${eq.ammoQty} ` : ''}${itemDef(it).name}` : `${labels[slot]} (empty)`);
       cell.disabled = !it;
       cell.addEventListener('click', () => {
         if (!it) return;
@@ -1298,6 +1308,13 @@ export class Hud {
       this.renderSettings();
     });
     row('Sound effects', snd);
+    const auto = this.world.player.autoGather;
+    const ag = el('button', `toggle ${auto ? 'on' : ''}`, auto ? 'On' : 'Off');
+    ag.addEventListener('click', () => {
+      this.cb.command({ type: 'setOption', option: 'autoGather', on: !this.world.player.autoGather });
+      this.renderSettings();
+    });
+    row('Auto-continue gathering', ag, 'When a tree, rock or fishing spot runs out, walk to the next one nearby. Off matches classic rules.');
     const reset = el('button', '', 'Reset');
     reset.addEventListener('click', () => this.cb.resetCamera());
     row('Camera', reset, 'Restore default angle and zoom');

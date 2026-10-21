@@ -4,7 +4,7 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
-import { Enemy, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { Enemy, Gravestone, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
 import { itemIcon } from '../ui/icons';
@@ -14,6 +14,7 @@ import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, ResourceView, type StaticWorld } from './props';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
+import { merge } from './geom';
 import { HeroModel, type HeroGear, type HeroLook } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
@@ -173,7 +174,7 @@ export class GameRenderer {
 
   private makePlayerModel(): CharacterRig {
     const m = ART.v2 ? new HeroModel(this.playerLook()) : new Humanoid(this.playerLook(), true);
-    this.gearKey = JSON.stringify(this.world.player.equipment.toJSON());
+    this.gearKey = gearKey(this.world.player.equipment.toJSON());
     m.enableSilhouette();
     return m;
   }
@@ -336,6 +337,7 @@ export class GameRenderer {
 
     this.resources.update();
     this.updateGroundItems(t);
+    this.updateGraves();
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
     this.particles.update(dt);
@@ -430,6 +432,8 @@ export class GameRenderer {
         return a.node;
       case 'pickup':
         return a.ground;
+      case 'grave':
+        return a.grave;
       case 'station':
         return a.station;
       case 'craft':
@@ -457,6 +461,8 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
     } else if (ent instanceof Station) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.85, t);
+    } else if (ent instanceof Gravestone) {
+      this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.7, t);
     } else if (ent instanceof GroundItem) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.55, t);
     }
@@ -511,6 +517,53 @@ export class GameRenderer {
     }
   }
 
+  // ---------------------------------------------------------------- gravestones
+
+  private graveViews = new Map<number, { grave: Gravestone; root: THREE.Group }>();
+  private graveGeo: THREE.BufferGeometry | null = null;
+  private graveMat = new THREE.MeshLambertMaterial({ color: '#9aa0a6' });
+
+  private makeGrave(): THREE.Group {
+    if (!this.graveGeo) {
+      const slab = new THREE.BoxGeometry(0.5, 0.55, 0.14).translate(0, 0.3, 0);
+      const top = new THREE.CylinderGeometry(0.25, 0.25, 0.14, 16, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).translate(0, 0.575, 0);
+      const base = new THREE.BoxGeometry(0.66, 0.08, 0.3).translate(0, 0.04, 0);
+      this.graveGeo = merge([slab.toNonIndexed(), top.toNonIndexed(), base.toNonIndexed()]);
+      slab.dispose();
+      top.dispose();
+      base.dispose();
+    }
+    const g = new THREE.Group();
+    const m = new THREE.Mesh(this.graveGeo, this.graveMat);
+    m.castShadow = true;
+    g.add(m);
+    return g;
+  }
+
+  /** Mirrors the player's gravestones (the simulation owns their contents and timers). */
+  private updateGraves() {
+    const w = this.world;
+    const seen = new Set<number>();
+    for (const g of w.graves) {
+      if (g.expired) continue;
+      seen.add(g.id);
+      let v = this.graveViews.get(g.id);
+      if (!v) {
+        v = { grave: g, root: this.makeGrave() };
+        v.root.position.set(g.x, groundHeight(w.map, g.x, g.z), g.z);
+        v.root.rotation.y = (g.id % 7) * 0.4;
+        this.scene.add(v.root);
+        this.graveViews.set(g.id, v);
+      }
+    }
+    for (const [id, v] of this.graveViews) {
+      if (seen.has(id)) continue;
+      this.scene.remove(v.root);
+      this.overlay.removePlate(id);
+      this.graveViews.delete(id);
+    }
+  }
+
   project(x: number, y: number, z: number): Anchor {
     this.v.set(x, y, z).project(this.camera);
     const visible = this.v.z < 1 && Math.abs(this.v.x) < 1.2 && Math.abs(this.v.y) < 1.2;
@@ -559,6 +612,13 @@ export class GameRenderer {
       const a = near ? this.project(g.x, v.sprite.position.y + 0.45, g.z) : null;
       this.overlay.plate(g.id, a, { name: g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name, kind: 'npc', show: near });
     }
+    for (const v of this.graveViews.values()) {
+      const g = v.grave;
+      const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 14;
+      const a = near ? this.project(g.x, v.root.position.y + 1.0, g.z) : null;
+      const left = Math.ceil(g.secondsLeft);
+      this.overlay.plate(g.id, a, { name: `Your gravestone · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, kind: 'npc', show: near });
+    }
     for (const v of this.npcViews) {
       const n = v.npc;
       const a = this.project(n.x, groundHeight(w.map, n.x, n.z) + 2.25, n.z);
@@ -590,7 +650,7 @@ export class GameRenderer {
         break;
       }
       case 'equipment': {
-        const key = JSON.stringify(p.equipment.toJSON());
+        const key = gearKey(p.equipment.toJSON());
         if (ART.v2 && key !== this.gearKey) this.refreshPlayerModel();
         break;
       }
@@ -765,6 +825,10 @@ export class GameRenderer {
       const p = v.sprite.position;
       consider(v.pile.id, p.x, p.y, p.z, 0.85);
     }
+    for (const v of this.graveViews.values()) {
+      const p = v.root.position;
+      consider(v.grave.id, p.x, p.y + 0.4, p.z, 0.85);
+    }
     for (const st of w.stations) {
       if (Math.abs(st.x - w.player.x) > 30 || Math.abs(st.z - w.player.z) > 30) continue;
       consider(st.id, st.x, groundHeight(map, st.x, st.z) + 0.6, st.z, 0.95);
@@ -797,4 +861,10 @@ function angleDelta(a: number, b: number): number {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return d;
+}
+
+/** Worn gear that changes the model (the ammo slot doesn't show, and its count changes every shot). */
+function gearKey(worn: Partial<Record<EquipSlot, ItemId>>): string {
+  const { ammo: _ammo, ...shown } = worn;
+  return JSON.stringify(shown);
 }

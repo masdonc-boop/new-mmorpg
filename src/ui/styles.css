@@ -1096,6 +1096,19 @@ button.danger {
   color: #ff8a7a;
   text-shadow: 0 3px 0 #3a0000;
 }
+.death-kept {
+  margin: 10px auto 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.death-kept img {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+}
 .death-sub {
   color: var(--muted);
   margin: 8px 0 16px;
@@ -1749,7 +1762,7 @@ button.danger {
 }
 .equip-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 6px;
 }
 .equip-slot {
@@ -1763,6 +1776,18 @@ button.danger {
   font-weight: 800;
   color: var(--muted);
   padding: 3px;
+}
+.equip-slot {
+  position: relative;
+}
+.eq-qty {
+  position: absolute;
+  left: 3px;
+  top: 2px;
+  font-size: 10px;
+  font-weight: 900;
+  color: #ffe98a;
+  text-shadow: 0 1px 0 #000;
 }
 .equip-slot.worn {
   border: 1px solid var(--edge);

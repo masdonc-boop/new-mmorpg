@@ -30,8 +30,8 @@ export type IconShape =
   | 'unbow'
   | 'fish';
 
-export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs';
-export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'body', 'legs', 'weapon', 'shield'];
+export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo';
+export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'body', 'legs', 'weapon', 'shield', 'ammo'];
 
 /** Wearable stats. Weapons boost the combat style they are made for; armour adds to defence. */
 export interface EquipDef {
@@ -47,6 +47,8 @@ export interface EquipDef {
   twoHanded?: boolean;
   /** Minimum skill levels to wear it. */
   req?: Partial<Record<'attack' | 'strength' | 'defence' | 'ranged' | 'magic', number>>;
+  /** Ammo slot only: the combat style that fires it (worn as a whole stack, used one per shot). */
+  ammoFor?: 'ranged';
   /** Metal/material tint for the worn model. */
   tint?: string;
 }
@@ -83,7 +85,7 @@ export const ITEMS = {
   tin_ore: def({ id: 'tin_ore', name: 'Tin ore', examine: 'Soft silvery ore.', stackable: false, kind: 'material', value: 5, icon: { shape: 'ore', color: '#7c7a78', accent: '#d8dde2' } }),
   iron_ore: def({ id: 'iron_ore', name: 'Iron ore', examine: 'Heavy, dark and valuable.', stackable: false, kind: 'material', value: 18, icon: { shape: 'ore', color: '#5f5550', accent: '#b35a43' } }),
   sapphire: def({ id: 'sapphire', name: 'Uncut sapphire', examine: 'A rare blue gem found while mining.', stackable: false, kind: 'material', value: 60, icon: { shape: 'gem', color: '#3a6fe8', accent: '#bcd2ff' } }),
-  bronze_arrow: def({ id: 'bronze_arrow', name: 'Bronze arrows', examine: 'Fired from a bow. Consumed on use.', stackable: true, kind: 'ammo', value: 1, icon: { shape: 'arrow', color: '#c98a4b', accent: '#f2f2f2' } }),
+  bronze_arrow: def({ id: 'bronze_arrow', name: 'Bronze arrows', examine: 'Fired from a bow. Wear them in your ammo slot.', stackable: true, kind: 'ammo', value: 1, equip: { slot: 'ammo', ammoFor: 'ranged' }, icon: { shape: 'arrow', color: '#c98a4b', accent: '#f2f2f2' } }),
   air_rune: def({ id: 'air_rune', name: 'Air runes', examine: 'Fuel for basic spells. Consumed on cast.', stackable: true, kind: 'ammo', value: 2, icon: { shape: 'rune', color: '#d9e6f2', accent: '#6bb8ff' } }),
   slime_gel: def({ id: 'slime_gel', name: 'Slime gel', examine: 'Wobbly. Alchemists might want it.', stackable: true, kind: 'material', value: 3, icon: { shape: 'gel', color: '#6fdc5a', accent: '#d8ffd0' } }),
   wolf_pelt: def({ id: 'wolf_pelt', name: 'Wolf pelt', examine: 'Thick grey fur.', stackable: true, kind: 'material', value: 15, icon: { shape: 'pelt', color: '#8c8f99', accent: '#d7d9de' } }),
