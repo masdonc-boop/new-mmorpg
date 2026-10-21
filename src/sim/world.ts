@@ -2,7 +2,8 @@ import { mulberry32, randInt, type Rng } from '../core/rng';
 import { angleDiff, dist } from '../core/math';
 import { ENEMIES, type EnemyDef } from '../data/enemies';
 import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
-import { RECIPES, STATION_INFO, failChance, plural, type RecipeDef, type StationKind } from '../data/recipes';
+import { RECIPES, STATION_INFO, failChance, plural, recipeAt, type RecipeDef, type StationKind } from '../data/recipes';
+import { SHOPS, sellPrice, shopFor, type ShopDef } from '../data/shops';
 import { NPCS, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
@@ -68,6 +69,11 @@ export type Command =
   /** Open the fletching interface (needs no station). */
   | { type: 'openFletching' }
   | { type: 'closeProduction' }
+  /** Shop: buy up to qty of an item the open shop sells. */
+  | { type: 'shopBuy'; item: ItemId; qty: number }
+  /** Shop: sell up to qty of the item in an inventory slot. */
+  | { type: 'shopSell'; slot: number; qty: number }
+  | { type: 'shopClose' }
   | { type: 'acceptQuest'; quest: string }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
 
@@ -112,7 +118,11 @@ export type GameEvent =
   /** One make finished (success = the intended product, not e.g. burnt food). */
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
-  | { type: 'equipment' };
+  | { type: 'equipment' }
+  | { type: 'shopOpen'; shop: string }
+  | { type: 'shopClose' }
+  /** A purchase or sale went through (refresh the shop interface). */
+  | { type: 'shop' };
 
 export type AnimState = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'hit';
 
@@ -214,6 +224,10 @@ export class Player implements Mover {
   equipment = new Equipment();
   /** Station whose production interface is open (null for none or for fletching). */
   stationAt: number | null = null;
+  /** Shopkeeper whose shop is open. */
+  shopAt: number | null = null;
+  /** One-time grants already given to this character (e.g. tools added after an update). */
+  grants = new Set<string>();
   craftTimer = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
@@ -367,6 +381,8 @@ export interface SaveData {
   bank?: ItemStack[];
   /** Worn equipment (optional for older saves). */
   equipment?: Partial<Record<EquipSlot, ItemId>>;
+  /** One-time grants already received (optional for older saves). */
+  grants?: string[];
   quests: Record<string, QuestProgress>;
   checkpoints: string[];
   /** Monster drops still on the ground (optional for older saves). */
@@ -428,10 +444,32 @@ export class GameWorld {
     }
   }
 
+  /** Tools every character should own once (older saves receive them after the production update). */
+  static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
+
+  /**
+   * Gives existing characters the production tools once. Anything already owned (bag, bank or worn)
+   * is skipped; tools that don't fit go to "held for you" rather than being lost.
+   */
+  private grantProductionTools() {
+    const p = this.player;
+    if (p.grants.has('tools-v1')) return;
+    p.grants.add('tools-v1');
+    const given: string[] = [];
+    for (const t of GameWorld.STARTER_TOOLS) {
+      if (p.inventory.count(t) > 0 || p.bank.count(t) > 0 || p.overflow.some((o) => o.item === t)) continue;
+      if (p.inventory.add(t, 1) !== 1) addTo(p.overflow, t, 1);
+      given.push(itemDef(t).name.toLowerCase());
+    }
+    if (given.length) this.message(`Tilly left you some tools for the new skills: ${given.join(', ')}.`, 'good');
+  }
+
   private giveStarterKit() {
     const inv = this.player.inventory;
+    this.player.grants.add('tools-v1');
     inv.add('bronze_axe');
     inv.add('bronze_pickaxe');
+    for (const t of GameWorld.STARTER_TOOLS) inv.add(t);
     inv.add('bread', 2);
     inv.add('bronze_arrow', 60);
     inv.add('air_rune', 60);
@@ -455,6 +493,7 @@ export class GameWorld {
       overflow: p.overflow.map((o) => ({ ...o })),
       bank: p.bank.toJSON(),
       equipment: p.equipment.toJSON(),
+      grants: [...p.grants],
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
       ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
@@ -471,6 +510,8 @@ export class GameWorld {
     const worn = Equipment.restore(s.equipment);
     p.equipment = worn.equipment;
     for (const d of worn.displaced) addTo(p.overflow, d.item, d.qty);
+    p.grants = new Set(Array.isArray(s.grants) ? s.grants.filter((g) => typeof g === 'string') : []);
+    this.grantProductionTools();
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
         const qty = Math.floor(Number(o?.qty));
@@ -592,6 +633,18 @@ export class GameWorld {
       case 'closeProduction':
         p.stationAt = null;
         break;
+      case 'shopBuy':
+        this.shopBuy(cmd.item, cmd.qty);
+        break;
+      case 'shopSell':
+        this.shopSell(cmd.slot, cmd.qty);
+        break;
+      case 'shopClose':
+        if (p.shopAt !== null) {
+          p.shopAt = null;
+          this.emit({ type: 'shopClose' });
+        }
+        break;
       case 'bankClose':
         if (p.bankAt !== null) {
           p.bankAt = null;
@@ -626,6 +679,10 @@ export class GameWorld {
     }
     this.updatePlayer(dt);
     this.updateGroundItems(dt);
+    if (p.shopAt !== null && !this.activeShop()) {
+      p.shopAt = null;
+      this.emit({ type: 'shopClose' });
+    }
     if (p.stationAt !== null && !this.activeStation()) {
       p.stationAt = null;
       this.emit({ type: 'productionClose' });
@@ -1063,7 +1120,9 @@ export class GameWorld {
     const p = this.player;
     const rec = RECIPES[id];
     if (!rec) return 'Unknown recipe.';
-    if (rec.station !== 'fletching' && this.activeStation()?.kind !== rec.station) return `You need to be at a ${STATION_INFO[rec.station].name.toLowerCase()}.`;
+    const at = this.activeStation();
+    if (rec.station !== 'fletching' && !(at && recipeAt(rec, at.kind))) return `You need to be at a ${STATION_INFO[rec.station].name.toLowerCase()}.`;
+    if (rec.tool && !p.inventory.has(rec.tool)) return `You need a ${itemDef(rec.tool).name.toLowerCase()} in your inventory.`;
     if (p.skills.level(rec.skill) < rec.level) return `You need ${SKILL_INFO[rec.skill].name} level ${rec.level}.`;
     for (const inp of rec.inputs) {
       if (p.inventory.count(inp.item) < inp.qty) return `You need ${inp.qty} ${itemDef(inp.item).name.toLowerCase()}.`;
@@ -1147,6 +1206,84 @@ export class GameWorld {
       p.action = null;
       if (a.made > 1) this.message(`You make ${a.made} ${plural(itemDef(rec.output.item).name.toLowerCase(), a.made)}.`, 'good');
     }
+  }
+
+  // ---------------------------------------------------------------- shop
+
+  /** The open shop, if the player is still at its shopkeeper. */
+  activeShop(): ShopDef | null {
+    const p = this.player;
+    if (p.shopAt === null || p.dead) return null;
+    const n = this.byId.get(p.shopAt);
+    if (!(n instanceof Npc)) return null;
+    if (dist(p.x, p.z, n.x, n.z) > (n.def.reach ?? 1.9) + BANK_LEAVE_MARGIN) return null;
+    return shopFor(n.def.id);
+  }
+
+  /**
+   * Buys as many as possible up to qty: limited by coins and by inventory space once the coins are
+   * paid. The amount is worked out on a copy first, so coins and items always change together.
+   */
+  private shopBuy(item: ItemId, qty: number) {
+    const p = this.player;
+    const shop = this.activeShop();
+    if (!shop) {
+      this.message('You need to be at the shop to do that.', 'warn');
+      return;
+    }
+    const entry = shop.stock.find((s) => s.item === item);
+    if (!entry) return;
+    const want = Math.max(0, Math.min(1000, Math.floor(Number(qty)) || 0));
+    if (want <= 0) return;
+    const coins = p.inventory.count('coins');
+    let n = Math.min(want, Math.floor(coins / entry.price));
+    if (n <= 0) {
+      this.message(`You need ${entry.price} coins to buy ${itemDef(item).name.toLowerCase()}.`, 'warn');
+      return;
+    }
+    const fits = (k: number) => {
+      const sim = p.inventory.clone();
+      sim.remove('coins', k * entry.price);
+      return sim.add(item, k) === k;
+    };
+    while (n > 0 && !fits(n)) n--;
+    if (n <= 0) {
+      this.inventoryFull();
+      return;
+    }
+    if (p.inventory.remove('coins', n * entry.price) !== n * entry.price || p.inventory.add(item, n) !== n) throw new Error('shop buy invariant broken');
+    this.message(`You buy ${n > 1 ? `${n} x ` : ''}${itemDef(item).name} for ${n * entry.price} coins.`);
+    if (n < want) this.message(`You could only afford or carry ${n}.`, 'warn');
+    this.emit({ type: 'loot', item, qty: n });
+    this.emit({ type: 'shop' });
+  }
+
+  /** Sells up to qty of the item in an inventory slot (all slots of that item type count). */
+  private shopSell(slot: number, qty: number) {
+    const p = this.player;
+    if (!this.activeShop()) {
+      this.message('You need to be at the shop to do that.', 'warn');
+      return;
+    }
+    const st = Number.isInteger(slot) ? p.inventory.slots[slot] : null;
+    if (!st) return;
+    const price = sellPrice(st.item);
+    if (price <= 0) {
+      this.message("The shop won't buy that.", 'warn');
+      return;
+    }
+    const n = Math.min(p.inventory.count(st.item), Math.max(0, Math.floor(Number(qty)) || 0));
+    if (n <= 0) return;
+    const sim = p.inventory.clone();
+    sim.remove(st.item, n);
+    if (sim.add('coins', n * price) !== n * price) {
+      this.inventoryFull();
+      return;
+    }
+    const name = itemDef(st.item).name;
+    if (p.inventory.remove(st.item, n) !== n || p.inventory.add('coins', n * price) !== n * price) throw new Error('shop sell invariant broken');
+    this.message(`You sell ${n > 1 ? `${n} x ` : ''}${name} for ${n * price} coins.`);
+    this.emit({ type: 'shop' });
   }
 
   // ---------------------------------------------------------------- bank
@@ -1309,14 +1446,24 @@ export class GameWorld {
     const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill));
     this.emit({ type: 'gather', node: n.id, success });
     if (!success) return;
-    if (p.inventory.add(n.def.item, 1) !== 1) {
+    // Better catches (e.g. anchovies) become possible as the skill rises.
+    let item = n.def.item;
+    let xp = n.def.xp;
+    const lvl = p.skills.level(n.def.skill);
+    for (const c of n.def.catches ?? []) {
+      if (lvl >= c.level && this.rng() < c.chance) {
+        item = c.item;
+        xp = c.xp;
+      }
+    }
+    if (p.inventory.add(item, 1) !== 1) {
       // Defensive: nothing was awarded, so no xp and no depletion.
       p.action = null;
       this.inventoryFull();
       return;
     }
-    this.emit({ type: 'loot', item: n.def.item, qty: 1 });
-    this.grantXp(n.def.skill, n.def.xp);
+    this.emit({ type: 'loot', item, qty: 1 });
+    this.grantXp(n.def.skill, xp);
     // A rare find only happens when there is room for it.
     if (n.def.rareDrop && this.rng() < n.def.rareDrop.chance && p.inventory.add(n.def.rareDrop.item, 1) === 1) {
       this.emit({ type: 'loot', item: n.def.rareDrop.item, qty: 1 });
@@ -1371,6 +1518,14 @@ export class GameWorld {
       p.bankAt = n.id;
       this.emit({ type: 'bankOpen', npc: n.def.id });
       return;
+    }
+    if (n.def.service === 'shop') {
+      const shop = Object.entries(SHOPS).find(([, d]) => d.npc === n.def.id);
+      if (shop) {
+        p.shopAt = n.id;
+        this.emit({ type: 'shopOpen', shop: shop[0] });
+        return;
+      }
     }
     this.emit({ type: 'dialogue', dialogue: this.talkTo(n) });
   }

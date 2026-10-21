@@ -305,7 +305,10 @@ export function generateWorld(seed = 1337): WorldMap {
   addDecor('furnace', 63.5, 72.0, true, -S / 2, 1, 0);
   occ[idx(63, 71)] = blocked[idx(63, 71)] = 1;
   addDecor('range', 62.5, 57.5, true, -S / 2, 1, 0);
+  // Riverside campfire on the east bank, beside the village fishing spots.
+  addDecor('campfire', 40.5, 57.5, true, 0, 1, 0);
   const stations: WorldMap['stations'] = [
+    { kind: 'fire', x: 40.5, z: 57.5, facing: 0 },
     { kind: 'furnace', x: 63.5, z: 72.0, facing: -S / 2 },
     { kind: 'anvil', x: 63.5, z: 74.5, facing: 0 },
     { kind: 'range', x: 62.5, z: 57.5, facing: -S / 2 },
@@ -406,6 +409,11 @@ export function generateWorld(seed = 1337): WorldMap {
       addResource(c.type, x, z);
       placed++;
     }
+  }
+
+  // Fishing spots in the river just west of the village (water tiles beside the east bank).
+  for (const [x, z] of [[38, 53], [38, 55], [38, 57], [37, 72], [37, 73]]) {
+    if (tiles[idx(x, z)] === T.Water && tiles[idx(x + 1, z)] !== T.Water) addResource('net_spot', x, z);
   }
 
   // Scatter vegetation

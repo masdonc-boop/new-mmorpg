@@ -213,7 +213,7 @@ describe('Production rules', () => {
 
   it('cooking can burn (no xp) and the chance falls to zero with level', () => {
     const rec = RECIPES.cooked_meat;
-    expect(failChance(rec, 1)).toBeCloseTo(0.4);
+    expect(failChance(rec, 1)).toBeCloseTo(0.35);
     expect(failChance(rec, rec.fail!.stopLevel)).toBe(0);
     const w = new GameWorld();
     const p = w.player;
@@ -235,7 +235,7 @@ describe('Production rules', () => {
     expect(p.hp).toBe(20 + itemDef('cooked_meat').heal!);
   });
 
-  it('fletching makes shafts, bows and arrows anywhere; bows work with ranged combat', () => {
+  it('fletching makes shafts, unstrung and strung bows and arrows anywhere; bows work with ranged combat', () => {
     const w = new GameWorld();
     const p = w.player;
     p.skills.addXp('fletching', xpForLevel(5));
@@ -243,6 +243,9 @@ describe('Production rules', () => {
     p.inventory.add('bronze_bar', 1);
     w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
     run(w, 2);
+    w.issue({ type: 'craft', recipe: 'shortbow_u', count: 1 });
+    run(w, 2);
+    p.inventory.add('bowstring', 1);
     w.issue({ type: 'craft', recipe: 'shortbow', count: 1 });
     run(w, 2);
     w.issue({ type: 'craft', recipe: 'bronze_arrow', count: 1 });

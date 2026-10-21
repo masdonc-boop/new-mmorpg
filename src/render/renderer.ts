@@ -6,6 +6,7 @@ import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
 import { Enemy, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
+import { RECIPES } from '../data/recipes';
 import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
@@ -270,8 +271,9 @@ export class GameRenderer {
     let pose: Parameters<Humanoid['update']>[1] = p.anim === 'attack' ? 'attack' : p.anim === 'walk' ? 'walk' : p.anim === 'dead' ? 'dead' : 'idle';
     let tool: HeldTool = p.style === 'melee' ? 'sword' : p.style === 'ranged' ? 'bow' : 'staff';
     if (gathering && node) {
-      pose = node.def.skill === 'woodcutting' ? 'chop' : 'mine';
-      tool = node.def.skill === 'woodcutting' ? 'axe' : 'pickaxe';
+      const sk = node.def.skill;
+      pose = sk === 'woodcutting' ? 'chop' : sk === 'fishing' ? 'work' : 'mine';
+      tool = sk === 'woodcutting' ? 'axe' : sk === 'fishing' ? 'net' : 'pickaxe';
     }
     const making = world.crafting;
     if (making && p.anim !== 'walk') {
@@ -572,6 +574,21 @@ export class GameRenderer {
     const w = this.world;
     const p = w.player;
     switch (e.type) {
+      case 'craft': {
+        // Visual feedback for each make: sparks at the anvil, a flare at the furnace, steam when
+        // cooking, wood shavings when fletching (dark smoke if the food burned).
+        const st = p.stationAt !== null ? w.get(p.stationAt) : null;
+        const at = st instanceof Station ? { x: st.x, z: st.z } : { x: p.x + Math.sin(p.facing) * 0.4, z: p.z + Math.cos(p.facing) * 0.4 };
+        const y = groundHeight(w.map, at.x, at.z);
+        const rec = RECIPES[e.recipe];
+        const kind = rec?.station ?? 'fletching';
+        if (!e.success) this.particles.emit({ x: at.x, y: y + 1.0, z: at.z, count: 10, color: ['#3a3330', '#5a524c'], speed: 0.6, up: 1.2, gravity: -0.3, life: 1.2, size: 0.14 });
+        else if (kind === 'anvil') this.particles.emit({ x: at.x, y: y + 0.65, z: at.z, count: 16, color: ['#ffd27a', '#ff9a3a', '#fff3c4'], speed: 3, up: 2.4, life: 0.5, size: 0.05 });
+        else if (kind === 'furnace') this.particles.emit({ x: at.x, y: y + 0.6, z: at.z, count: 14, color: ['#ff8a2a', '#ffd27a', '#ff5a2a'], speed: 1.2, up: 1.8, gravity: -0.5, life: 0.7, size: 0.09 });
+        else if (kind === 'range' || kind === 'fire') this.particles.emit({ x: at.x, y: y + 1.0, z: at.z, count: 10, color: ['#ffffff', '#e8eef2'], speed: 0.4, up: 1.0, gravity: -0.4, life: 1.1, size: 0.12 });
+        else this.particles.emit({ x: at.x, y: y + 1.0, z: at.z, count: 10, color: ['#c9a06a', '#8a6238', '#e6c48f'], speed: 1.2, up: 1.2, life: 0.6, size: 0.05 });
+        break;
+      }
       case 'equipment': {
         const key = JSON.stringify(p.equipment.toJSON());
         if (ART.v2 && key !== this.gearKey) this.refreshPlayerModel();

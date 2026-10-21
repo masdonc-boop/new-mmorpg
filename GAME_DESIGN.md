@@ -67,6 +67,25 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 - **Per character now, account-wide later.** The bank is a standalone object saved under its own `bank` key. Moving to account-wide storage means keying that store by account on the server; the transfer rules stay the same.
 - **Migration.** Saves from before the bank load with an empty bank; items held after the inventory migration can be deposited straight into the bank.
 
+## Skill loops (audit)
+
+Every skill shown in the Skills panel can be trained end to end. Tools are real inventory items: new characters start with all of them, Tilly sells them, and older saves received them once (`grants: tools-v1`). `SKILL_INFO[id].available` exists so that a future skill listed before it is playable is labelled "Not available yet".
+
+| Skill | Tools | Where | Loop |
+|---|---|---|---|
+| Attack / Strength / Defence | weapon optional | anywhere with enemies | Melee combat. Gear from Smithing improves accuracy, power and armour |
+| Hitpoints | none | combat | Rises with any combat. Heal by eating cooked food |
+| Ranged | arrows (bow optional) | anywhere | Ranged style uses arrows from the bag. Fletched bows improve shots |
+| Magic | air runes | anywhere | Magic style uses one rune per cast (Tilly sells runes, slimes drop them) |
+| Woodcutting | bronze axe | trees everywhere, oaks from level 15 | Logs (one per slot) |
+| Mining | bronze pickaxe | Ironcrag Hills (copper, tin, iron) | Ore (one per slot) |
+| Fishing | small fishing net | bubbling spots in the river just west of the village | Raw shrimps; anchovies from level 15; spots never deplete |
+| Smithing | hammer (anvil only) | furnace and anvil beside the smithy | Ore → bars (furnace) → weapons and armour (anvil) |
+| Fletching | knife (logs), bowstring (stringing) | anywhere: use a knife on logs | Arrow shafts, unstrung bows → strung bows, wooden shield, arrows (shafts + bronze bar) |
+| Cooking | none | range outside the inn, campfire by the fishing spots | Raw fish or meat → food (can burn at low levels) |
+
+**Interaction.** Tap a station, NPC or fishing spot to walk over and use it. A contextual prompt appears when you stand near one, and tapping the prompt works too. Production panels show level, XP, materials, tools and quantities.
+
 ## Production and equipment (design notes)
 
 - **Same pattern as banking.** The client sends `craft`, `equip`, `unequip` and `openFletching` commands. The simulation validates everything (station proximity, levels, materials, space) and reports through `productionOpen`, `craft`, `equipment` and `inventoryFull` events, so these become server messages unchanged.

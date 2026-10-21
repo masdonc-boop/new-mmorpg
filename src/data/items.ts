@@ -21,7 +21,13 @@ export type IconShape =
   | 'platelegs'
   | 'bow'
   | 'shafts'
-  | 'meat';
+  | 'meat'
+  | 'hammer'
+  | 'knife'
+  | 'net'
+  | 'string'
+  | 'unbow'
+  | 'fish';
 
 export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs';
 export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'body', 'legs', 'weapon', 'shield'];
@@ -107,6 +113,20 @@ export const ITEMS = {
   raw_meat: def({ id: 'raw_meat', name: 'Raw meat', examine: 'It needs cooking before you eat it.', stackable: false, kind: 'material', value: 3, icon: { shape: 'meat', color: '#d9646a', accent: '#f4e2d2' } }),
   cooked_meat: def({ id: 'cooked_meat', name: 'Cooked meat', examine: 'Hearty and hot. Heals 25 HP.', stackable: false, kind: 'food', value: 8, heal: 25, icon: { shape: 'meat', color: '#9a5a32', accent: '#f4e2d2' } }),
   burnt_meat: def({ id: 'burnt_meat', name: 'Burnt meat', examine: 'Charred beyond saving.', stackable: false, kind: 'material', value: 0, icon: { shape: 'meat', color: '#2e2622', accent: '#6a5a50' } }),
+  // ---- Production tools (real inventory items; can be banked)
+  hammer: def({ id: 'hammer', name: 'Hammer', examine: 'Needed to forge metal at an anvil.', stackable: false, kind: 'tool', value: 6, icon: { shape: 'hammer', color: '#8d949c', accent: '#8a5a34' } }),
+  knife: def({ id: 'knife', name: 'Knife', examine: 'Use it on logs to fletch shafts and bows.', stackable: false, kind: 'tool', value: 6, icon: { shape: 'knife', color: '#d6dbe2', accent: '#4e321e' } }),
+  small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
+  // ---- Fletching parts
+  bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),
+  shortbow_u: def({ id: 'shortbow_u', name: 'Unstrung shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 10, icon: { shape: 'unbow', color: '#9b6a3a', accent: '#9b6a3a' } }),
+  oak_shortbow_u: def({ id: 'oak_shortbow_u', name: 'Unstrung oak shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 30, icon: { shape: 'unbow', color: '#6e472c', accent: '#6e472c' } }),
+  // ---- Fishing and cooking
+  raw_shrimps: def({ id: 'raw_shrimps', name: 'Raw shrimps', examine: 'Fresh from the river. Cook before eating.', stackable: false, kind: 'material', value: 3, icon: { shape: 'fish', color: '#e89a8a', accent: '#f6d6c8' } }),
+  shrimps: def({ id: 'shrimps', name: 'Shrimps', examine: 'Pink and tasty. Heals 15 HP.', stackable: false, kind: 'food', value: 6, heal: 15, icon: { shape: 'fish', color: '#f07a5a', accent: '#ffd0b8' } }),
+  raw_anchovies: def({ id: 'raw_anchovies', name: 'Raw anchovies', examine: 'Small silvery fish. Cook before eating.', stackable: false, kind: 'material', value: 6, icon: { shape: 'fish', color: '#8fa5b8', accent: '#dfe8f0' } }),
+  anchovies: def({ id: 'anchovies', name: 'Anchovies', examine: 'Salty and filling. Heals 20 HP.', stackable: false, kind: 'food', value: 10, heal: 20, icon: { shape: 'fish', color: '#6f7f8e', accent: '#c9a06a' } }),
+  burnt_fish: def({ id: 'burnt_fish', name: 'Burnt fish', examine: 'Charred to a crisp.', stackable: false, kind: 'material', value: 0, icon: { shape: 'fish', color: '#2e2622', accent: '#6a5a50' } }),
 } satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

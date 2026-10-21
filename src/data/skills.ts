@@ -7,6 +7,7 @@ export const SKILL_IDS = [
   'magic',
   'woodcutting',
   'mining',
+  'fishing',
   'smithing',
   'fletching',
   'cooking',
@@ -19,20 +20,25 @@ export interface SkillInfo {
   color: string;
   glyph: string;
   category: 'combat' | 'gathering' | 'production';
+  /** How to train it: tools needed and where to go (shown in the Skills panel). */
+  howTo: string;
+  /** False for a skill that is listed but not trainable yet; the UI labels it as unavailable. */
+  available: boolean;
 }
 
 export const SKILL_INFO: Record<SkillId, SkillInfo> = {
-  attack: { name: 'Attack', color: '#e0524a', glyph: '⚔', category: 'combat' },
-  strength: { name: 'Strength', color: '#3fae5a', glyph: '✊', category: 'combat' },
-  defence: { name: 'Defence', color: '#5b8de0', glyph: '⛨', category: 'combat' },
-  hitpoints: { name: 'Hitpoints', color: '#e83f7a', glyph: '♥', category: 'combat' },
-  ranged: { name: 'Ranged', color: '#7fc04a', glyph: '➶', category: 'combat' },
-  magic: { name: 'Magic', color: '#8a6cf0', glyph: '✦', category: 'combat' },
-  woodcutting: { name: 'Woodcutting', color: '#b07a3c', glyph: '🌲', category: 'gathering' },
-  mining: { name: 'Mining', color: '#9aa3ad', glyph: '⛏', category: 'gathering' },
-  smithing: { name: 'Smithing', color: '#c98a4b', glyph: '⚒', category: 'production' },
-  fletching: { name: 'Fletching', color: '#5fae8c', glyph: '🏹', category: 'production' },
-  cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production' },
+  attack: { name: 'Attack', color: '#e0524a', glyph: '⚔', category: 'combat', available: true, howTo: 'Fight in Melee style. Wield a sword or dagger for better accuracy.' },
+  strength: { name: 'Strength', color: '#3fae5a', glyph: '✊', category: 'combat', available: true, howTo: 'Fight in Melee style. Raises your melee max hit.' },
+  defence: { name: 'Defence', color: '#5b8de0', glyph: '⛨', category: 'combat', available: true, howTo: 'Fight in Melee style. Wear armour (helm, platebody, platelegs, shield) to be hit less.' },
+  hitpoints: { name: 'Hitpoints', color: '#e83f7a', glyph: '♥', category: 'combat', available: true, howTo: 'Rises with any combat. Eat cooked food to heal.' },
+  ranged: { name: 'Ranged', color: '#7fc04a', glyph: '➶', category: 'combat', available: true, howTo: 'Fight in Ranged style with arrows in your bag. Wield a shortbow you fletched for better shots.' },
+  magic: { name: 'Magic', color: '#8a6cf0', glyph: '✦', category: 'combat', available: true, howTo: 'Fight in Magic style. Each cast uses one air rune (Tilly sells them; slimes drop them).' },
+  woodcutting: { name: 'Woodcutting', color: '#b07a3c', glyph: '🌲', category: 'gathering', available: true, howTo: 'Needs a bronze axe. Tap any tree; oaks from level 15.' },
+  mining: { name: 'Mining', color: '#9aa3ad', glyph: '⛏', category: 'gathering', available: true, howTo: 'Needs a bronze pickaxe. Copper and tin rocks in the Ironcrag Hills (east); iron from level 15.' },
+  fishing: { name: 'Fishing', color: '#4aa7c9', glyph: '🎣', category: 'gathering', available: true, howTo: 'Needs a small fishing net. Tap a bubbling fishing spot in the river just west of the village.' },
+  smithing: { name: 'Smithing', color: '#c98a4b', glyph: '⚒', category: 'production', available: true, howTo: 'Smelt ore into bars at the furnace by the smithy, then forge gear at the anvil (needs a hammer).' },
+  fletching: { name: 'Fletching', color: '#5fae8c', glyph: '🏹', category: 'production', available: true, howTo: 'Use a knife on logs: arrow shafts, unstrung bows, shields. String bows with a bowstring.' },
+  cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production', available: true, howTo: 'Cook raw fish or meat at the range outside the inn or the campfire by the river.' },
 };
 
 export const MAX_LEVEL = 99;

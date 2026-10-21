@@ -1,0 +1,325 @@
+import { describe, expect, it } from 'vitest';
+import { GameWorld } from '../src/sim/world';
+import { INVENTORY_SLOTS, type Inventory } from '../src/sim/inventory';
+import { RESOURCES } from '../src/data/resources';
+import { RECIPES } from '../src/data/recipes';
+import { SHOPS, sellPrice } from '../src/data/shops';
+import { SKILL_IDS, SKILL_INFO, xpForLevel } from '../src/data/skills';
+import { itemDef, type ItemId } from '../src/data/items';
+import { isBlocked } from '../src/sim/worldmap';
+import { findPath } from '../src/sim/pathfinding';
+
+const run = (w: GameWorld, s: number) => {
+  for (let t = 0; t < s * 30; t++) w.tick();
+};
+const setRng = (w: GameWorld, v: number) => ((w as unknown as { rng: () => number }).rng = () => v);
+const stand = (w: GameWorld, x: number, z: number) => {
+  w.player.x = w.player.prevX = x;
+  w.player.z = w.player.prevZ = z;
+};
+const slotOf = (inv: Inventory, item: ItemId) => inv.slots.findIndex((s) => s?.item === item);
+const SIDES = [[1.1, 0], [-1.1, 0], [0, 1.1], [0, -1.1]];
+/** Stand beside a node of a type and start working it. */
+function workNode(w: GameWorld, type: string) {
+  const node = w.nodes.find((n) => n.def.id === type && SIDES.some(([a, b]) => !isBlocked(w.map, n.x + a, n.z + b)))!;
+  const [a, b] = SIDES.find(([x, z]) => !isBlocked(w.map, node.x + x, node.z + z))!;
+  stand(w, node.x + a, node.z + b);
+  w.issue({ type: 'interact', target: node.id });
+  return node;
+}
+function openStation(w: GameWorld, kind: string) {
+  const st = w.stations.find((s) => s.kind === kind)!;
+  const [a, b] = SIDES.find(([x, z]) => !isBlocked(w.map, st.x + x, st.z + z))!;
+  stand(w, st.x + a, st.z + b);
+  w.issue({ type: 'interact', target: st.id });
+  run(w, 0.3);
+  return st;
+}
+function openShop(w: GameWorld) {
+  const tilly = w.npcs.find((n) => n.def.id === 'merchant')!;
+  stand(w, tilly.x + 1.2, tilly.z);
+  w.issue({ type: 'interact', target: tilly.id });
+  run(w, 0.3);
+}
+
+describe('Skill audit: every listed skill has a complete, reachable loop', () => {
+  const w = new GameWorld();
+  const starter = new Set(w.player.inventory.slots.filter(Boolean).map((s) => s!.item));
+  const sold = new Set(SHOPS.tilly.stock.map((s) => s.item));
+
+  it('every skill is marked available and explains how to train it', () => {
+    for (const id of SKILL_IDS) {
+      expect(SKILL_INFO[id].available).toBe(true);
+      expect(SKILL_INFO[id].howTo.length).toBeGreaterThan(20);
+    }
+  });
+
+  it('every gathering tool and production tool is in the starter kit and sold by Tilly', () => {
+    const tools = new Set<ItemId>([...Object.values(RESOURCES).map((r) => r.tool), ...Object.values(RECIPES).flatMap((r) => (r.tool ? [r.tool] : []))]);
+    for (const t of tools) {
+      expect(starter.has(t), `starter kit has ${t}`).toBe(true);
+      expect(sold.has(t), `Tilly sells ${t}`).toBe(true);
+    }
+    expect(sold.has('bowstring')).toBe(true);
+  });
+
+  it('every resource type and every workstation is placed and reachable on foot from the village', () => {
+    const { spawn } = w.map;
+    for (const type of Object.keys(RESOURCES)) {
+      const node = w.nodes.find((n) => n.def.id === type);
+      expect(node, type).toBeTruthy();
+      const ok = SIDES.some(([a, b]) => !isBlocked(w.map, node!.x + a, node!.z + b) && !!findPath(w.map, spawn.x, spawn.z, node!.x + a, node!.z + b));
+      expect(ok, `${type} reachable`).toBe(true);
+    }
+    for (const kind of ['furnace', 'anvil', 'range', 'fire']) {
+      const st = w.stations.find((s) => s.kind === kind);
+      expect(st, kind).toBeTruthy();
+      expect(SIDES.some(([a, b]) => !isBlocked(w.map, st!.x + a, st!.z + b) && !!findPath(w.map, spawn.x, spawn.z, st!.x + a, st!.z + b)), `${kind} reachable`).toBe(true);
+    }
+  });
+
+  it('every recipe can be made at a placed station (or needs none)', () => {
+    for (const r of Object.values(RECIPES)) {
+      if (r.station === 'fletching') continue;
+      expect(w.stations.some((s) => s.kind === r.station), r.id).toBe(true);
+    }
+  });
+});
+
+describe('Tools', () => {
+  it('new characters start with axe, pickaxe, hammer, knife and fishing net', () => {
+    const p = new GameWorld().player;
+    for (const t of ['bronze_axe', 'bronze_pickaxe', 'hammer', 'knife', 'small_fishing_net'] as ItemId[]) expect(p.inventory.count(t)).toBe(1);
+    expect(p.inventory.usedSlots()).toBeLessThanOrEqual(12);
+  });
+
+  it('older saves receive the new tools exactly once, skipping ones already banked', () => {
+    const w = new GameWorld();
+    const save = w.save();
+    save.inventory = save.inventory.map((s) => (s && ['hammer', 'knife', 'small_fishing_net'].includes(s.item) ? null : s));
+    delete (save as { grants?: unknown }).grants;
+    save.bank = [{ item: 'knife', qty: 1 }];
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.inventory.count('hammer')).toBe(1);
+    expect(w2.player.inventory.count('small_fishing_net')).toBe(1);
+    expect(w2.player.inventory.count('knife')).toBe(0);
+    const w3 = new GameWorld({ save: JSON.parse(JSON.stringify(w2.save())) });
+    expect(w3.player.inventory.count('hammer')).toBe(1);
+  });
+
+  it('a full bag sends granted tools to held items instead of losing them', () => {
+    const w = new GameWorld();
+    const save = w.save();
+    save.inventory = Array.from({ length: INVENTORY_SLOTS }, () => ({ item: 'bread' as ItemId, qty: 1 }));
+    delete (save as { grants?: unknown }).grants;
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.overflow.map((o) => o.item).sort()).toEqual(['hammer', 'knife', 'small_fishing_net']);
+  });
+
+  it('forging needs a hammer in the bag; it is not used up, and banking it blocks forging', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('bronze_bar', 3);
+    openStation(w, 'anvil');
+    w.issue({ type: 'craft', recipe: 'bronze_dagger', count: 1 });
+    run(w, 3);
+    expect(p.inventory.count('bronze_dagger')).toBe(1);
+    expect(p.inventory.count('hammer')).toBe(1);
+    // Bank the hammer: the anvil refuses.
+    const banker = w.npcs.find((n) => n.def.id === 'banker')!;
+    stand(w, 51.5, 60.5);
+    w.issue({ type: 'interact', target: banker.id });
+    run(w, 0.3);
+    w.issue({ type: 'bankDeposit', slot: slotOf(p.inventory, 'hammer'), qty: 1 });
+    expect(p.bank.count('hammer')).toBe(1);
+    openStation(w, 'anvil');
+    w.drainEvents();
+    w.issue({ type: 'craft', recipe: 'bronze_dagger', count: 1 });
+    run(w, 3);
+    expect(p.inventory.count('bronze_dagger')).toBe(1);
+    expect(p.inventory.count('bronze_bar')).toBe(2);
+    expect(w.drainEvents().some((e) => e.type === 'message' && e.text.includes('hammer'))).toBe(true);
+    expect(w.craftBlocker('bronze_dagger')).toContain('hammer');
+  });
+
+  it('fletching from logs needs a knife; stringing a bow needs a bowstring', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.removeAt(slotOf(p.inventory, 'knife'));
+    p.inventory.add('logs', 2);
+    w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
+    run(w, 2);
+    expect(p.inventory.count('arrow_shafts')).toBe(0);
+    expect(p.inventory.count('logs')).toBe(2);
+    p.inventory.add('knife');
+    w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
+    run(w, 2);
+    expect(p.inventory.count('arrow_shafts')).toBe(15);
+    p.skills.addXp('fletching', xpForLevel(5));
+    w.issue({ type: 'craft', recipe: 'shortbow_u', count: 1 });
+    run(w, 2);
+    expect(p.inventory.count('shortbow_u')).toBe(1);
+    w.issue({ type: 'craft', recipe: 'shortbow', count: 1 });
+    run(w, 2);
+    expect(p.inventory.count('shortbow')).toBe(0); // no bowstring
+  });
+});
+
+describe('Complete loops', () => {
+  it('mine → smelt → forge → wield', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.52); // swings succeed, rocks don't deplete, no gems
+    workNode(w, 'copper_rock');
+    run(w, 1.8 * 2 + 0.6);
+    workNode(w, 'tin_rock');
+    run(w, 1.8 * 2 + 0.6);
+    w.issue({ type: 'moveTo', x: p.x, z: p.z });
+    expect(p.inventory.count('copper_ore')).toBeGreaterThanOrEqual(2);
+    expect(p.inventory.count('tin_ore')).toBeGreaterThanOrEqual(2);
+    openStation(w, 'furnace');
+    w.issue({ type: 'craft', recipe: 'bronze_bar', count: 2 });
+    run(w, 5);
+    expect(p.inventory.count('bronze_bar')).toBe(2);
+    openStation(w, 'anvil');
+    w.issue({ type: 'craft', recipe: 'bronze_dagger', count: 1 });
+    run(w, 3);
+    w.issue({ type: 'equip', slot: slotOf(p.inventory, 'bronze_dagger') });
+    expect(p.equipment.get('weapon')).toBe('bronze_dagger');
+    expect(p.skills.xp.mining).toBeGreaterThan(0);
+    expect(p.skills.xp.smithing).toBe(2 * RECIPES.bronze_bar.xp + RECIPES.bronze_dagger.xp);
+  });
+
+  it('chop → fletch (knife) → buy a bowstring → string → wield the bow', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.52);
+    workNode(w, 'tree');
+    run(w, 1.8 * 3 + 0.6);
+    w.issue({ type: 'moveTo', x: p.x, z: p.z });
+    expect(p.inventory.count('logs')).toBeGreaterThanOrEqual(2);
+    p.skills.addXp('fletching', xpForLevel(5));
+    w.issue({ type: 'openFletching' });
+    w.issue({ type: 'craft', recipe: 'shortbow_u', count: 1 });
+    run(w, 2);
+    openShop(w);
+    w.issue({ type: 'shopBuy', item: 'bowstring', qty: 1 });
+    expect(p.inventory.count('bowstring')).toBe(1);
+    w.issue({ type: 'craft', recipe: 'shortbow', count: 1 });
+    run(w, 2);
+    expect(p.inventory.count('shortbow')).toBe(1);
+    w.issue({ type: 'equip', slot: slotOf(p.inventory, 'shortbow') });
+    expect(p.equipment.get('weapon')).toBe('shortbow');
+    expect(p.style).toBe('ranged');
+  });
+
+  it('fish (net) → cook at the riverside campfire → eat', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.4); // catches succeed (chance 0.5) and cooking doesn't burn (chance 0.35)
+    const spot = workNode(w, 'net_spot');
+    run(w, 2.4 * 3 + 0.6);
+    w.issue({ type: 'moveTo', x: p.x, z: p.z });
+    expect(p.inventory.count('raw_shrimps')).toBeGreaterThanOrEqual(3);
+    expect(p.skills.xp.fishing).toBe(p.inventory.count('raw_shrimps') * RESOURCES.net_spot.xp);
+    expect(spot.depleted).toBe(false);
+    expect(p.inventory.count('small_fishing_net')).toBe(1);
+    openStation(w, 'fire');
+    w.issue({ type: 'craft', recipe: 'shrimps', count: 2 });
+    run(w, 4.5);
+    expect(p.inventory.count('shrimps')).toBe(2);
+    expect(p.skills.xp.cooking).toBe(2 * RECIPES.shrimps.xp);
+    p.hp = 50;
+    w.issue({ type: 'useItem', slot: slotOf(p.inventory, 'shrimps') });
+    expect(p.hp).toBe(50 + itemDef('shrimps').heal!);
+  });
+
+  it('fishing needs a net, and anchovies only appear from level 15', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.01); // every roll succeeds, including the anchovy roll if allowed
+    workNode(w, 'net_spot');
+    run(w, 3);
+    expect(p.inventory.count('raw_anchovies')).toBe(0);
+    p.skills.addXp('fishing', xpForLevel(15));
+    workNode(w, 'net_spot');
+    run(w, 3);
+    expect(p.inventory.count('raw_anchovies')).toBeGreaterThan(0);
+    w.issue({ type: 'moveTo', x: p.x, z: p.z });
+    p.inventory.removeAt(slotOf(p.inventory, 'small_fishing_net'));
+    const before = p.inventory.count('raw_shrimps') + p.inventory.count('raw_anchovies');
+    workNode(w, 'net_spot');
+    run(w, 3);
+    expect(p.inventory.count('raw_shrimps') + p.inventory.count('raw_anchovies')).toBe(before);
+  });
+
+  it('a full bag stops fishing with no xp', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.01);
+    p.inventory.add('bread', INVENTORY_SLOTS - p.inventory.usedSlots());
+    workNode(w, 'net_spot');
+    run(w, 4);
+    expect(p.skills.xp.fishing).toBe(0);
+    expect(p.action).toBeNull();
+  });
+});
+
+describe('Shop', () => {
+  it('buys with coins atomically, limited by coins and space; refuses away from the stall', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    w.issue({ type: 'shopBuy', item: 'knife', qty: 1 });
+    expect(p.inventory.count('knife')).toBe(1);
+    openShop(w);
+    const coins = p.inventory.count('coins');
+    w.issue({ type: 'shopBuy', item: 'hammer', qty: 2 });
+    expect(p.inventory.count('hammer')).toBe(3);
+    expect(p.inventory.count('coins')).toBe(coins - 12);
+    // Can't afford: nothing changes.
+    p.inventory.remove('coins', p.inventory.count('coins'));
+    p.inventory.add('coins', 3);
+    w.issue({ type: 'shopBuy', item: 'bronze_axe', qty: 1 });
+    expect(p.inventory.count('bronze_axe')).toBe(1);
+    expect(p.inventory.count('coins')).toBe(3);
+    // Buys only what fits.
+    p.inventory.add('coins', 997);
+    p.inventory.add('bread', INVENTORY_SLOTS - p.inventory.usedSlots() - 2);
+    w.issue({ type: 'shopBuy', item: 'knife', qty: 5 });
+    expect(p.inventory.count('knife')).toBe(3);
+    expect(p.inventory.isFull()).toBe(true);
+    expect(p.inventory.count('coins')).toBe(1000 - 12);
+  });
+
+  it('sells for coins; nothing is duplicated or lost across many trades', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    openShop(w);
+    p.inventory.add('logs', 5);
+    const before = p.inventory.count('coins');
+    w.issue({ type: 'shopSell', slot: slotOf(p.inventory, 'logs'), qty: 3 });
+    expect(p.inventory.count('logs')).toBe(2);
+    expect(p.inventory.count('coins')).toBe(before + 3 * sellPrice('logs'));
+    // Value bookkeeping: coins + item value (at shop prices) never grows from nothing.
+    for (let i = 0; i < 200; i++) {
+      const c0 = p.inventory.count('coins');
+      const k0 = p.inventory.count('knife');
+      if (i % 2) w.issue({ type: 'shopBuy', item: 'knife', qty: 1 });
+      else if (k0 > 0) w.issue({ type: 'shopSell', slot: slotOf(p.inventory, 'knife'), qty: 1 });
+      const c1 = p.inventory.count('coins');
+      const k1 = p.inventory.count('knife');
+      if (k1 > k0) expect(c0 - c1).toBe(6);
+      if (k1 < k0) expect(c1 - c0).toBe(sellPrice('knife'));
+      expect(p.inventory.usedSlots()).toBeLessThanOrEqual(INVENTORY_SLOTS);
+    }
+  });
+
+  it('closes when the player walks away', () => {
+    const w = new GameWorld();
+    openShop(w);
+    expect(w.activeShop()).toBeTruthy();
+    stand(w, 40, 75);
+    run(w, 0.1);
+    expect(w.drainEvents().some((e) => e.type === 'shopClose')).toBe(true);
+  });
+});

@@ -536,6 +536,138 @@ export function itemIcon(id: string): string {
       g.fill();
       break;
     }
+    case 'hammer': {
+      g.save();
+      g.translate(32, 34);
+      g.rotate(-0.7);
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(-3, -14, 6, 36, 3);
+      g.fill();
+      outline(2.5);
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(-14, -24, 28, 12, 3);
+      g.fill();
+      outline(2.5);
+      g.fillStyle = 'rgba(255,255,255,0.35)';
+      g.fillRect(-11, -22, 10, 3);
+      g.restore();
+      break;
+    }
+    case 'knife': {
+      g.save();
+      g.translate(32, 34);
+      g.rotate(-0.75);
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(-3, -4);
+      g.lineTo(-3, -28);
+      g.quadraticCurveTo(6, -20, 4, -4);
+      g.closePath();
+      g.fill();
+      outline(2.5);
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(-4, -4, 9, 22, 3);
+      g.fill();
+      outline(2.5);
+      g.restore();
+      break;
+    }
+    case 'net': {
+      g.save();
+      g.translate(32, 34);
+      g.rotate(-0.6);
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 6;
+      g.beginPath();
+      g.moveTo(0, 26);
+      g.lineTo(0, -6);
+      g.stroke();
+      g.strokeStyle = accent;
+      g.lineWidth = 4;
+      g.stroke();
+      g.fillStyle = 'rgba(201,180,138,0.35)';
+      g.beginPath();
+      g.ellipse(0, -16, 13, 12, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = color;
+      g.lineWidth = 1.2;
+      for (let k = -10; k <= 10; k += 5) {
+        g.beginPath();
+        g.moveTo(k, -27);
+        g.lineTo(k, -5);
+        g.moveTo(-13, -16 + k);
+        g.lineTo(13, -16 + k);
+        g.stroke();
+      }
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.ellipse(0, -16, 13, 12, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+      break;
+    }
+    case 'string': {
+      g.strokeStyle = 'rgba(20,12,6,0.7)';
+      g.lineWidth = 5;
+      g.beginPath();
+      g.ellipse(32, 32, 18, 14, 0.3, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = color;
+      g.lineWidth = 3;
+      g.stroke();
+      g.strokeStyle = accent;
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.ellipse(32, 32, 12, 9, 0.3, 0, Math.PI * 2);
+      g.stroke();
+      break;
+    }
+    case 'unbow': {
+      g.save();
+      g.translate(32, 32);
+      g.rotate(-0.6);
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 8;
+      g.beginPath();
+      g.arc(-14, 0, 26, -1.1, 1.1);
+      g.stroke();
+      g.strokeStyle = color;
+      g.lineWidth = 5;
+      g.stroke();
+      g.fillStyle = '#4e321e';
+      g.beginPath();
+      g.roundRect(9, -5, 5, 10, 2);
+      g.fill();
+      g.restore();
+      break;
+    }
+    case 'fish': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.ellipse(28, 34, 17, 9, -0.2, 0, Math.PI * 2);
+      g.fill();
+      outline();
+      g.beginPath();
+      g.moveTo(42, 30);
+      g.lineTo(54, 22);
+      g.lineTo(52, 40);
+      g.closePath();
+      g.fill();
+      outline(2.5);
+      g.fillStyle = accent;
+      g.beginPath();
+      g.ellipse(26, 37, 10, 3.5, -0.2, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#1a1a1a';
+      g.beginPath();
+      g.arc(17, 31, 2, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

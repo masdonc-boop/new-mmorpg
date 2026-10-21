@@ -614,6 +614,10 @@ export class ResourceView {
     }
     for (const [type, list] of byType) {
       const isTree = type === 'tree' || type === 'oak';
+      if (type === 'net_spot') {
+        this.addFishingSpots(list);
+        continue;
+      }
       if (ART.v2 && type === 'copper_rock') {
         this.addCopperV2(list, material);
         continue;
@@ -645,6 +649,51 @@ export class ResourceView {
         dep.computeBoundingSphere();
         this.group.add(full, dep);
         this.batches.push(batch);
+      });
+    }
+  }
+
+  /** Fishing spots: expanding ripple rings and a few rising bubbles on the water surface. */
+  private spots: { rings: THREE.Mesh[]; bubbles: THREE.Mesh[]; seed: number }[] = [];
+
+  private addFishingSpots(list: ResourceNode[]) {
+    const ringGeo = new THREE.RingGeometry(0.3, 0.36, 24).rotateX(-Math.PI / 2);
+    const bubbleGeo = new THREE.SphereGeometry(0.05, 6, 4);
+    const ringMat = new THREE.MeshBasicMaterial({ color: '#e8fbff', transparent: true, opacity: 0.6, depthWrite: false });
+    const bubbleMat = new THREE.MeshBasicMaterial({ color: '#f4feff', transparent: true, opacity: 0.85 });
+    list.forEach((n, k) => {
+      const rings: THREE.Mesh[] = [];
+      const bubbles: THREE.Mesh[] = [];
+      for (let i = 0; i < 3; i++) {
+        const r = new THREE.Mesh(ringGeo, ringMat.clone());
+        r.position.set(n.x + (i - 1) * 0.12, WATER_Y + 0.03, n.z + ((i * 7) % 3) * 0.08 - 0.08);
+        r.renderOrder = 5;
+        rings.push(r);
+        this.group.add(r);
+      }
+      for (let i = 0; i < 4; i++) {
+        const b = new THREE.Mesh(bubbleGeo, bubbleMat);
+        bubbles.push(b);
+        this.group.add(b);
+      }
+      this.spots.push({ rings, bubbles, seed: k * 1.7 });
+    });
+  }
+
+  private animateSpots() {
+    const t = performance.now() / 1000;
+    for (const sp of this.spots) {
+      sp.rings.forEach((r, i) => {
+        const k = (t * 0.55 + i / 3 + sp.seed) % 1;
+        r.scale.setScalar(0.5 + k * 1.6);
+        (r.material as THREE.MeshBasicMaterial).opacity = 0.65 * (1 - k);
+      });
+      const c = sp.rings[1].position;
+      sp.bubbles.forEach((b, i) => {
+        const k = (t * 0.9 + i * 0.27 + sp.seed) % 1;
+        const a = i * 1.9 + sp.seed;
+        b.position.set(c.x + Math.cos(a) * 0.25, WATER_Y + 0.02 + k * 0.18, c.z + Math.sin(a) * 0.25);
+        b.scale.setScalar(1 - k * 0.6);
       });
     }
   }
@@ -701,6 +750,7 @@ export class ResourceView {
 
   /** Called each frame: updates depletion state and hit shake. */
   update() {
+    this.animateSpots();
     for (const b of this.batches) {
       b.nodes.forEach((n, i) => {
         const prev = this.shown.get(n.id) ?? { depleted: false, shaking: false };
@@ -732,6 +782,7 @@ export class ResourceView {
 
   /** Approximate height of a node's visual centre, for UI anchoring and picking. */
   anchorHeight(n: ResourceNode): number {
+    if (n.def.skill === 'fishing') return WATER_Y + 0.6;
     const isTree = n.def.skill === 'woodcutting';
     return terrainHeight(this.map, n.x, n.z) + (n.depleted ? 0.3 : isTree ? 2.0 : 0.6);
   }

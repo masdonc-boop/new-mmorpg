@@ -9,7 +9,7 @@ export interface NpcDef {
   /** Generic lines used when no quest dialogue applies. */
   idleLines: string[];
   /** Service this NPC provides when talked to (opens that interface instead of dialogue). */
-  service?: 'bank';
+  service?: 'bank' | 'shop';
   /** How close the player must be to use the NPC (e.g. across a counter). Default 1.9. */
   reach?: number;
 }
@@ -26,8 +26,10 @@ export const NPCS: Record<NpcId, NpcDef> = {
   merchant: {
     id: 'merchant', name: 'Tilly Thimble', title: 'Travelling Merchant',
     look: { skin: '#c98e62', hair: '#c4482c', hairStyle: 1, tunic: '#d98c2b', trousers: '#5a4632' },
+    service: 'shop',
+    reach: 2.2,
     idleLines: [
-      'My stall opens once the trade roads are safe again. Hold on to those materials — they will fetch a fine price!',
+      'Tools, strings, arrows and runes! And I buy what you gather.',
       'Copper and tin are found in the Ironcrag Hills to the east. Iron lies deeper, for seasoned miners.',
       'Tap a tree or rock and you will keep working it automatically while you stay nearby.',
     ],

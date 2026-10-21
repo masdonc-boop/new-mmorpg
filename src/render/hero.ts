@@ -619,6 +619,16 @@ export class HeroModel {
       ]),
     );
     this.tools.set(
+      'net',
+      this.toolMesh([
+        cpart(Cyl(0.016, 0.02, 0.9, 7), wood, { y: 0.3 }),
+        cpart(Tor(0.16, 0.012, 14), '#8a5a34', { y: 0.86, rx: Math.PI / 2 }),
+        cpart(new THREE.SphereGeometry(0.16, 10, 5, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), '#d8ccb0', { y: 0.86, sy: 0.9 }),
+      ]),
+    );
+    // The net pole angles down so the hoop dips toward the water.
+    this.tools.get('net')!.rotation.x = Math.PI / 2 + 0.75;
+    this.tools.set(
       'knife',
       this.toolMesh([cpart(Cyl(0.016, 0.018, 0.1, 6), PALETTE.leatherDark, { y: 0.02 }), cpart(Cyl(0.004, 0.022, 0.13, 4), steel, { y: 0.135, sz: 0.3 })]),
     );
@@ -985,6 +995,16 @@ export class HeroModel {
       this.set('spine', 0.18 - up * 0.08, -0.12 + up * 0.08, 0);
       this.set('head', 0.22, 0, 0);
       ht.y = -0.02;
+    } else if (pose === 'work' && this.held === 'net') {
+      // Netting fish: both hands on the pole, reaching out low over the water with a slow sweep.
+      const k = Math.sin(time * 1.6);
+      this.set('armR', -0.75, 0.15 + k * 0.12, 0.08);
+      this.set('elbowR', -0.25);
+      this.set('armL', -0.95, -0.35 + k * 0.12, -0.05);
+      this.set('elbowL', -0.7);
+      this.set('spine', 0.3, k * 0.1, 0);
+      this.set('head', 0.25, 0, 0);
+      ht.y = -0.03;
     } else if (pose === 'work') {
       // Hands-forward work at a furnace or range, or fletching a log in hand.
       const k = Math.sin(time * 3.2);

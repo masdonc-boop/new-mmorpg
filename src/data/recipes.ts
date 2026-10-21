@@ -1,15 +1,24 @@
 import type { ItemId } from './items';
 import type { SkillId } from './skills';
 
-/** Where a recipe is made. 'fletching' needs no station: a knife-and-lap job anywhere. */
-export type StationKind = 'furnace' | 'anvil' | 'range' | 'fletching';
+/**
+ * Where a recipe is made. 'fletching' needs no station (a knife on logs, anywhere); 'fire' is a
+ * campfire, which cooks the same recipes as a range.
+ */
+export type StationKind = 'furnace' | 'anvil' | 'range' | 'fire' | 'fletching';
 
-export const STATION_INFO: Record<StationKind, { name: string; verb: string; doing: string; skill: SkillId }> = {
-  furnace: { name: 'Furnace', verb: 'Smelt', doing: 'Smelting', skill: 'smithing' },
-  anvil: { name: 'Anvil', verb: 'Forge', doing: 'Forging', skill: 'smithing' },
-  range: { name: 'Cooking range', verb: 'Cook', doing: 'Cooking', skill: 'cooking' },
-  fletching: { name: 'Fletching', verb: 'Fletch', doing: 'Fletching', skill: 'fletching' },
+export const STATION_INFO: Record<StationKind, { name: string; verb: string; doing: string; skill: SkillId; prompt: string }> = {
+  furnace: { name: 'Furnace', verb: 'Smelt', doing: 'Smelting', skill: 'smithing', prompt: 'Smelt ore into bars' },
+  anvil: { name: 'Anvil', verb: 'Forge', doing: 'Forging', skill: 'smithing', prompt: 'Forge gear (needs a hammer)' },
+  range: { name: 'Cooking range', verb: 'Cook', doing: 'Cooking', skill: 'cooking', prompt: 'Cook fish and meat' },
+  fire: { name: 'Campfire', verb: 'Cook', doing: 'Cooking', skill: 'cooking', prompt: 'Cook fish and meat' },
+  fletching: { name: 'Fletching', verb: 'Fletch', doing: 'Fletching', skill: 'fletching', prompt: 'Use a knife on logs' },
 };
+
+/** Whether a recipe can be made at a station of this kind (campfires cook what a range cooks). */
+export function recipeAt(rec: RecipeDef, kind: StationKind): boolean {
+  return rec.station === kind || (rec.station === 'range' && kind === 'fire');
+}
 
 /** "bronze bar" → "bronze bars" (names already plural, like "arrow shafts", are kept). */
 export function plural(name: string, n: number): string {
@@ -27,6 +36,8 @@ export interface RecipeDef {
   output: { item: ItemId; qty: number };
   /** Seconds per make. */
   seconds: number;
+  /** Tool that must be in the inventory (not used up), e.g. a hammer for forging. */
+  tool?: ItemId;
   /**
    * Chance of failure (e.g. burning food) at the recipe's level, falling linearly to zero at
    * `failStopLevel`. A failure still uses the ingredients and gives `failOutput` instead.
@@ -41,33 +52,57 @@ export const RECIPES: Record<string, RecipeDef> = {
   bronze_bar: r({ id: 'bronze_bar', station: 'furnace', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'copper_ore', qty: 1 }, { item: 'tin_ore', qty: 1 }], output: { item: 'bronze_bar', qty: 1 }, seconds: 1.8 }),
   iron_bar: r({ id: 'iron_bar', station: 'furnace', skill: 'smithing', level: 15, xp: 25, inputs: [{ item: 'iron_ore', qty: 1 }], output: { item: 'iron_bar', qty: 1 }, seconds: 1.8 }),
   // ---- Smithing: anvil
-  bronze_dagger: r({ id: 'bronze_dagger', station: 'anvil', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_dagger', qty: 1 }, seconds: 2.4 }),
-  bronze_helm: r({ id: 'bronze_helm', station: 'anvil', skill: 'smithing', level: 3, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_helm', qty: 1 }, seconds: 2.4 }),
-  bronze_sword: r({ id: 'bronze_sword', station: 'anvil', skill: 'smithing', level: 4, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_sword', qty: 1 }, seconds: 2.4 }),
-  bronze_shield: r({ id: 'bronze_shield', station: 'anvil', skill: 'smithing', level: 8, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_shield', qty: 1 }, seconds: 2.4 }),
-  bronze_platelegs: r({ id: 'bronze_platelegs', station: 'anvil', skill: 'smithing', level: 10, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_platelegs', qty: 1 }, seconds: 2.4 }),
-  bronze_platebody: r({ id: 'bronze_platebody', station: 'anvil', skill: 'smithing', level: 12, xp: 38, inputs: [{ item: 'bronze_bar', qty: 3 }], output: { item: 'bronze_platebody', qty: 1 }, seconds: 2.4 }),
-  iron_helm: r({ id: 'iron_helm', station: 'anvil', skill: 'smithing', level: 18, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_helm', qty: 1 }, seconds: 2.4 }),
-  iron_sword: r({ id: 'iron_sword', station: 'anvil', skill: 'smithing', level: 19, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_sword', qty: 1 }, seconds: 2.4 }),
-  iron_shield: r({ id: 'iron_shield', station: 'anvil', skill: 'smithing', level: 23, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_shield', qty: 1 }, seconds: 2.4 }),
-  iron_platelegs: r({ id: 'iron_platelegs', station: 'anvil', skill: 'smithing', level: 26, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_platelegs', qty: 1 }, seconds: 2.4 }),
-  iron_platebody: r({ id: 'iron_platebody', station: 'anvil', skill: 'smithing', level: 30, xp: 75, inputs: [{ item: 'iron_bar', qty: 3 }], output: { item: 'iron_platebody', qty: 1 }, seconds: 2.4 }),
-  // ---- Fletching (anywhere)
-  arrow_shafts: r({ id: 'arrow_shafts', station: 'fletching', skill: 'fletching', level: 1, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'arrow_shafts', qty: 15 }, seconds: 1.5 }),
+  bronze_dagger: r({ id: 'bronze_dagger', station: 'anvil', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_dagger', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_helm: r({ id: 'bronze_helm', station: 'anvil', skill: 'smithing', level: 3, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_sword: r({ id: 'bronze_sword', station: 'anvil', skill: 'smithing', level: 4, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_sword', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_shield: r({ id: 'bronze_shield', station: 'anvil', skill: 'smithing', level: 8, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_platelegs: r({ id: 'bronze_platelegs', station: 'anvil', skill: 'smithing', level: 10, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_platebody: r({ id: 'bronze_platebody', station: 'anvil', skill: 'smithing', level: 12, xp: 38, inputs: [{ item: 'bronze_bar', qty: 3 }], output: { item: 'bronze_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_helm: r({ id: 'iron_helm', station: 'anvil', skill: 'smithing', level: 18, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_sword: r({ id: 'iron_sword', station: 'anvil', skill: 'smithing', level: 19, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_sword', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_shield: r({ id: 'iron_shield', station: 'anvil', skill: 'smithing', level: 23, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_platelegs: r({ id: 'iron_platelegs', station: 'anvil', skill: 'smithing', level: 26, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_platebody: r({ id: 'iron_platebody', station: 'anvil', skill: 'smithing', level: 30, xp: 75, inputs: [{ item: 'iron_bar', qty: 3 }], output: { item: 'iron_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  // ---- Fletching (knife on logs, anywhere)
+  arrow_shafts: r({ id: 'arrow_shafts', station: 'fletching', skill: 'fletching', level: 1, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'arrow_shafts', qty: 15 }, seconds: 1.5, tool: 'knife' }),
   bronze_arrow: r({ id: 'bronze_arrow', station: 'fletching', skill: 'fletching', level: 3, xp: 20, inputs: [{ item: 'arrow_shafts', qty: 15 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_arrow', qty: 15 }, seconds: 1.5 }),
-  shortbow: r({ id: 'shortbow', station: 'fletching', skill: 'fletching', level: 5, xp: 10, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'shortbow', qty: 1 }, seconds: 1.5 }),
-  wooden_shield: r({ id: 'wooden_shield', station: 'fletching', skill: 'fletching', level: 8, xp: 16, inputs: [{ item: 'logs', qty: 2 }], output: { item: 'wooden_shield', qty: 1 }, seconds: 1.5 }),
-  oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.5 }),
+  shortbow_u: r({ id: 'shortbow_u', station: 'fletching', skill: 'fletching', level: 5, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
+  shortbow: r({ id: 'shortbow', station: 'fletching', skill: 'fletching', level: 5, xp: 5, inputs: [{ item: 'shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'shortbow', qty: 1 }, seconds: 1.2 }),
+  wooden_shield: r({ id: 'wooden_shield', station: 'fletching', skill: 'fletching', level: 8, xp: 16, inputs: [{ item: 'logs', qty: 2 }], output: { item: 'wooden_shield', qty: 1 }, seconds: 1.5, tool: 'knife' }),
+  oak_shortbow_u: r({ id: 'oak_shortbow_u', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
+  oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.2 }),
   // ---- Cooking
-  cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.4, stopLevel: 20, output: 'burnt_meat' } }),
+  shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 18, output: 'burnt_fish' } }),
+  cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 20, output: 'burnt_meat' } }),
+  anchovies: r({ id: 'anchovies', station: 'range', skill: 'cooking', level: 15, xp: 40, inputs: [{ item: 'raw_anchovies', qty: 1 }], output: { item: 'anchovies', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 34, output: 'burnt_fish' } }),
 };
 
 export function recipesFor(station: StationKind): RecipeDef[] {
-  return Object.values(RECIPES).filter((x) => x.station === station);
+  return Object.values(RECIPES).filter((x) => recipeAt(x, station));
 }
 
 export function failChance(rec: RecipeDef, level: number): number {
   if (!rec.fail) return 0;
   const span = Math.max(1, rec.fail.stopLevel - rec.level);
   return Math.max(0, rec.fail.chance * (1 - (level - rec.level) / span));
+}
+
+/**
+ * "Use X on Y" combinations that open a production interface (either order works), e.g. a knife on
+ * logs opens fletching.
+ */
+export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: 'fletching' }[] = [
+  { a: 'knife', b: ['logs', 'oak_logs'], opens: 'fletching' },
+  { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
+  { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
+];
+
+export function useCombo(x: ItemId, y: ItemId): 'fletching' | null {
+  for (const c of USE_COMBOS) if ((c.a === x && c.b.includes(y)) || (c.a === y && c.b.includes(x))) return c.opens;
+  return null;
+}
+
+/** Whether an item takes part in any "use" combination (so the bag shows a Use button). */
+export function usable(item: ItemId): boolean {
+  return USE_COMBOS.some((c) => c.a === item || c.b.includes(item));
 }

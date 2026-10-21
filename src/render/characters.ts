@@ -33,7 +33,7 @@ export interface HumanoidLook {
   cape?: string;
 }
 
-export type HeldTool = 'none' | 'sword' | 'bow' | 'staff' | 'axe' | 'pickaxe' | 'spear' | 'club' | 'walkingstaff' | 'hammer' | 'knife';
+export type HeldTool = 'none' | 'sword' | 'bow' | 'staff' | 'axe' | 'pickaxe' | 'spear' | 'club' | 'walkingstaff' | 'hammer' | 'knife' | 'net';
 
 /** 'smith' = hammering at an anvil; 'work' = hands-forward work (furnace, cooking, fletching). */
 export type HumanoidPose = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'talk' | 'smith' | 'work';

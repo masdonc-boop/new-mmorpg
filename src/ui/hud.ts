@@ -10,7 +10,9 @@ import { MapViewer } from './mapview';
 import { clearKeepingScroll } from './dom';
 import { BankView } from './bankview';
 import { CraftView } from './craftview';
-import { RECIPES, STATION_INFO, type StationKind } from '../data/recipes';
+import { ShopView } from './shopview';
+import { SHOPS } from '../data/shops';
+import { RECIPES, STATION_INFO, useCombo, usable, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
@@ -20,7 +22,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -64,6 +66,13 @@ export class Hud {
   private craftStation: StationKind = 'fletching';
   private craftDirty = false;
   private openSkill: SkillId | null = null;
+  private shopView: ShopView | null = null;
+  private shopId = 'tilly';
+  private shopDirty = false;
+  /** Inventory slot being "used" on another item (e.g. a knife, waiting for logs to be tapped). */
+  private usingSlot: number | null = null;
+  private prompt!: HTMLButtonElement;
+  private promptTarget: number | null = null;
   private panel!: HTMLDivElement;
   private panelBody!: HTMLDivElement;
   private panelTitle!: HTMLDivElement;
@@ -154,6 +163,12 @@ export class Hud {
 
     this.status = el('div', 'action-status hidden');
     this.root.appendChild(this.status);
+    // Contextual prompt: what the nearby object does; tapping it interacts.
+    this.prompt = el('button', 'ctx-prompt hidden');
+    this.prompt.addEventListener('click', () => {
+      if (this.promptTarget !== null) this.cb.command({ type: 'interact', target: this.promptTarget });
+    });
+    this.root.appendChild(this.prompt);
     const actions = el('div', 'actions');
     this.styleBtn = el('button', 'style-btn');
     this.styleBtn.addEventListener('click', () => {
@@ -289,6 +304,11 @@ export class Hud {
     const settled = !this.panelTouching && performance.now() - this.lastPanelScroll > 250;
     if (settled && this.openPanel === 'inventory' && this.invDirty) this.renderInventory();
     if (settled && this.openPanel === 'skills' && this.skillsDirty) this.renderSkills();
+    if (settled && this.openPanel === 'shop' && this.shopDirty && this.shopView) {
+      this.shopDirty = false;
+      this.shopView.refresh();
+    }
+    this.updatePrompt();
     if (settled && this.openPanel === 'craft' && this.craftDirty && this.craftView) {
       this.craftDirty = false;
       this.craftView.refresh();
@@ -317,7 +337,7 @@ export class Hud {
       if (e) text = `${STYLE_ICON[w.player.style]} Fighting ${e.def.name}`;
     } else if (a?.type === 'gather') {
       const n = w.gatheringNode;
-      if (n) text = `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
+      if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
     } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
     else if (a?.type === 'craft') {
       const r = RECIPES[a.recipe];
@@ -474,6 +494,20 @@ export class Hud {
         break;
       case 'bankOpen':
         this.toggle('bank');
+        break;
+      case 'shopOpen':
+        this.shopId = e.shop;
+        this.toggle('shop');
+        break;
+      case 'shopClose':
+        if (this.openPanel === 'shop') {
+          this.shopView = null;
+          this.toggle(null);
+        }
+        break;
+      case 'shop':
+        this.shopDirty = true;
+        this.invDirty = true;
         break;
       case 'productionOpen':
         this.openCraft(e.station);
@@ -645,6 +679,10 @@ export class Hud {
     this.mapViewer?.dispose();
     this.mapViewer = null;
     if (this.openPanel === 'bank' && id !== 'bank' && this.bankView) this.leaveBank(true);
+    if (this.openPanel === 'shop' && id !== 'shop' && this.shopView) {
+      this.shopView = null;
+      this.cb.command({ type: 'shopClose' });
+    }
     if (this.openPanel === 'craft' && this.craftView) {
       // Closed by the player (not by starting production): release the station.
       this.craftView = null;
@@ -662,7 +700,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -671,6 +709,7 @@ export class Hud {
     else if (id === 'map') this.renderMap();
     else if (id === 'bank') this.renderBank();
     else if (id === 'craft') this.renderCraft();
+    else if (id === 'shop') this.renderShop();
     else this.renderSettings();
   }
 
@@ -698,6 +737,13 @@ export class Hud {
     );
     this.panelBody.appendChild(this.craftView.root);
     this.craftDirty = false;
+  }
+
+  private renderShop() {
+    clearKeepingScroll(this.panelBody);
+    this.shopView = new ShopView(this.world, this.shopId, (c) => this.cb.command(c));
+    this.panelBody.appendChild(this.shopView.root);
+    this.shopDirty = false;
   }
 
   private renderBank() {
@@ -733,18 +779,46 @@ export class Hud {
         cell.innerHTML = `<img src="${itemIcon(s.item)}" alt="${itemDef(s.item).name}">${s.qty > 1 || itemDef(s.item).stackable ? `<span class="qty">${formatQty(s.qty)}</span>` : ''}`;
       }
       cell.addEventListener('click', () => {
+        if (this.usingSlot !== null) {
+          // Finish "Use X on Y".
+          const from = this.usingSlot;
+          const a = inv.slots[from];
+          this.usingSlot = null;
+          this.selectedSlot = null;
+          if (a && s && i !== from) {
+            if (useCombo(a.item, s.item) === 'fletching') {
+              this.cb.command({ type: 'openFletching' });
+              return;
+            }
+            this.addLog('Nothing interesting happens.', 'info');
+          }
+          this.renderInventory();
+          return;
+        }
         if (this.selectedSlot !== null && this.selectedSlot !== i && !s) {
           this.cb.command({ type: 'swapItems', a: this.selectedSlot, b: i });
           this.selectedSlot = null;
         } else this.selectedSlot = s ? (this.selectedSlot === i ? null : i) : null;
         this.renderInventory();
       });
+      if (this.usingSlot === i) cell.classList.add('using');
       grid.appendChild(cell);
     });
     body.appendChild(grid);
     const info = el('div', 'inv-info');
     const sel = this.selectedSlot !== null ? inv.slots[this.selectedSlot] : null;
-    if (sel) {
+    const using = this.usingSlot !== null ? inv.slots[this.usingSlot] : null;
+    if (using) {
+      info.innerHTML = `<div class="ii-name">Use ${itemDef(using.item).name} on…</div><div class="ii-desc">Tap another item (for example a knife on logs).</div>`;
+      const cancel = el('button', '', 'Cancel');
+      cancel.addEventListener('click', () => {
+        this.usingSlot = null;
+        this.renderInventory();
+      });
+      const btns = el('div', 'ii-btns');
+      btns.appendChild(cancel);
+      info.appendChild(btns);
+    } else if (sel) {
       const d = itemDef(sel.item);
       info.innerHTML = `<div class="ii-name">${d.name}${sel.qty > 1 ? ` × ${sel.qty}` : ''}</div><div class="ii-desc">${d.examine}</div>`;
       const btns = el('div', 'ii-btns');
@@ -760,10 +834,13 @@ export class Hud {
         });
         btns.appendChild(wear);
       }
-      if (Object.values(RECIPES).some((r) => r.station === 'fletching' && r.inputs.some((i) => i.item === sel.item))) {
-        const fl = el('button', 'primary', 'Fletch');
-        fl.addEventListener('click', () => this.cb.command({ type: 'openFletching' }));
-        btns.appendChild(fl);
+      if (usable(sel.item)) {
+        const use = el('button', 'primary', 'Use');
+        use.addEventListener('click', () => {
+          this.usingSlot = this.selectedSlot;
+          this.renderInventory();
+        });
+        btns.appendChild(use);
       }
       if (d.kind === 'food') {
         const eat = el('button', 'primary', 'Eat');
@@ -789,6 +866,33 @@ export class Hud {
     }
     body.appendChild(info);
     this.renderOverflow(body);
+  }
+
+  /**
+   * Shows what the nearest usable thing does (station, bank, shop, fishing spot) when the player is
+   * close and idle; tapping the prompt interacts with it. Hidden while a panel is open.
+   */
+  private updatePrompt() {
+    const w = this.world;
+    const p = w.player;
+    let best: { id: number; text: string; d: number } | null = null;
+    const consider = (id: number, x: number, z: number, text: string, range: number) => {
+      const d = Math.hypot(x - p.x, z - p.z);
+      if (d <= range && (!best || d < best.d)) best = { id, text, d };
+    };
+    if (!p.dead && !this.openPanel && !p.action && !this.dialogueOpen) {
+      for (const st of w.stations) consider(st.id, st.x, st.z, `${SKILL_INFO[STATION_INFO[st.kind].skill].glyph} ${st.name} · ${STATION_INFO[st.kind].prompt}`, 3);
+      for (const n of w.npcs) {
+        if (n.def.service === 'bank') consider(n.id, n.x, n.z, '🏦 Bank · open your bank', (n.def.reach ?? 1.9) + 1);
+        if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
+      }
+      for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);
+    }
+    const b = best as { id: number; text: string; d: number } | null;
+    this.promptTarget = b ? b.id : null;
+    const text = b ? `${b.text}  ›` : '';
+    if (this.prompt.textContent !== text) this.prompt.textContent = text;
+    this.prompt.classList.toggle('hidden', !b);
   }
 
   /** Worn gear: five slots above the inventory, with the combined combat bonuses. */
@@ -872,9 +976,9 @@ export class Hud {
       if (this.openSkill === id) {
         const list = skillUnlocks(id);
         const det = el('div', 'skill-unlocks');
-        det.innerHTML = list.length
+        det.innerHTML = `<div class="su-how">${info.available ? '' : '<b class="su-na">Not available yet.</b> '}${info.howTo}</div>` + (list.length
           ? list.map((u) => `<div class="su ${u.level <= lvl ? 'done' : ''}"><b>${u.level}</b><img src="${itemIcon(u.icon)}" alt="">${u.text}</div>`).join('')
-          : '<div class="su">Every level makes you stronger in this skill.</div>';
+          : '<div class="su">Every level makes you stronger in this skill.</div>');
         grid.appendChild(det);
       }
     }
