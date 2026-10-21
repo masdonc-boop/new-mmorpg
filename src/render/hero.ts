@@ -668,20 +668,21 @@ export class HeroModel {
     const oldK = this.old ? 1 : 0;
 
     // Rest pose: grounded A-stance, soft knees, arms hanging clear of the torso.
-    this.set('armL', 0.04, 0, 0.17);
-    this.set('armR', 0.04, 0, -0.17);
+    // (For armL, negative z moves the hand away from the body; armR mirrors it.)
+    this.set('armL', 0.04, 0, -0.1);
+    this.set('armR', 0.04, 0, 0.1);
     this.set('elbowL', -0.2);
     this.set('elbowR', -0.2);
     this.set('spine', 0.03 + oldK * 0.14);
     this.set('head', -oldK * 0.1);
     if (this.held === 'bow') {
       // Carry the bow low at the side, hand relaxed.
-      this.set('armL', 0.08, 0, 0.2);
-      this.set('elbowL', -0.35);
+      this.set('armL', 0.06, 0, -0.16);
+      this.set('elbowL', -0.3);
     }
     if (this.held === 'walkingstaff' || this.held === 'spear') {
-      this.set('armR', -0.25, 0, -0.22);
-      this.set('elbowR', -0.75);
+      this.set('armR', -0.2, 0, 0.04);
+      this.set('elbowR', -0.8);
     }
     let snap = 14;
     if (pose !== 'dead') this.deadT = 0;
@@ -731,25 +732,34 @@ export class HeroModel {
 
     if (w > 0.001) {
       // Counter-rotation: pelvis turns with the forward leg, shoulders the other way; relaxed arm swing.
-      const zl = feet.L.z / (g.stride / 2);
-      const zr = feet.R.z / (g.stride / 2);
-      const hipYaw = 0.11 * zl * w;
+      // Smooth (not foot-tracking) so the torso never jerks when a foot lifts off.
+      const hipYaw = 0.11 * Math.cos(Math.PI * 2 * this.gaitPhase) * w;
       this.add('hips', 0, hipYaw, 0.025 * Math.cos(this.gaitPhase * Math.PI * 2) * w);
       this.add('spine', lerp(0.03, 0.13, g.run) * w, -hipYaw * 1.6, -this.turnRate * 0.045 * w);
       this.add('head', -lerp(0.01, 0.07, g.run) * w, hipYaw * 0.5, this.turnRate * 0.02 * w);
-      const armAmp = lerp(0.28, 0.5, g.run) * w;
-      const elbowBase = lerp(0.28, 1.15, g.run);
+      // Arms swing as smooth pendulums in opposition to the legs (left arm back as the left foot
+      // lands), a little further forward than back, held slightly away from the body. Elbows
+      // stay soft when walking and bend toward 90 degrees when running.
+      const armAmp = lerp(0.46, 0.7, g.run) * w;
+      const armBias = -lerp(0.05, 0.12, g.run) * w;
+      const abduct = lerp(0.03, 0.06, g.run) * w;
+      const swingL = Math.cos(Math.PI * 2 * (this.gaitPhase - 0.06));
+      const swingR = -swingL;
+      const elbowFor = (c: number) => -(lerp(0.3, 1.3, g.run) + lerp(0.3, 0.25, g.run) * Math.max(0, -c)) * w - 0.2 * (1 - w);
       if (!(archer && this.aim > 0.5)) {
         if (this.held !== 'bow') {
-          this.add('armL', zl * armAmp, 0, -0.02 * w);
-          this.set('elbowL', -(elbowBase + 0.3 * Math.max(0, -zl)) * w - 0.2 * (1 - w));
+          this.add('armL', armBias + swingL * armAmp, 0, -abduct);
+          this.set('elbowL', elbowFor(swingL));
         } else {
-          this.add('armL', zl * armAmp * 0.6, 0, 0);
+          // Bow hand: a smaller swing with the bow hanging from it.
+          this.add('armL', swingL * armAmp * 0.5, 0, -abduct);
         }
       }
       if (this.held !== 'walkingstaff' && this.held !== 'spear') {
-        this.add('armR', zr * armAmp, 0, 0.02 * w);
-        this.set('elbowR', -(elbowBase + 0.3 * Math.max(0, -zr)) * w - 0.2 * (1 - w));
+        this.add('armR', armBias + swingR * armAmp, 0, abduct);
+        this.set('elbowR', elbowFor(swingR));
+      } else {
+        this.add('armR', swingR * armAmp * 0.25, 0, 0);
       }
       snap = 16;
     } else if (pose !== 'dead') {
@@ -759,8 +769,8 @@ export class HeroModel {
       this.add('hips', 0, 0, Math.sin(time * 0.7) * 0.025);
       this.add('spine', br * 0.012, 0, -Math.sin(time * 0.7) * 0.025);
       this.add('head', Math.sin(time * 0.9) * 0.035, Math.sin(time * 0.45) * 0.22, 0);
-      this.add('armL', br * 0.02, 0, br * 0.015);
-      this.add('armR', br * 0.02, 0, -br * 0.015);
+      this.add('armL', br * 0.02, 0, -br * 0.015);
+      this.add('armR', br * 0.02, 0, br * 0.015);
     }
 
     // ---- archery (driven by aim/draw so the draw happens BEFORE the arrow is released)
@@ -935,10 +945,17 @@ export class HeroModel {
       return;
     }
     if (this.held !== 'bow') return;
-    // Carry: limbs vertical along the leg, belly forward, in hand space.
-    const qCarry = tmpQa.setFromRotationMatrix(tmpMb.makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0)));
-    // Tilt it so the upper limb swings forward and out, clear of the arm and leg.
-    qCarry.premultiply(tmpQb.setFromEuler(new THREE.Euler(0.75, 0, 0.3)));
+    // Carry: solved in body space so the bow hangs outside the leg in the body's side plane,
+    // riser in the hand, top limb tipped forward and the string toward the back. It follows the
+    // arm's swing so it moves with the hand rather than floating.
+    this.root.updateWorldMatrix(true, true);
+    const swingX = this.joints.armL.rotation.x + this.joints.elbowL.rotation.x * 0.5;
+    const carryBody = tmpQb.setFromAxisAngle(tmpV.set(1, 0, 0), 0.45 + swingX * 0.8).multiply(
+      new THREE.Quaternion().setFromRotationMatrix(tmpMb.makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0))),
+    );
+    const handQc = this.handL.getWorldQuaternion(new THREE.Quaternion());
+    const rootQc = this.root.getWorldQuaternion(new THREE.Quaternion());
+    const qCarry = tmpQa.copy(handQc).invert().multiply(rootQc).multiply(carryBody);
     // Aim: limbs vertical (slight cant), belly toward the character's facing, converted into hand space.
     this.root.updateWorldMatrix(true, true);
     const rootQ = new THREE.Quaternion();

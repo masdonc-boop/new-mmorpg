@@ -322,3 +322,58 @@ describe('Bow handling', () => {
     }
   });
 });
+
+describe('Arm swing and bow carry clearance', () => {
+  const look = { skin: '#e8b48f', hair: '#5a3620', hairStyle: 1, tunic: '#2f7fc1', trousers: '#4a3a2a', bodyType: 0 as const };
+  const handX = (m: HeroModel, side: 'L' | 'R') => {
+    m.root.updateWorldMatrix(true, true);
+    const h = (m as unknown as Record<string, THREE.Object3D>)[`hand${side}`];
+    return new THREE.Vector3().setFromMatrixPosition(h.matrixWorld);
+  };
+
+  it('keeps the hands outside the hips at rest and on every frame of walking and running', () => {
+    for (const speed of [0, 1.6, 4.4]) {
+      const m = new HeroModel(look);
+      for (let i = 0; i < 180; i++) {
+        m.update(1 / 60, speed ? 'walk' : 'idle', speed, 99, i / 60);
+        if (i < 60) continue;
+        expect(-handX(m, 'L').x).toBeGreaterThan(0.27);
+        expect(handX(m, 'R').x).toBeGreaterThan(0.27);
+      }
+      m.dispose();
+    }
+  });
+
+  it('swings the arms forward and back in opposition while walking', () => {
+    const m = new HeroModel(look);
+    let minDiff = Infinity;
+    let maxDiff = -Infinity;
+    for (let i = 0; i < 240; i++) {
+      m.update(1 / 60, 'walk', 1.6, 99, i / 60);
+      if (i < 90) continue;
+      const d = handX(m, 'L').z - handX(m, 'R').z;
+      minDiff = Math.min(minDiff, d);
+      maxDiff = Math.max(maxDiff, d);
+    }
+    expect(maxDiff).toBeGreaterThan(0.25);
+    expect(minDiff).toBeLessThan(-0.25);
+    m.dispose();
+  });
+
+  it('carries the bow outside the body with the string toward the back', () => {
+    for (const speed of [0, 1.6]) {
+      const m = new HeroModel(look);
+      m.setTool('bow');
+      for (let i = 0; i < 150; i++) {
+        m.update(1 / 60, speed ? 'walk' : 'idle', speed, 99, i / 60);
+        if (i < 60) continue;
+        const b = m.debugBow();
+        expect(-b.grip.x).toBeGreaterThan(0.27);
+        expect(b.up.y).toBeGreaterThan(0.75);
+        // String (bow -x) points backward: the belly faces forward.
+        expect(b.belly.z).toBeGreaterThan(0.4);
+      }
+      m.dispose();
+    }
+  });
+});
