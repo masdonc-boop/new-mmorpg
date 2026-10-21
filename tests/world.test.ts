@@ -152,6 +152,26 @@ describe('Simulation', () => {
     expect(Math.hypot(p.x - w.map.checkpoints[0].respawnX, p.z - w.map.checkpoints[0].respawnZ)).toBeLessThan(0.01);
   });
 
+  it('offers respawn at the nearest attuned waystone', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const meadow = w.map.checkpoints.find((c) => c.id === 'meadow')!;
+    p.x = meadow.respawnX;
+    p.z = meadow.respawnZ;
+    w.tick();
+    expect(p.checkpoints.has('meadow')).toBe(true);
+    const slime = w.enemies.find((e) => e.def.id === 'slime')!;
+    p.x = slime.x + 1;
+    p.z = slime.z;
+    p.hp = 1;
+    w.issue({ type: 'interact', target: slime.id });
+    for (let i = 0; i < 30 * 15 && !p.dead; i++) w.tick();
+    expect(p.dead).toBe(true);
+    expect(w.nearestCheckpoint().id).toBe('meadow');
+    w.issue({ type: 'respawn', at: 'checkpoint' });
+    expect(Math.hypot(p.x - meadow.respawnX, p.z - meadow.respawnZ)).toBeLessThan(0.01);
+  });
+
   it('uses ranged ammo and grants ranged xp', () => {
     const w = new GameWorld();
     const p = w.player;

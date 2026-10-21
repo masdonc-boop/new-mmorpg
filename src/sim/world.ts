@@ -1,6 +1,6 @@
 import { mulberry32, randInt, type Rng } from '../core/rng';
 import { angleDiff, dist } from '../core/math';
-import { ENEMIES, type EnemyDef, type EnemyType } from '../data/enemies';
+import { ENEMIES, type EnemyDef } from '../data/enemies';
 import { itemDef, type ItemId } from '../data/items';
 import { NPCS, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
@@ -905,8 +905,9 @@ export class GameWorld {
     const dealt = Math.min(r.damage, p.hp);
     p.hp -= dealt;
     this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit: r.hit });
-    // Auto-retaliate: if idle, fight back.
-    if (!p.action && !p.moving && p.hp > 0) p.action = { type: 'attack', target: e.id };
+    // Auto-retaliate: idle or gathering players fight back (but never override manual movement or a chosen target).
+    const steering = Math.hypot(p.joy.x, p.joy.z) > 0.15 || p.path.length > 0;
+    if ((!p.action || p.action.type === 'gather') && !steering && p.hp > 0) p.action = { type: 'attack', target: e.id };
     if (p.hp <= 0) this.killPlayer();
   }
 
@@ -1067,9 +1068,5 @@ export class GameWorld {
   enemyById(id: number): Enemy | null {
     const e = this.byId.get(id);
     return e instanceof Enemy ? e : null;
-  }
-
-  enemyTypeCount(type: EnemyType): number {
-    return this.enemies.filter((e) => e.def.id === type).length;
   }
 }

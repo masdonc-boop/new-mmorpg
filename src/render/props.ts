@@ -511,7 +511,6 @@ export class ResourceView {
   readonly group = new THREE.Group();
   private batches: ResourceBatch[] = [];
   private dirty = new Set<ResourceBatch>();
-  private batchOf = new Map<number, { batch: ResourceBatch; i: number }>();
 
   constructor(private map: WorldMap, nodes: ResourceNode[]) {
     const material = makeWorldMaterial();
@@ -545,7 +544,6 @@ export class ResourceView {
           dep.setMatrixAt(i, n.depleted ? m : ZERO);
           const tint = 0.92 + rnd() * 0.16;
           full.setColorAt(i, new THREE.Color(tint, tint, tint));
-          this.batchOf.set(n.id, { batch, i });
         });
         full.computeBoundingSphere();
         dep.computeBoundingSphere();
@@ -555,32 +553,32 @@ export class ResourceView {
     }
   }
 
+  /** Last rendered state per node id, so instance matrices are only rewritten on change. */
+  private shown = new Map<number, { depleted: boolean; shaking: boolean }>();
+
   /** Called each frame: updates depletion state and hit shake. */
   update() {
     for (const b of this.batches) {
       b.nodes.forEach((n, i) => {
+        const prev = this.shown.get(n.id) ?? { depleted: false, shaking: false };
         const shaking = n.hitAge < 0.35 && !n.depleted;
-        const wasShaking = (n as ResourceNode & { _shake?: boolean })._shake;
-        const st = (n as ResourceNode & { _dep?: boolean })._dep;
-        if (st !== n.depleted) {
-          (n as ResourceNode & { _dep?: boolean })._dep = n.depleted;
+        if (prev.depleted !== n.depleted) {
           b.full.setMatrixAt(i, n.depleted ? ZERO : b.base[i]);
           b.depleted.setMatrixAt(i, n.depleted ? b.base[i] : ZERO);
           this.dirty.add(b);
         }
-        if (shaking || wasShaking) {
-          (n as ResourceNode & { _shake?: boolean })._shake = shaking;
-          if (!n.depleted) {
-            if (shaking) {
-              const k = Math.sin(n.hitAge * 40) * (0.35 - n.hitAge) * 0.25;
-              b.base[i].decompose(tmpP, tmpQ, tmpS);
-              const wob = new THREE.Quaternion().setFromEuler(new THREE.Euler(k, 0, k * 0.6));
-              tmpM.compose(tmpP, tmpQ.clone().multiply(wob), tmpS);
-              b.full.setMatrixAt(i, tmpM);
-            } else b.full.setMatrixAt(i, b.base[i]);
-            this.dirty.add(b);
-          }
+        if (shaking) {
+          const k = Math.sin(n.hitAge * 40) * (0.35 - n.hitAge) * 0.25;
+          b.base[i].decompose(tmpP, tmpQ, tmpS);
+          tmpQ.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(k, 0, k * 0.6)));
+          tmpM.compose(tmpP, tmpQ, tmpS);
+          b.full.setMatrixAt(i, tmpM);
+          this.dirty.add(b);
+        } else if (prev.shaking && !n.depleted) {
+          b.full.setMatrixAt(i, b.base[i]);
+          this.dirty.add(b);
         }
+        this.shown.set(n.id, { depleted: n.depleted, shaking });
       });
     }
     for (const b of this.dirty) {

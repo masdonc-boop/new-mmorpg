@@ -81,7 +81,3 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     ],
   },
 };
-
-export function enemyCombatLevel(def: EnemyDef): number {
-  return def.level;
-}

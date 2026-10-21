@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { lerp } from '../core/math';
 import { NPCS } from '../data/npcs';
 import { SKILL_INFO } from '../data/skills';
-import { groundHeight, type WorldMap } from '../sim/worldmap';
+import { groundHeight } from '../sim/worldmap';
 import { Enemy, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool, type HumanoidLook } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
@@ -585,10 +585,6 @@ export class GameRenderer {
     const hits = this.raycaster.intersectObject(this.terrain, false);
     if (hits.length > 0) return { kind: 'ground', x: hits[0].point.x, z: hits[0].point.z };
     return null;
-  }
-
-  getMap(): WorldMap {
-    return this.world.map;
   }
 }
 
