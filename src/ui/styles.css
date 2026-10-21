@@ -1933,3 +1933,95 @@ button.danger {
   -webkit-user-drag: none;
   pointer-events: none;
 }
+
+/* Toolbelt */
+.tb-open {
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 900;
+  font-size: 13px;
+}
+.tb-icons {
+  flex: 1;
+  display: flex;
+  gap: 2px;
+  overflow: hidden;
+}
+.tb-icons img {
+  width: 24px;
+  height: 24px;
+}
+.tb-count {
+  color: var(--muted);
+}
+.tb-intro {
+  margin-bottom: 8px;
+}
+.tb-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tb-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.22);
+}
+.tb-slot.filled {
+  border: 1px solid var(--edge);
+  background: rgba(255, 216, 77, 0.07);
+}
+.tb-slot.locked {
+  opacity: 0.5;
+}
+.tb-slot img,
+.tb-empty {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+.tb-main {
+  flex: 1;
+  min-width: 0;
+}
+.tb-label {
+  font-weight: 900;
+}
+.tb-label small {
+  color: var(--muted);
+  font-weight: 800;
+  margin-left: 4px;
+}
+.tb-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.tb-bag {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+.tb-bag .bank-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tb-bag img {
+  width: 22px;
+  height: 22px;
+}

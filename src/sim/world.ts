@@ -11,6 +11,8 @@ import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
+import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
+import { toolLabel, type ToolCategory } from '../data/tools';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
@@ -66,6 +68,12 @@ export type Command =
   | { type: 'unequip'; slot: EquipSlot }
   /** Make `count` of a recipe (at the open station, or anywhere for fletching). */
   | { type: 'craft'; recipe: string; count: number }
+  /** Put the tool in an inventory slot on the toolbelt (swapping out the one in its category). */
+  | { type: 'beltAdd'; slot: number }
+  /** Take a tool off the toolbelt into the inventory. */
+  | { type: 'beltRemove'; category: ToolCategory }
+  /** Move every tool in the inventory whose belt slot is empty onto the toolbelt. */
+  | { type: 'beltAddAll' }
   /** Open the fletching interface (needs no station). */
   | { type: 'openFletching' }
   | { type: 'closeProduction' }
@@ -119,6 +127,8 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** Toolbelt contents changed. */
+  | { type: 'toolbelt' }
   | { type: 'shopOpen'; shop: string }
   | { type: 'shopClose' }
   /** A purchase or sale went through (refresh the shop interface). */
@@ -222,6 +232,8 @@ export class Player implements Mover {
   bankAt: number | null = null;
   /** Worn gear (separate from the 28-slot inventory). */
   equipment = new Equipment();
+  /** Tools kept off the inventory (one per category). */
+  toolbelt = new Toolbelt();
   /** Station whose production interface is open (null for none or for fletching). */
   stationAt: number | null = null;
   /** Shopkeeper whose shop is open. */
@@ -383,6 +395,8 @@ export interface SaveData {
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** One-time grants already received (optional for older saves). */
   grants?: string[];
+  /** Toolbelt contents by category (optional for older saves). */
+  toolbelt?: Partial<Record<ToolCategory, ItemId>>;
   quests: Record<string, QuestProgress>;
   checkpoints: string[];
   /** Monster drops still on the ground (optional for older saves). */
@@ -446,6 +460,17 @@ export class GameWorld {
 
   /** Tools every character should own once (older saves receive them after the production update). */
   static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
+  /** Everything a new character starts with on the toolbelt. */
+  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net'];
+
+  /** Once, when the toolbelt arrives: move the tools already in the bag onto it (frees their slots). */
+  private introduceToolbelt() {
+    const p = this.player;
+    if (p.grants.has('toolbelt-v1')) return;
+    p.grants.add('toolbelt-v1');
+    const moved = this.beltAddAll(false);
+    if (moved.length) this.message(`New: the toolbelt! Your ${moved.join(', ')} moved onto it and no longer use bag slots.`, 'good');
+  }
 
   /**
    * Gives existing characters the production tools once. Anything already owned (bag, bank or worn)
@@ -457,7 +482,7 @@ export class GameWorld {
     p.grants.add('tools-v1');
     const given: string[] = [];
     for (const t of GameWorld.STARTER_TOOLS) {
-      if (p.inventory.count(t) > 0 || p.bank.count(t) > 0 || p.overflow.some((o) => o.item === t)) continue;
+      if (p.inventory.count(t) > 0 || p.bank.count(t) > 0 || p.toolbelt.count(t) > 0 || p.overflow.some((o) => o.item === t)) continue;
       if (p.inventory.add(t, 1) !== 1) addTo(p.overflow, t, 1);
       given.push(itemDef(t).name.toLowerCase());
     }
@@ -467,9 +492,8 @@ export class GameWorld {
   private giveStarterKit() {
     const inv = this.player.inventory;
     this.player.grants.add('tools-v1');
-    inv.add('bronze_axe');
-    inv.add('bronze_pickaxe');
-    for (const t of GameWorld.STARTER_TOOLS) inv.add(t);
+    this.player.grants.add('toolbelt-v1');
+    for (const t of GameWorld.STARTER_BELT) this.player.toolbelt.slots[itemDef(t).tool!.category] = t;
     inv.add('bread', 2);
     inv.add('bronze_arrow', 60);
     inv.add('air_rune', 60);
@@ -494,6 +518,7 @@ export class GameWorld {
       bank: p.bank.toJSON(),
       equipment: p.equipment.toJSON(),
       grants: [...p.grants],
+      toolbelt: p.toolbelt.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
       ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
@@ -511,7 +536,11 @@ export class GameWorld {
     p.equipment = worn.equipment;
     for (const d of worn.displaced) addTo(p.overflow, d.item, d.qty);
     p.grants = new Set(Array.isArray(s.grants) ? s.grants.filter((g) => typeof g === 'string') : []);
+    const belt = Toolbelt.restore(s.toolbelt);
+    p.toolbelt = belt.belt;
+    for (const d of belt.displaced) addTo(p.overflow, d.item, d.qty);
     this.grantProductionTools();
+    this.introduceToolbelt();
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
         const qty = Math.floor(Number(o?.qty));
@@ -626,6 +655,29 @@ export class GameWorld {
       case 'craft':
         this.startCraft(cmd.recipe, cmd.count);
         break;
+      case 'beltAdd': {
+        if (!Number.isInteger(cmd.slot)) break;
+        const r = addToBelt(p.toolbelt, p.inventory, cmd.slot);
+        if (r.ok) {
+          this.message(`You put the ${itemDef(r.added!).name.toLowerCase()} on your toolbelt${r.replaced ? ` (the ${itemDef(r.replaced).name.toLowerCase()} goes back in your bag)` : ''}.`);
+          this.emit({ type: 'toolbelt' });
+        } else if (r.reason === 'notTool') this.message("That isn't a tool.");
+        break;
+      }
+      case 'beltRemove': {
+        const r = removeFromBelt(p.toolbelt, p.inventory, cmd.category);
+        if (r.ok) {
+          this.message(`You take the ${itemDef(r.removed!).name.toLowerCase()} off your toolbelt.`);
+          this.emit({ type: 'toolbelt' });
+        } else if (r.reason === 'space') this.inventoryFull();
+        break;
+      }
+      case 'beltAddAll': {
+        const moved = this.beltAddAll(true);
+        if (moved.length) this.message(`Moved to your toolbelt: ${moved.join(', ')}.`);
+        else this.message('No tools in your bag need moving (each belt slot holds one tool).');
+        break;
+      }
       case 'openFletching':
         p.stationAt = null;
         this.emit({ type: 'productionOpen', station: 'fletching' });
@@ -1122,7 +1174,10 @@ export class GameWorld {
     if (!rec) return 'Unknown recipe.';
     const at = this.activeStation();
     if (rec.station !== 'fletching' && !(at && recipeAt(rec, at.kind))) return `You need to be at a ${STATION_INFO[rec.station].name.toLowerCase()}.`;
-    if (rec.tool && !p.inventory.has(rec.tool)) return `You need a ${itemDef(rec.tool).name.toLowerCase()} in your inventory.`;
+    if (rec.tool) {
+      const t = this.toolFor(rec.tool);
+      if (!t.tool) return t.why;
+    }
     if (p.skills.level(rec.skill) < rec.level) return `You need ${SKILL_INFO[rec.skill].name} level ${rec.level}.`;
     for (const inp of rec.inputs) {
       if (p.inventory.count(inp.item) < inp.qty) return `You need ${inp.qty} ${itemDef(inp.item).name.toLowerCase()}.`;
@@ -1206,6 +1261,40 @@ export class GameWorld {
       p.action = null;
       if (a.made > 1) this.message(`You make ${a.made} ${plural(itemDef(rec.output.item).name.toLowerCase(), a.made)}.`, 'good');
     }
+  }
+
+  // ---------------------------------------------------------------- toolbelt
+
+  /**
+   * Moves bag tools onto empty belt slots (best tier first). Never replaces a belt tool, so this
+   * can't push anything back into a full bag. Returns the names moved.
+   */
+  private beltAddAll(emit: boolean): string[] {
+    const p = this.player;
+    const moved: string[] = [];
+    const order = p.inventory.slots
+      .map((s, i) => ({ s, i }))
+      .filter((x) => x.s && itemDef(x.s.item).tool)
+      .sort((a, b) => itemDef(b.s!.item).tool!.tier - itemDef(a.s!.item).tool!.tier);
+    for (const { s, i } of order) {
+      const info = itemDef(s!.item).tool!;
+      if (p.toolbelt.get(info.category)) continue;
+      if (addToBelt(p.toolbelt, p.inventory, i).ok) moved.push(itemDef(s!.item).name.toLowerCase());
+    }
+    if (moved.length && emit) this.emit({ type: 'toolbelt' });
+    return moved;
+  }
+
+  /** The tool used for a category right now (belt or bag; best usable tier), or why there is none. */
+  toolFor(c: ToolCategory): { tool: ToolChoice | null; why: string } {
+    const p = this.player;
+    const r = bestTool(c, p.toolbelt, p.inventory, (s) => p.skills.level(s));
+    if (r.tool) return { tool: r.tool, why: '' };
+    if (r.blocked) {
+      const req = itemDef(r.blocked).tool!.req!;
+      return { tool: null, why: `You need ${SKILL_INFO[req.skill].name} level ${req.level} to use your ${itemDef(r.blocked).name.toLowerCase()}.` };
+    }
+    return { tool: null, why: `You need ${/^[aeiou]/i.test(toolLabel(c)) ? 'an' : 'a'} ${toolLabel(c).toLowerCase()} in your bag or toolbelt.` };
   }
 
   // ---------------------------------------------------------------- shop
@@ -1400,8 +1489,9 @@ export class GameWorld {
       if (verbose) this.message(`You need ${SKILL_INFO[n.def.skill].name} level ${n.def.levelReq} to gather from this ${n.def.name.toLowerCase()}.`, 'warn');
       return false;
     }
-    if (!p.inventory.has(n.def.tool)) {
-      if (verbose) this.message(`You need a ${itemDef(n.def.tool).name.toLowerCase()} for that.`, 'warn');
+    const tool = this.toolFor(n.def.tool);
+    if (!tool.tool) {
+      if (verbose) this.message(tool.why, 'warn');
       return false;
     }
     if (p.inventory.capacityFor(n.def.item) <= 0) {
@@ -1443,7 +1533,7 @@ export class GameWorld {
       return;
     }
     n.hitAge = 0;
-    const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill));
+    const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill), this.toolFor(n.def.tool).tool?.tier ?? 1);
     this.emit({ type: 'gather', node: n.id, success });
     if (!success) return;
     // Better catches (e.g. anchovies) become possible as the skill rises.

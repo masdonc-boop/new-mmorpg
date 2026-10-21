@@ -18,6 +18,14 @@ const stand = (w: GameWorld, x: number, z: number) => {
   w.player.z = w.player.prevZ = z;
 };
 const slotOf = (inv: Inventory, item: ItemId) => inv.slots.findIndex((s) => s?.item === item);
+/** Copies of an item the player holds in the bag or on the toolbelt. */
+const owned = (w: GameWorld, item: ItemId) => w.player.inventory.count(item) + w.player.toolbelt.count(item);
+/** Take a tool away entirely (belt or bag). */
+const lose = (w: GameWorld, item: ItemId) => {
+  const p = w.player;
+  for (const [c, it] of Object.entries(p.toolbelt.slots)) if (it === item) delete p.toolbelt.slots[c as keyof typeof p.toolbelt.slots];
+  p.inventory.remove(item, 99);
+};
 const SIDES = [[1.1, 0], [-1.1, 0], [0, 1.1], [0, -1.1]];
 /** Stand beside a node of a type and start working it. */
 function workNode(w: GameWorld, type: string) {
@@ -54,13 +62,14 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
     }
   });
 
-  it('every gathering tool and production tool is in the starter kit and sold by Tilly', () => {
-    const tools = new Set<ItemId>([...Object.values(RESOURCES).map((r) => r.tool), ...Object.values(RECIPES).flatMap((r) => (r.tool ? [r.tool] : []))]);
-    for (const t of tools) {
-      expect(starter.has(t), `starter kit has ${t}`).toBe(true);
-      expect(sold.has(t), `Tilly sells ${t}`).toBe(true);
+  it('every tool category a skill needs is on the starter toolbelt and sold by Tilly', () => {
+    const cats = new Set([...Object.values(RESOURCES).map((r) => r.tool), ...Object.values(RECIPES).flatMap((r) => (r.tool ? [r.tool] : []))]);
+    for (const c of cats) {
+      expect(w.player.toolbelt.get(c), `starter belt has a ${c}`).toBeTruthy();
+      expect([...sold].some((it) => itemDef(it).tool?.category === c), `Tilly sells a ${c}`).toBe(true);
     }
     expect(sold.has('bowstring')).toBe(true);
+    expect(starter.size).toBeGreaterThan(0);
   });
 
   it('every resource type and every workstation is placed and reachable on foot from the village', () => {
@@ -87,24 +96,34 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
 });
 
 describe('Tools', () => {
-  it('new characters start with axe, pickaxe, hammer, knife and fishing net', () => {
+  it('new characters start with axe, pickaxe, hammer, knife and fishing net on the toolbelt', () => {
     const p = new GameWorld().player;
-    for (const t of ['bronze_axe', 'bronze_pickaxe', 'hammer', 'knife', 'small_fishing_net'] as ItemId[]) expect(p.inventory.count(t)).toBe(1);
-    expect(p.inventory.usedSlots()).toBeLessThanOrEqual(12);
+    for (const t of ['bronze_axe', 'bronze_pickaxe', 'hammer', 'knife', 'small_fishing_net'] as ItemId[]) {
+      expect(p.toolbelt.count(t)).toBe(1);
+      expect(p.inventory.count(t)).toBe(0);
+    }
+    expect(p.inventory.usedSlots()).toBeLessThanOrEqual(6);
   });
 
   it('older saves receive the new tools exactly once, skipping ones already banked', () => {
     const w = new GameWorld();
     const save = w.save();
-    save.inventory = save.inventory.map((s) => (s && ['hammer', 'knife', 'small_fishing_net'].includes(s.item) ? null : s));
+    // A save from before the production tools and the toolbelt: only axe and pickaxe, in the bag.
     delete (save as { grants?: unknown }).grants;
+    delete (save as { toolbelt?: unknown }).toolbelt;
+    save.inventory = [{ item: 'bronze_axe', qty: 1 }, { item: 'bronze_pickaxe', qty: 1 }, ...save.inventory.slice(2)];
     save.bank = [{ item: 'knife', qty: 1 }];
     const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
-    expect(w2.player.inventory.count('hammer')).toBe(1);
-    expect(w2.player.inventory.count('small_fishing_net')).toBe(1);
-    expect(w2.player.inventory.count('knife')).toBe(0);
+    expect(owned(w2, 'hammer')).toBe(1);
+    expect(owned(w2, 'small_fishing_net')).toBe(1);
+    expect(owned(w2, 'knife')).toBe(0);
+    expect(w2.player.bank.count('knife')).toBe(1);
+    // …and the new toolbelt takes the bag tools, freeing their slots.
+    expect(w2.player.toolbelt.get('axe')).toBe('bronze_axe');
+    expect(w2.player.toolbelt.get('hammer')).toBe('hammer');
+    expect(w2.player.inventory.count('bronze_axe') + w2.player.inventory.count('hammer')).toBe(0);
     const w3 = new GameWorld({ save: JSON.parse(JSON.stringify(w2.save())) });
-    expect(w3.player.inventory.count('hammer')).toBe(1);
+    expect(owned(w3, 'hammer')).toBe(1);
   });
 
   it('a full bag sends granted tools to held items instead of losing them', () => {
@@ -112,11 +131,12 @@ describe('Tools', () => {
     const save = w.save();
     save.inventory = Array.from({ length: INVENTORY_SLOTS }, () => ({ item: 'bread' as ItemId, qty: 1 }));
     delete (save as { grants?: unknown }).grants;
+    delete (save as { toolbelt?: unknown }).toolbelt;
     const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
     expect(w2.player.overflow.map((o) => o.item).sort()).toEqual(['hammer', 'knife', 'small_fishing_net']);
   });
 
-  it('forging needs a hammer in the bag; it is not used up, and banking it blocks forging', () => {
+  it('forging needs a hammer (belt or bag); it is not used up, and banking it blocks forging', () => {
     const w = new GameWorld();
     const p = w.player;
     p.inventory.add('bronze_bar', 3);
@@ -124,8 +144,10 @@ describe('Tools', () => {
     w.issue({ type: 'craft', recipe: 'bronze_dagger', count: 1 });
     run(w, 3);
     expect(p.inventory.count('bronze_dagger')).toBe(1);
+    expect(owned(w, 'hammer')).toBe(1);
+    // Take the hammer off the belt and bank it: the anvil refuses.
+    w.issue({ type: 'beltRemove', category: 'hammer' });
     expect(p.inventory.count('hammer')).toBe(1);
-    // Bank the hammer: the anvil refuses.
     const banker = w.npcs.find((n) => n.def.id === 'banker')!;
     stand(w, 51.5, 60.5);
     w.issue({ type: 'interact', target: banker.id });
@@ -145,7 +167,7 @@ describe('Tools', () => {
   it('fletching from logs needs a knife; stringing a bow needs a bowstring', () => {
     const w = new GameWorld();
     const p = w.player;
-    p.inventory.removeAt(slotOf(p.inventory, 'knife'));
+    lose(w, 'knife');
     p.inventory.add('logs', 2);
     w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
     run(w, 2);
@@ -223,7 +245,7 @@ describe('Complete loops', () => {
     expect(p.inventory.count('raw_shrimps')).toBeGreaterThanOrEqual(3);
     expect(p.skills.xp.fishing).toBe(p.inventory.count('raw_shrimps') * RESOURCES.net_spot.xp);
     expect(spot.depleted).toBe(false);
-    expect(p.inventory.count('small_fishing_net')).toBe(1);
+    expect(owned(w, 'small_fishing_net')).toBe(1);
     openStation(w, 'fire');
     w.issue({ type: 'craft', recipe: 'shrimps', count: 2 });
     run(w, 4.5);
@@ -246,7 +268,7 @@ describe('Complete loops', () => {
     run(w, 3);
     expect(p.inventory.count('raw_anchovies')).toBeGreaterThan(0);
     w.issue({ type: 'moveTo', x: p.x, z: p.z });
-    p.inventory.removeAt(slotOf(p.inventory, 'small_fishing_net'));
+    lose(w, 'small_fishing_net');
     const before = p.inventory.count('raw_shrimps') + p.inventory.count('raw_anchovies');
     workNode(w, 'net_spot');
     run(w, 3);
@@ -270,23 +292,23 @@ describe('Shop', () => {
     const w = new GameWorld();
     const p = w.player;
     w.issue({ type: 'shopBuy', item: 'knife', qty: 1 });
-    expect(p.inventory.count('knife')).toBe(1);
+    expect(p.inventory.count('knife')).toBe(0);
     openShop(w);
     const coins = p.inventory.count('coins');
     w.issue({ type: 'shopBuy', item: 'hammer', qty: 2 });
-    expect(p.inventory.count('hammer')).toBe(3);
+    expect(p.inventory.count('hammer')).toBe(2);
     expect(p.inventory.count('coins')).toBe(coins - 12);
     // Can't afford: nothing changes.
     p.inventory.remove('coins', p.inventory.count('coins'));
     p.inventory.add('coins', 3);
     w.issue({ type: 'shopBuy', item: 'bronze_axe', qty: 1 });
-    expect(p.inventory.count('bronze_axe')).toBe(1);
+    expect(p.inventory.count('bronze_axe')).toBe(0);
     expect(p.inventory.count('coins')).toBe(3);
     // Buys only what fits.
     p.inventory.add('coins', 997);
     p.inventory.add('bread', INVENTORY_SLOTS - p.inventory.usedSlots() - 2);
     w.issue({ type: 'shopBuy', item: 'knife', qty: 5 });
-    expect(p.inventory.count('knife')).toBe(3);
+    expect(p.inventory.count('knife')).toBe(2);
     expect(p.inventory.isFull()).toBe(true);
     expect(p.inventory.count('coins')).toBe(1000 - 12);
   });

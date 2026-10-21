@@ -2,6 +2,8 @@
 
 Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORPG inspired by the depth and longevity of Old School RuneScape. Phase 1 is a single-player vertical slice; everything below marked **(future)** is a binding long-term decision the architecture must support.
 
+> **Gameplay reference:** Brightwater closely follows Old School RuneScape for its gameplay systems, with original art, world, characters and lore, our custom combat, and individually approved quality-of-life additions (starting with the toolbelt). See [docs/DESIGN_SPEC.md](docs/DESIGN_SPEC.md) for the comparison with OSRS, the approved deviations, the combat exceptions and the roadmap.
+
 ## Long-term pillars (binding decisions)
 
 ### Characters & progression
@@ -69,7 +71,7 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 
 ## Skill loops (audit)
 
-Every skill shown in the Skills panel can be trained end to end. Tools are real inventory items: new characters start with all of them, Tilly sells them, and older saves received them once (`grants: tools-v1`). `SKILL_INFO[id].available` exists so that a future skill listed before it is playable is labelled "Not available yet".
+Every skill shown in the Skills panel can be trained end to end. Tools are real items that live on the **toolbelt** (one per category, no bag slots) or in the bag: new characters start with all of them, Tilly sells them, and older saves received them once (`grants: tools-v1`). `SKILL_INFO[id].available` exists so that a future skill listed before it is playable is labelled "Not available yet".
 
 | Skill | Tools | Where | Loop |
 |---|---|---|---|

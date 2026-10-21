@@ -14,6 +14,7 @@ import { ShopView } from './shopview';
 import { SHOPS } from '../data/shops';
 import { RECIPES, STATION_INFO, useCombo, usable, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
+import { TOOL_SLOTS } from '../data/tools';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -22,7 +23,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -527,6 +528,10 @@ export class Hud {
       case 'equipment':
         this.invDirty = true;
         break;
+      case 'toolbelt':
+        this.invDirty = true;
+        if (this.openPanel === 'toolbelt') this.renderToolbelt();
+        break;
       case 'bankClose':
         if (this.openPanel === 'bank') {
           this.leaveBank(false);
@@ -701,7 +706,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -711,6 +716,7 @@ export class Hud {
     else if (id === 'bank') this.renderBank();
     else if (id === 'craft') this.renderCraft();
     else if (id === 'shop') this.renderShop();
+    else if (id === 'toolbelt') this.renderToolbelt();
     else this.renderSettings();
   }
 
@@ -846,7 +852,7 @@ export class Hud {
       btns.appendChild(drop);
       info.appendChild(btns);
     } else {
-      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br><b>Tap</b> an item to use it: eat food, wield or wear gear, fletch logs (with a knife). <b>Press and hold</b> for options such as drop or move. Logs, ores and gems take one slot each.</div>`;
+      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br><b>Tap</b> an item to use it: eat food, wield or wear gear, fletch logs (with a knife), put tools on your toolbelt. <b>Press and hold</b> for options such as drop or move. Logs, ores and gems take one slot each.</div>`;
     }
     body.appendChild(info);
     this.renderOverflow(body);
@@ -994,16 +1000,69 @@ export class Hud {
       return true;
     }
     if (usable(st.item)) {
-      const partner = inv.slots.some((o, j) => o && j !== slot && useCombo(st.item, o.item));
+      const belt = Object.values(this.world.player.toolbelt.slots);
+      const partner = inv.slots.some((o, j) => o && j !== slot && useCombo(st.item, o.item)) || belt.some((b) => b && useCombo(st.item, b));
       if (partner) {
         this.cb.command({ type: 'openFletching' });
         return true;
       }
-      if (st.item === 'knife') this.addLog('Tap logs to fletch them with your knife (you have no logs).', 'info');
-      else if (st.item === 'logs' || st.item === 'oak_logs') this.addLog('You need a knife to fletch logs. Tilly sells them.', 'warn');
-      return false;
+      if (st.item === 'logs' || st.item === 'oak_logs') {
+        this.addLog('You need a knife (in your bag or toolbelt) to fletch logs. Tilly sells them.', 'warn');
+        return false;
+      }
+    }
+    if (d.tool) {
+      // Tools go on the toolbelt (swapping out the one already there).
+      this.cb.command({ type: 'beltAdd', slot });
+      this.renderInventory();
+      return true;
     }
     return false;
+  }
+
+  /** Toolbelt: one slot per tool kind (future kinds shown locked), plus bag tools you can add. */
+  private renderToolbelt() {
+    const w = this.world;
+    const p = w.player;
+    const body = this.panelBody;
+    clearKeepingScroll(body);
+    body.appendChild(el('div', 'ii-desc tb-intro', 'Tools on your belt work from anywhere and take no bag slots. The best tool you can use is picked automatically, from your belt or your bag.'));
+    const bagTools = p.inventory.slots.map((s, i) => ({ s, i })).filter((x) => x.s && itemDef(x.s.item).tool);
+    const box = el('div', 'inv-info');
+    if (bagTools.length) {
+      box.appendChild(el('div', 'ii-name', 'Tools in your bag'));
+      const list = el('div', 'tb-bag');
+      for (const { s, i } of bagTools) {
+        const d = itemDef(s!.item);
+        const cur = p.toolbelt.get(d.tool!.category);
+        const b = el('button', 'bank-btn', `<img src="${itemIcon(s!.item)}" alt="">${cur ? 'Swap in' : 'Add'} ${d.name}`);
+        b.addEventListener('click', () => this.cb.command({ type: 'beltAdd', slot: i }));
+        list.appendChild(b);
+      }
+      box.appendChild(list);
+      const all = el('button', 'bank-btn primary', 'Add all to empty slots');
+      all.addEventListener('click', () => this.cb.command({ type: 'beltAddAll' }));
+      box.appendChild(all);
+    } else box.appendChild(el('div', 'ii-desc', 'No other tools in your bag. Buy tools from Tilly or forge them at the anvil.'));
+    body.appendChild(box);
+    const grid = el('div', 'tb-grid');
+    // Usable kinds first; kinds that arrive with future skills last.
+    for (const slot of [...TOOL_SLOTS].sort((x, y) => Number(y.available) - Number(x.available))) {
+      const it = p.toolbelt.get(slot.id);
+      const d = it ? itemDef(it) : null;
+      const card = el('div', `tb-slot${it ? ' filled' : ''}${slot.available ? '' : ' locked'}`);
+      const req = d?.tool?.req ? ` · needs ${SKILL_INFO[d.tool.req.skill].name} ${d.tool.req.level}` : '';
+      card.innerHTML = `${it ? `<img src="${itemIcon(it)}" alt="">` : '<div class="tb-empty">—</div>'}
+        <div class="tb-main"><div class="tb-label">${slot.label} <small>${slot.skill}</small></div>
+        <div class="tb-sub">${d ? `${d.name} · tier ${d.tool!.tier}${req}` : slot.available ? 'Empty: tap a tool in your bag to add it' : (slot.note ?? 'Not available yet')}</div></div>`;
+      if (it) {
+        const off = el('button', 'bank-btn', 'Take off');
+        off.addEventListener('click', () => this.cb.command({ type: 'beltRemove', category: slot.id }));
+        card.appendChild(off);
+      }
+      grid.appendChild(card);
+    }
+    body.appendChild(grid);
   }
 
   /** Worn gear: five slots above the inventory, with the combined combat bonuses. */
@@ -1028,6 +1087,10 @@ export class Hud {
     const b = w.playerBonuses();
     const weapon = b.weapon ? itemDef(b.weapon).name : `${STYLES[w.player.style].weapon} (training)`;
     box.append(row, el('div', 'equip-stats', `${weapon} · accuracy ${b.accuracy} · power ${b.power} · armour ${b.armour}<br><small>Tap worn gear to take it off.</small>`));
+    const tools = Object.values(w.player.toolbelt.slots).filter(Boolean) as ItemId[];
+    const belt = el('button', 'tb-open', `<span>🧰 Toolbelt</span><span class="tb-icons">${tools.map((t) => `<img src="${itemIcon(t)}" alt="${itemDef(t).name}">`).join('')}</span><span class="tb-count">${tools.length} ›</span>`);
+    belt.addEventListener('click', () => this.toggle('toolbelt'));
+    box.appendChild(belt);
     body.appendChild(box);
   }
 

@@ -1,3 +1,4 @@
+import type { ToolInfo } from './tools';
 export type IconShape =
   | 'log'
   | 'ore'
@@ -64,6 +65,8 @@ export interface ItemDef {
   value: number;
   heal?: number;
   equip?: EquipDef;
+  /** Tools: toolbelt category, tier and use requirement (see data/tools.ts). */
+  tool?: ToolInfo;
   icon: { shape: IconShape; color: string; accent?: string };
 }
 
@@ -87,8 +90,8 @@ export const ITEMS = {
   wolf_fang: def({ id: 'wolf_fang', name: 'Wolf fang', examine: 'Sharp as a dagger.', stackable: true, kind: 'trophy', value: 8, icon: { shape: 'fang', color: '#f1ecd9', accent: '#b8ad8a' } }),
   bones: def({ id: 'bones', name: 'Bones', examine: 'Remains of a fallen foe.', stackable: true, kind: 'material', value: 2, icon: { shape: 'bone', color: '#efe8d6', accent: '#b9ad90' } }),
   bread: def({ id: 'bread', name: 'Bread', examine: 'Warm village bread. Heals 30 HP.', stackable: false, kind: 'food', value: 6, heal: 30, icon: { shape: 'bread', color: '#d99a4e', accent: '#f6d7a0' } }),
-  bronze_axe: def({ id: 'bronze_axe', name: 'Bronze axe', examine: 'Required for woodcutting.', stackable: false, kind: 'tool', value: 16, icon: { shape: 'axe', color: '#c98a4b', accent: '#7a4f2a' } }),
-  bronze_pickaxe: def({ id: 'bronze_pickaxe', name: 'Bronze pickaxe', examine: 'Required for mining.', stackable: false, kind: 'tool', value: 16, icon: { shape: 'pickaxe', color: '#c98a4b', accent: '#7a4f2a' } }),
+  bronze_axe: def({ id: 'bronze_axe', name: 'Bronze axe', examine: 'Required for woodcutting.', stackable: false, kind: 'tool', tool: { category: 'axe', tier: 1 }, value: 16, icon: { shape: 'axe', color: '#c98a4b', accent: '#7a4f2a' } }),
+  bronze_pickaxe: def({ id: 'bronze_pickaxe', name: 'Bronze pickaxe', examine: 'Required for mining.', stackable: false, kind: 'tool', tool: { category: 'pickaxe', tier: 1 }, value: 16, icon: { shape: 'pickaxe', color: '#c98a4b', accent: '#7a4f2a' } }),
 
   // ---- Smithing: bars and bronze / iron equipment
   bronze_bar: def({ id: 'bronze_bar', name: 'Bronze bar', examine: 'Copper and tin, smelted together.', stackable: false, kind: 'material', value: 14, icon: { shape: 'bar', color: '#c98a4b', accent: '#f0b47a' } }),
@@ -114,9 +117,11 @@ export const ITEMS = {
   cooked_meat: def({ id: 'cooked_meat', name: 'Cooked meat', examine: 'Hearty and hot. Heals 25 HP.', stackable: false, kind: 'food', value: 8, heal: 25, icon: { shape: 'meat', color: '#9a5a32', accent: '#f4e2d2' } }),
   burnt_meat: def({ id: 'burnt_meat', name: 'Burnt meat', examine: 'Charred beyond saving.', stackable: false, kind: 'material', value: 0, icon: { shape: 'meat', color: '#2e2622', accent: '#6a5a50' } }),
   // ---- Production tools (real inventory items; can be banked)
-  hammer: def({ id: 'hammer', name: 'Hammer', examine: 'Needed to forge metal at an anvil.', stackable: false, kind: 'tool', value: 6, icon: { shape: 'hammer', color: '#8d949c', accent: '#8a5a34' } }),
-  knife: def({ id: 'knife', name: 'Knife', examine: 'Use it on logs to fletch shafts and bows.', stackable: false, kind: 'tool', value: 6, icon: { shape: 'knife', color: '#d6dbe2', accent: '#4e321e' } }),
-  small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
+  iron_axe: def({ id: 'iron_axe', name: 'Iron axe', examine: 'A sharper, heavier axe: chops faster than bronze.', stackable: false, kind: 'tool', tool: { category: 'axe', tier: 2, req: { skill: 'woodcutting', level: 1 } }, value: 56, icon: { shape: 'axe', color: '#a3aab3', accent: '#7a4f2a' } }),
+  iron_pickaxe: def({ id: 'iron_pickaxe', name: 'Iron pickaxe', examine: 'Bites into rock faster than bronze.', stackable: false, kind: 'tool', tool: { category: 'pickaxe', tier: 2, req: { skill: 'mining', level: 1 } }, value: 70, icon: { shape: 'pickaxe', color: '#a3aab3', accent: '#7a4f2a' } }),
+  hammer: def({ id: 'hammer', name: 'Hammer', examine: 'Needed to forge metal at an anvil.', stackable: false, kind: 'tool', tool: { category: 'hammer', tier: 1 }, value: 6, icon: { shape: 'hammer', color: '#8d949c', accent: '#8a5a34' } }),
+  knife: def({ id: 'knife', name: 'Knife', examine: 'Use it on logs to fletch shafts and bows.', stackable: false, kind: 'tool', tool: { category: 'knife', tier: 1 }, value: 6, icon: { shape: 'knife', color: '#d6dbe2', accent: '#4e321e' } }),
+  small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),
   shortbow_u: def({ id: 'shortbow_u', name: 'Unstrung shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 10, icon: { shape: 'unbow', color: '#9b6a3a', accent: '#9b6a3a' } }),

@@ -1,4 +1,5 @@
 import type { ItemId } from './items';
+import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
 /**
@@ -36,8 +37,8 @@ export interface RecipeDef {
   output: { item: ItemId; qty: number };
   /** Seconds per make. */
   seconds: number;
-  /** Tool that must be in the inventory (not used up), e.g. a hammer for forging. */
-  tool?: ItemId;
+  /** Tool category needed in the bag or toolbelt (not used up), e.g. a hammer for forging. */
+  tool?: ToolCategory;
   /**
    * Chance of failure (e.g. burning food) at the recipe's level, falling linearly to zero at
    * `failStopLevel`. A failure still uses the ingredients and gives `failOutput` instead.
@@ -58,6 +59,10 @@ export const RECIPES: Record<string, RecipeDef> = {
   bronze_shield: r({ id: 'bronze_shield', station: 'anvil', skill: 'smithing', level: 8, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   bronze_platelegs: r({ id: 'bronze_platelegs', station: 'anvil', skill: 'smithing', level: 10, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   bronze_platebody: r({ id: 'bronze_platebody', station: 'anvil', skill: 'smithing', level: 12, xp: 38, inputs: [{ item: 'bronze_bar', qty: 3 }], output: { item: 'bronze_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_axe: r({ id: 'bronze_axe', station: 'anvil', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_axe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_pickaxe: r({ id: 'bronze_pickaxe', station: 'anvil', skill: 'smithing', level: 5, xp: 25, inputs: [{ item: 'bronze_bar', qty: 2 }], output: { item: 'bronze_pickaxe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_axe: r({ id: 'iron_axe', station: 'anvil', skill: 'smithing', level: 16, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_axe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_pickaxe: r({ id: 'iron_pickaxe', station: 'anvil', skill: 'smithing', level: 20, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_pickaxe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   iron_helm: r({ id: 'iron_helm', station: 'anvil', skill: 'smithing', level: 18, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   iron_sword: r({ id: 'iron_sword', station: 'anvil', skill: 'smithing', level: 19, xp: 25, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_sword', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   iron_shield: r({ id: 'iron_shield', station: 'anvil', skill: 'smithing', level: 23, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
