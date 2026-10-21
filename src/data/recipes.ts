@@ -52,6 +52,7 @@ export const RECIPES: Record<string, RecipeDef> = {
   // ---- Smithing: furnace
   bronze_bar: r({ id: 'bronze_bar', station: 'furnace', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'copper_ore', qty: 1 }, { item: 'tin_ore', qty: 1 }], output: { item: 'bronze_bar', qty: 1 }, seconds: 1.8 }),
   iron_bar: r({ id: 'iron_bar', station: 'furnace', skill: 'smithing', level: 15, xp: 25, inputs: [{ item: 'iron_ore', qty: 1 }], output: { item: 'iron_bar', qty: 1 }, seconds: 1.8 }),
+  steel_bar: r({ id: 'steel_bar', station: 'furnace', skill: 'smithing', level: 30, xp: 35, inputs: [{ item: 'iron_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }], output: { item: 'steel_bar', qty: 1 }, seconds: 1.8 }),
   // ---- Smithing: anvil
   bronze_dagger: r({ id: 'bronze_dagger', station: 'anvil', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_dagger', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   bronze_helm: r({ id: 'bronze_helm', station: 'anvil', skill: 'smithing', level: 3, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
@@ -68,6 +69,14 @@ export const RECIPES: Record<string, RecipeDef> = {
   iron_shield: r({ id: 'iron_shield', station: 'anvil', skill: 'smithing', level: 23, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   iron_platelegs: r({ id: 'iron_platelegs', station: 'anvil', skill: 'smithing', level: 26, xp: 50, inputs: [{ item: 'iron_bar', qty: 2 }], output: { item: 'iron_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   iron_platebody: r({ id: 'iron_platebody', station: 'anvil', skill: 'smithing', level: 30, xp: 75, inputs: [{ item: 'iron_bar', qty: 3 }], output: { item: 'iron_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_dagger: r({ id: 'steel_dagger', station: 'anvil', skill: 'smithing', level: 30, xp: 37, inputs: [{ item: 'steel_bar', qty: 1 }], output: { item: 'steel_dagger', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_axe: r({ id: 'steel_axe', station: 'anvil', skill: 'smithing', level: 31, xp: 37, inputs: [{ item: 'steel_bar', qty: 1 }], output: { item: 'steel_axe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_helm: r({ id: 'steel_helm', station: 'anvil', skill: 'smithing', level: 33, xp: 37, inputs: [{ item: 'steel_bar', qty: 1 }], output: { item: 'steel_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_sword: r({ id: 'steel_sword', station: 'anvil', skill: 'smithing', level: 34, xp: 37, inputs: [{ item: 'steel_bar', qty: 1 }], output: { item: 'steel_sword', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_pickaxe: r({ id: 'steel_pickaxe', station: 'anvil', skill: 'smithing', level: 35, xp: 75, inputs: [{ item: 'steel_bar', qty: 2 }], output: { item: 'steel_pickaxe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_shield: r({ id: 'steel_shield', station: 'anvil', skill: 'smithing', level: 38, xp: 75, inputs: [{ item: 'steel_bar', qty: 2 }], output: { item: 'steel_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_platelegs: r({ id: 'steel_platelegs', station: 'anvil', skill: 'smithing', level: 46, xp: 75, inputs: [{ item: 'steel_bar', qty: 2 }], output: { item: 'steel_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_platebody: r({ id: 'steel_platebody', station: 'anvil', skill: 'smithing', level: 48, xp: 112, inputs: [{ item: 'steel_bar', qty: 3 }], output: { item: 'steel_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   // ---- Fletching (knife on logs, anywhere)
   arrow_shafts: r({ id: 'arrow_shafts', station: 'fletching', skill: 'fletching', level: 1, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'arrow_shafts', qty: 15 }, seconds: 1.5, tool: 'knife' }),
   bronze_arrow: r({ id: 'bronze_arrow', station: 'fletching', skill: 'fletching', level: 3, xp: 20, inputs: [{ item: 'arrow_shafts', qty: 15 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_arrow', qty: 15 }, seconds: 1.5 }),

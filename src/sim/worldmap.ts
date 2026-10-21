@@ -452,6 +452,25 @@ export function generateWorld(seed = 1337): WorldMap {
     }
   }
 
+  // Later content is placed with its own random stream, so adding it never reshuffles the trees,
+  // rocks and scenery generated above (existing players keep the world they know).
+  const placeLater = (type: ResourceType, cx: number, cz: number, n: number, r: number, salt: number) => {
+    const lr = mulberry32(seed ^ salt);
+    let placed = 0;
+    for (let tries = 0; tries < 300 && placed < n; tries++) {
+      const a = lr() * Math.PI * 2;
+      const d = Math.sqrt(lr()) * r;
+      const x = Math.floor(cx + Math.cos(a) * d);
+      const z = Math.floor(cz + Math.sin(a) * d);
+      if (!free(x, z) || nearPath(x, z)) continue;
+      if (tiles[idx(x, z)] === T.Water || tiles[idx(x, z)] === T.Sand) continue;
+      addResource(type, x, z);
+      placed++;
+    }
+  };
+  // Coal deep in the Ironcrag Hills, past the iron (Mining 30, for steel).
+  placeLater('coal_rock', 99, 70, 5, 3.5, 0xc0a1);
+
   // --- NPCs ---
   const npcs: WorldMap['npcs'] = [
     { id: 'elder', x: 56.5, z: 59.6, facing: 0 },
