@@ -47,7 +47,10 @@ export const PALETTE = {
   stone: '#a9a196',
   copper: '#d9773a',
   copperBright: '#ffb06a',
-  waterShallow: '#72d3c3',
-  waterMid: '#3aa7b3',
-  waterDeep: '#2a6f9c',
+  // Still water: darker, deeper blues. Rivers: livelier green-turquoise.
+  stillShallow: '#4aa7a6',
+  stillMid: '#22688f',
+  stillDeep: '#163f6b',
+  riverShallow: '#5fc0b4',
+  riverDeep: '#2c7f9e',
 };

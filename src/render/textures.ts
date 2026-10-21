@@ -197,9 +197,9 @@ export function faceTexture(f: FaceLook): THREE.Texture | null {
     if (!cv) return null;
     const { c, g } = cv;
     g.clearRect(0, 0, 256, 256);
-    const ey = 132;
+    const ey = 134;
     for (const sx of [-1, 1]) {
-      const ex = 128 + sx * 50;
+      const ex = 128 + sx * 46;
       if (f.closed) {
         g.strokeStyle = '#3a2418';
         g.lineWidth = 5;
@@ -208,47 +208,57 @@ export function faceTexture(f: FaceLook): THREE.Texture | null {
         g.arc(ex, ey - 4, 15, 0.25 * Math.PI, 0.75 * Math.PI);
         g.stroke();
       } else {
+        // Soft lid shadow above the eye
+        g.fillStyle = 'rgba(120,70,50,0.18)';
+        g.beginPath();
+        g.ellipse(ex, ey - 12, 22, 12, 0, 0, Math.PI * 2);
+        g.fill();
         g.fillStyle = '#fbf8f2';
         g.beginPath();
-        g.ellipse(ex, ey, 21, 25, 0, 0, Math.PI * 2);
+        g.ellipse(ex, ey, 19, 18, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = `#${new THREE.Color(f.eyes).multiplyScalar(0.6).getHexString()}`;
+        g.beginPath();
+        g.ellipse(ex + sx * 1.5, ey + 2, 13, 14, 0, 0, Math.PI * 2);
         g.fill();
         g.fillStyle = f.eyes;
         g.beginPath();
-        g.ellipse(ex + sx * 1.5, ey + 3, 15, 19, 0, 0, Math.PI * 2);
+        g.ellipse(ex + sx * 1.5, ey + 2, 11, 12, 0, 0, Math.PI * 2);
         g.fill();
         g.fillStyle = `#${new THREE.Color(f.eyes).multiplyScalar(1.35).getHexString()}`;
         g.beginPath();
-        g.ellipse(ex + sx * 1.5, ey + 10, 11, 9, 0, 0, Math.PI);
+        g.ellipse(ex + sx * 1.5, ey + 8, 8, 6, 0, 0, Math.PI);
         g.fill();
         g.fillStyle = '#1c120c';
         g.beginPath();
-        g.ellipse(ex + sx * 1.5, ey + 4, 8, 10, 0, 0, Math.PI * 2);
+        g.ellipse(ex + sx * 1.5, ey + 3, 6, 7, 0, 0, Math.PI * 2);
         g.fill();
         g.fillStyle = '#ffffff';
         g.beginPath();
-        g.arc(ex - 5, ey - 6, 6, 0, Math.PI * 2);
+        g.arc(ex - 4, ey - 4, 4, 0, Math.PI * 2);
         g.fill();
         g.beginPath();
-        g.arc(ex + 6, ey + 9, 2.5, 0, Math.PI * 2);
+        g.arc(ex + 5, ey + 7, 1.8, 0, Math.PI * 2);
         g.fill();
         // Upper lid line with a little flick at the outer corner
         g.strokeStyle = '#2a1a12';
         g.lineWidth = 5;
         g.lineCap = 'round';
         g.beginPath();
-        g.ellipse(ex, ey, 22, 26, 0, Math.PI * 1.05, Math.PI * 1.95);
+        g.ellipse(ex, ey + 1, 20, 19, 0, Math.PI * 1.05, Math.PI * 1.95);
         g.stroke();
+        g.lineWidth = 2;
+        g.strokeStyle = 'rgba(60,35,25,0.45)';
         g.beginPath();
-        g.moveTo(ex + sx * 21, ey - 6);
-        g.lineTo(ex + sx * 27, ey - 11);
+        g.ellipse(ex, ey + 1, 18, 18, 0, Math.PI * 0.2, Math.PI * 0.8);
         g.stroke();
       }
       // Brows
       g.strokeStyle = f.brows;
-      g.lineWidth = f.elder ? 8 : 6;
+      g.lineWidth = f.elder ? 9 : 8;
       g.beginPath();
-      g.moveTo(ex - sx * 18, ey - 36);
-      g.quadraticCurveTo(ex, ey - 47, ex + sx * 20, ey - 39);
+      g.moveTo(ex - sx * 20, ey - 30);
+      g.quadraticCurveTo(ex, ey - 40, ex + sx * 22, ey - 33);
       g.stroke();
       if (f.blush) {
         g.fillStyle = 'rgba(235,110,110,0.28)';
@@ -265,18 +275,27 @@ export function faceTexture(f: FaceLook): THREE.Texture | null {
         g.stroke();
       }
     }
-    // Nose (soft shadow) and mouth
-    g.fillStyle = 'rgba(120,60,40,0.30)';
+    // Nose shading, nostrils and a mouth with a fuller lower lip
+    g.fillStyle = 'rgba(120,60,40,0.22)';
     g.beginPath();
-    g.ellipse(128, 168, 9, 6, 0, 0, Math.PI * 2);
+    g.ellipse(128, 172, 12, 8, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = 'rgba(90,40,30,0.45)';
+    g.beginPath();
+    g.ellipse(121, 176, 3, 2, 0, 0, Math.PI * 2);
+    g.ellipse(135, 176, 3, 2, 0, 0, Math.PI * 2);
     g.fill();
     g.strokeStyle = f.lips ?? '#8e3f35';
-    g.lineWidth = 5;
+    g.lineWidth = 4;
     g.lineCap = 'round';
     g.beginPath();
-    g.moveTo(112, 196);
-    g.quadraticCurveTo(128, 206, 144, 196);
+    g.moveTo(113, 199);
+    g.quadraticCurveTo(128, 206, 143, 199);
     g.stroke();
+    g.fillStyle = 'rgba(180,90,80,0.35)';
+    g.beginPath();
+    g.ellipse(128, 206, 10, 4, 0, 0, Math.PI * 2);
+    g.fill();
     return finish(c, false);
   });
 }

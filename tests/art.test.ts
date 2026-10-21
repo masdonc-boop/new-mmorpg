@@ -51,7 +51,7 @@ describe('Phase 2A character rig', () => {
     for (let i = 0; i < 60; i++) m.update(1 / 30, 'idle', 0, 99, 5 + i / 30);
     const idle = Math.abs(m.joints.thighL.rotation.x) + Math.abs(m.joints.thighR.rotation.x);
     expect(walking).toBeGreaterThan(0.2);
-    expect(idle).toBeLessThan(0.05);
+    expect(idle).toBeLessThan(0.1); // the rest stance keeps the feet slightly apart
     m.dispose();
   });
 

@@ -193,9 +193,11 @@ function buildWaterClassic(map: WorldMap, time: { value: number }): THREE.Mesh {
 }
 
 /**
- * Phase 2A water: depth-tinted turquoise → deep blue, two layers of flowing value-noise ripples
- * (following the river's course), fresnel sky reflection, a soft sun glint instead of sparkles,
- * a feathered shoreline with thin broken foam, and ripple rings around bridge pilings.
+ * Phase 2A water, two distinct behaviours:
+ *  - Still water (sea, lakes): dark deep blue, nearly calm, only faint slow surface ripples.
+ *  - Rivers: currents and ripples in curvilinear (across, along) coordinates that follow the
+ *    river's course and bends, elongated along the flow, faster mid-channel than at the banks.
+ * Both: depth tint, restrained fresnel sky reflection and sun glint, a thin soft shoreline wash.
  * Data texture: R = terrain height, G = piling proximity.
  */
 function buildWaterV2(map: WorldMap, time: { value: number }): THREE.Mesh {
@@ -236,9 +238,11 @@ function buildWaterV2(map: WorldMap, time: { value: number }): THREE.Mesh {
         uSize: { value: new THREE.Vector2(W1, H1) },
         uWaterY: { value: WATER_Y },
         uSunDir: { value: new THREE.Vector3(14, 26, 8).normalize() },
-        uShallow: { value: c(PALETTE.waterShallow) },
-        uMid: { value: c(PALETTE.waterMid) },
-        uDeep: { value: c(PALETTE.waterDeep) },
+        uStillShallow: { value: c(PALETTE.stillShallow) },
+        uStillMid: { value: c(PALETTE.stillMid) },
+        uStillDeep: { value: c(PALETTE.stillDeep) },
+        uRiverShallow: { value: c(PALETTE.riverShallow) },
+        uRiverDeep: { value: c(PALETTE.riverDeep) },
         uSkyLow: { value: c('#cfe6ea') },
         uSkyHigh: { value: c('#8fc3dd') },
       },
@@ -259,9 +263,11 @@ function buildWaterV2(map: WorldMap, time: { value: number }): THREE.Mesh {
       uniform vec2 uSize;
       uniform float uWaterY;
       uniform vec3 uSunDir;
-      uniform vec3 uShallow;
-      uniform vec3 uMid;
-      uniform vec3 uDeep;
+      uniform vec3 uStillShallow;
+      uniform vec3 uStillMid;
+      uniform vec3 uStillDeep;
+      uniform vec3 uRiverShallow;
+      uniform vec3 uRiverDeep;
       uniform vec3 uSkyLow;
       uniform vec3 uSkyHigh;
       varying vec3 vWorld;
@@ -292,46 +298,64 @@ function buildWaterV2(map: WorldMap, time: { value: number }): THREE.Mesh {
         }
         float depth = clamp((uWaterY - h) / 1.4, 0.0, 1.0);
 
-        // Flow follows the river's course; open water drifts gently.
-        float dxdz = 0.28 * cos(vWorld.z * 0.08) + 0.345 * cos(vWorld.z * 0.23 + 1.0);
-        float inRiver = 1.0 - smoothstep(4.0, 7.0, abs(vWorld.x - riverX(vWorld.z)));
-        vec2 flow = mix(vec2(0.12, 0.08), normalize(vec2(dxdz, 1.0)) * 0.6, inRiver);
         float t = uTime;
         vec2 p = vWorld.xz;
-        vec2 q1 = p * vec2(0.8, 0.55) - flow * t;
-        float e = 0.2;
-        float n1 = vnoise(q1);
-        vec2 g = vec2(vnoise(q1 + vec2(e, 0.0)) - n1, vnoise(q1 + vec2(0.0, e)) - n1) / e;
-        #ifndef WATER_LQ
-          vec2 q2 = p * 1.6 + vec2(-flow.y, flow.x) * t * 0.35 - flow * t * 1.4;
-          float n2 = vnoise(q2);
-          g += 0.5 * vec2(vnoise(q2 + vec2(e, 0.0)) - n2, vnoise(q2 + vec2(0.0, e)) - n2) / e;
-        #endif
-        vec3 N = normalize(vec3(-g.x * 0.42, 1.0, -g.y * 0.42));
         vec3 V = normalize(cameraPosition - vWorld);
+        float e = 0.2;
 
-        vec3 col = mix(uShallow, uMid, smoothstep(0.0, 0.45, depth));
-        col = mix(col, uDeep, smoothstep(0.45, 1.0, depth));
-        col *= 0.93 + 0.14 * n1;
-        // Gentle light streaks running with the current.
-        float streak = vnoise(vec2(dot(p, normalize(flow + 1e-4)) * 0.35, dot(p, vec2(-flow.y, flow.x)) * 2.2) - vec2(t * 0.5, 0.0));
-        col += vec3(0.05, 0.08, 0.08) * smoothstep(0.62, 0.9, streak) * (0.4 + inRiver);
+        // ---- Still water (sea, lakes): deep, dark and calm; only faint slow surface ripples.
+        vec2 sq = p * 0.6 + vec2(t * 0.04, t * 0.025);
+        float sn = vnoise(sq);
+        vec2 sg = vec2(vnoise(sq + vec2(e, 0.0)) - sn, vnoise(sq + vec2(0.0, e)) - sn) / e;
+        #ifndef WATER_LQ
+          vec2 sq2 = p * 1.7 - vec2(t * 0.03, -t * 0.05);
+          float sn2 = vnoise(sq2);
+          sg += 0.5 * vec2(vnoise(sq2 + vec2(e, 0.0)) - sn2, vnoise(sq2 + vec2(0.0, e)) - sn2) / e;
+        #endif
+        vec3 Nstill = normalize(vec3(-sg.x * 0.1, 1.0, -sg.y * 0.1));
+        vec3 still = mix(uStillShallow, uStillMid, smoothstep(0.0, 0.4, depth));
+        still = mix(still, uStillDeep, smoothstep(0.4, 1.0, depth));
+        still *= 0.97 + 0.06 * sn;
+
+        // ---- River: curvilinear coordinates that follow the course and its bends.
+        float across = vWorld.x - riverX(vWorld.z);
+        float along = vWorld.z;
+        float inRiver = 1.0 - smoothstep(3.2, 5.5, abs(across));
+        // Faster mid-channel, slower near the banks.
+        float speed = 0.35 + 0.75 * clamp(1.0 - (across * across) / 9.0, 0.0, 1.0);
+        float s = along - t * speed;
+        // Elongated currents aligned with the flow: long along the course, narrow across it.
+        float cur = vnoise(vec2(across * 1.3, s * 0.2));
+        #ifndef WATER_LQ
+          cur = cur * 0.65 + 0.35 * vnoise(vec2(across * 2.4 + 7.0, (along - t * speed * 1.35) * 0.38));
+        #endif
+        // Flow ripples, stretched along the current and carried downstream.
+        vec2 rq = vec2(across * 2.0, s * 0.9);
+        float rn = vnoise(rq);
+        vec2 rg = vec2(vnoise(rq + vec2(e, 0.0)) - rn, vnoise(rq + vec2(0.0, e)) - rn) / e;
+        vec3 Nriver = normalize(vec3(-rg.x * 2.0 * 0.22, 1.0, -rg.y * 0.9 * 0.22));
+        vec3 river = mix(uRiverShallow, uRiverDeep, smoothstep(0.0, 0.8, depth));
+        // Soft light/dark current lanes running downstream (no hard thresholds, no stripes).
+        river += vec3(0.05, 0.075, 0.075) * smoothstep(0.25, 0.85, cur) - vec3(0.02, 0.03, 0.03);
+
+        vec3 N = normalize(mix(Nstill, Nriver, inRiver));
+        vec3 col = mix(still, river, inRiver);
 
         float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
-        vec3 sky = mix(uSkyLow, uSkyHigh, clamp(N.y * 2.0 - 1.0 + 0.5, 0.0, 1.0));
-        col = mix(col, sky, 0.1 + fres * 0.4);
+        vec3 sky = mix(uSkyLow, uSkyHigh, 0.5);
+        col = mix(col, sky, 0.05 + fres * mix(0.25, 0.35, inRiver));
         vec3 H = normalize(uSunDir + V);
-        col += vec3(1.0, 0.95, 0.82) * pow(max(dot(N, H), 0.0), 120.0) * 0.32;
+        col += vec3(1.0, 0.96, 0.86) * pow(max(dot(N, H), 0.0), 220.0) * 0.12;
 
-        // Feathered shoreline: thin, broken foam line, then the water fades into the sand.
-        float br = vnoise(p * 2.5 + vec2(t * 0.25, -t * 0.2));
-        float foam = smoothstep(0.09, 0.0, depth - 0.025 + (br - 0.5) * 0.06) * 0.5;
-        // Ripple rings and wake around bridge pilings.
-        foam += smoothstep(0.7, 1.0, pier) * 0.45 + smoothstep(0.6, 1.0, sin(pier * 16.0 - t * 2.4)) * pier * 0.28;
-        foam = clamp(foam, 0.0, 0.75);
-        col = mix(col, vec3(0.92, 0.97, 0.95), foam);
+        // Shoreline: a thin, soft wash only; the water then fades into the sand.
+        float br = vnoise(p * 2.2 + vec2(t * 0.08, -t * 0.06));
+        float foam = smoothstep(0.06, 0.0, depth - 0.015 + (br - 0.5) * 0.03) * 0.3;
+        // Bridge pilings: a soft collar of white water, no animated rings.
+        foam += smoothstep(0.75, 1.0, pier) * 0.3 * (0.8 + 0.2 * inRiver);
+        foam = clamp(foam, 0.0, 0.45);
+        col = mix(col, vec3(0.9, 0.95, 0.94), foam);
 
-        float alpha = mix(0.0, 0.9, smoothstep(0.0, 0.12, depth));
+        float alpha = mix(0.0, 0.93, smoothstep(0.0, 0.12, depth));
         alpha = max(alpha, foam * 0.85);
         gl_FragColor = vec4(col, alpha);
         #include <fog_fragment>

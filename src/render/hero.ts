@@ -23,6 +23,10 @@ export interface HeroLook extends HumanoidLook {
 }
 
 interface PartOpts {
+  /** Darken toward the bottom of the part (0..1): cheap baked occlusion for folds and hems. */
+  ao?: number;
+  /** Per-vertex brightness variation for a hand-painted fabric/leather feel. */
+  mottle?: number;
   x?: number;
   y?: number;
   z?: number;
@@ -42,6 +46,19 @@ const tmpC = new THREE.Color();
 /** Smooth-shaded coloured part (keeps the primitive's normals, unlike the faceted world parts). */
 function cpart(geo: THREE.BufferGeometry, color: string, o: PartOpts = {}): THREE.BufferGeometry {
   geo.deleteAttribute('uv');
+  geo.computeBoundingBox();
+  const minY = geo.boundingBox!.min.y;
+  const spanY = geo.boundingBox!.max.y - minY || 1;
+  const pre = geo.getAttribute('position') as THREE.BufferAttribute;
+  const shadeK = new Float32Array(pre.count);
+  const ao = o.ao ?? 0;
+  const mottle = o.mottle ?? 0.03;
+  for (let i = 0; i < pre.count; i++) {
+    const t = (pre.getY(i) - minY) / spanY;
+    // Deterministic per-position noise so merged seams match.
+    const h = Math.sin(pre.getX(i) * 91.7 + pre.getY(i) * 47.3 + pre.getZ(i) * 13.1) * 43758.5453;
+    shadeK[i] = (1 - ao * (1 - t)) * (1 + (h - Math.floor(h) - 0.5) * 2 * mottle);
+  }
   tmpE.set(o.rx ?? 0, o.ry ?? 0, o.rz ?? 0, 'XYZ');
   tmpQ.setFromEuler(tmpE);
   tmpM.compose(new THREE.Vector3(o.x ?? 0, o.y ?? 0, o.z ?? 0), tmpQ, new THREE.Vector3(o.sx ?? 1, o.sy ?? 1, o.sz ?? 1));
@@ -50,9 +67,10 @@ function cpart(geo: THREE.BufferGeometry, color: string, o: PartOpts = {}): THRE
   const col = new Float32Array(n * 3);
   tmpC.set(color);
   for (let i = 0; i < n; i++) {
-    col[i * 3] = tmpC.r;
-    col[i * 3 + 1] = tmpC.g;
-    col[i * 3 + 2] = tmpC.b;
+    const k = shadeK[i] ?? 1;
+    col[i * 3] = tmpC.r * k;
+    col[i * 3 + 1] = tmpC.g * k;
+    col[i * 3 + 2] = tmpC.b * k;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return geo;
@@ -151,92 +169,111 @@ export class HeroModel {
     const boots = PALETTE.leatherDark;
     const robe = !!look.robe;
 
-    // ---- hierarchy
-    j.hips.position.y = 0.92;
+    // ---- hierarchy (sturdy adventurer: ~1.8 units tall, broad shoulders, solid limbs)
+    const hipY = 0.9;
+    j.hips.position.y = hipY;
     this.root.add(j.hips);
     j.hips.add(j.spine);
     j.spine.position.y = 0.06;
     j.spine.add(j.head);
-    j.head.position.y = 0.5;
+    j.head.position.y = 0.49;
+    const shoulderX = fem ? 0.235 : 0.265;
     for (const [side, sx] of [['L', -1], ['R', 1]] as const) {
       const thigh = j[`thigh${side}`];
-      thigh.position.set(sx * (fem ? 0.095 : 0.1), -0.02, 0);
+      thigh.position.set(sx * (fem ? 0.115 : 0.112), -0.03, 0);
       j.hips.add(thigh);
       const knee = j[`knee${side}`];
-      knee.position.y = -0.42;
+      knee.position.y = -0.41;
       thigh.add(knee);
       const arm = j[`arm${side}`];
-      arm.position.set(sx * (fem ? 0.2 : 0.235), 0.37, 0);
+      arm.position.set(sx * shoulderX, 0.355, -0.005);
       j.spine.add(arm);
       const elbow = j[`elbow${side}`];
       elbow.position.y = -0.27;
       arm.add(elbow);
       const hand = side === 'L' ? this.handL : this.handR;
-      hand.position.y = -0.25;
+      hand.position.y = -0.255;
       elbow.add(hand);
     }
 
-    // ---- pelvis + skirt / robe (moves with hips)
-    const pelvis: THREE.BufferGeometry[] = [cpart(Sph(1, 14, 10), trousers, { y: -0.02, sx: fem ? 0.2 : 0.19, sy: 0.14, sz: 0.15 })];
+    // ---- pelvis + tunic skirt / robe (moves with hips)
+    const hem = shade(tunic, 0.72);
+    const pelvis: THREE.BufferGeometry[] = [cpart(Sph(1, 12, 8), trousers, { y: -0.03, sx: fem ? 0.245 : 0.235, sy: 0.15, sz: 0.17, ao: 0.2 })];
     if (robe) {
-      pelvis.push(cpart(lathe([[0.17, 0.04], [0.21, -0.2], [0.27, -0.55], [0.31, -0.86], [0.29, -0.88]], 20), tunic, {}));
-      pelvis.push(cpart(Tor(0.3, 0.025, 20), accent, { y: -0.84, rx: Math.PI / 2 }));
+      pelvis.push(cpart(lathe([[0.2, 0.05], [0.235, -0.2], [0.29, -0.55], [0.33, -0.86], [0.31, -0.88]], 18), tunic, { ao: 0.3 }));
+      pelvis.push(cpart(Tor(0.32, 0.026, 16), accent, { y: -0.84, rx: Math.PI / 2 }));
     } else {
-      pelvis.push(cpart(lathe([[0.165, 0.05], [0.19, -0.08], [0.225, -0.24], [0.215, -0.25]], 18, 0.5), tunic, {}));
+      pelvis.push(cpart(lathe([[0.205, 0.06], [0.228, -0.06], [0.265, -0.21], [0.258, -0.235]], 16, 0.55), tunic, { ao: 0.25 }));
+      // Stitched hem band
+      pelvis.push(cpart(lathe([[0.262, -0.2], [0.268, -0.215], [0.262, -0.235]], 16, 0.55), hem, { mottle: 0.02 }));
     }
     this.addMesh(j.hips, pelvis);
 
-    // ---- legs
+    // ---- legs: solid thighs and calves, chunky handmade boots
+    const bootLight = shade(boots, 1.35);
     for (const side of ['L', 'R'] as const) {
-      this.addMesh(j[`thigh${side}`], [cpart(Cap(0.078, 0.26), trousers, { y: -0.2 })]);
+      this.addMesh(j[`thigh${side}`], [cpart(Cap(0.1, 0.2), trousers, { y: -0.2, ao: 0.15 })]);
       this.addMesh(j[`knee${side}`], [
-        cpart(Cap(0.066, 0.24), trousers, { y: -0.17 }),
-        // Boot: shaft, cuff, rounded foot and sole
-        cpart(Cyl(0.08, 0.072, 0.17, 12), boots, { y: -0.31 }),
-        cpart(Tor(0.08, 0.022, 14), shade(boots, 1.25), { y: -0.225, rx: Math.PI / 2 }),
-        cpart(Sph(1, 12, 8), boots, { y: -0.41, z: 0.05, sx: 0.078, sy: 0.06, sz: 0.135 }),
-        cpart(Cyl(0.075, 0.075, 0.025, 12), '#2e1f14', { y: -0.455, z: 0.05, sz: 1.75 }),
+        cpart(Cap(0.088, 0.17, 3, 8), trousers, { y: -0.12, ao: 0.1 }),
+        // Boot: shaft, folded cuff, laces, rounded foot with toe cap, heel and sole
+        cpart(Cyl(0.102, 0.094, 0.2, 10), boots, { y: -0.3, ao: 0.25 }),
+        cpart(lathe([[0.1, -0.2], [0.122, -0.165], [0.118, -0.13], [0.104, -0.125]], 12), bootLight, { mottle: 0.05 }),
+        cpart(Tor(0.098, 0.011, 12), shade(boots, 0.7), { y: -0.27, rx: Math.PI / 2 }),
+        cpart(Sph(1, 12, 8), boots, { y: -0.41, z: 0.055, sx: 0.098, sy: 0.075, sz: 0.165 }),
+        cpart(Sph(1, 10, 6), bootLight, { y: -0.415, z: 0.15, sx: 0.07, sy: 0.05, sz: 0.06, mottle: 0.05 }),
+        cpart(new THREE.BoxGeometry(0.13, 0.05, 0.08), shade(boots, 0.6), { y: -0.445, z: -0.055 }),
+        cpart(Cyl(0.098, 0.098, 0.03, 12), '#2a1c12', { y: -0.465, z: 0.045, sz: 1.85 }),
       ]);
     }
 
-    // ---- torso with layered clothing
-    const chestW = fem ? 0.17 : 0.2;
+    // ---- torso: broad chest, sloped shoulders, layered tunic + leather jerkin + strap
+    const cw = fem ? 0.215 : 0.25;
     const torso: THREE.BufferGeometry[] = [
-      cpart(lathe([[0.15, -0.02], [0.155, 0.1], [chestW, 0.26], [chestW * 0.98, 0.36], [0.12, 0.44], [0.06, 0.46]], 18), tunic, { sz: 0.78 }),
-      // Open-front jerkin / shawl layer
-      cpart(lathe([[0.168, 0.0], [0.172, 0.1], [chestW + 0.018, 0.26], [chestW + 0.012, 0.37], [0.13, 0.45]], 18, robe ? 0.6 : 1.1), outer, { sz: 0.8 }),
+      cpart(lathe([[0.19, -0.03], [0.198, 0.08], [cw * 0.95, 0.2], [cw, 0.3], [cw * 0.96, 0.36], [cw * 0.78, 0.415], [0.13, 0.465], [0.08, 0.49]], 16), tunic, { sz: 0.82, ao: 0.18 }),
+      // Open-front leather jerkin with darker edging
+      cpart(lathe([[0.205, -0.01], [0.212, 0.08], [cw * 0.95 + 0.018, 0.2], [cw + 0.018, 0.3], [cw * 0.96 + 0.016, 0.36], [cw * 0.78 + 0.014, 0.42], [0.145, 0.46]], 16, robe ? 0.6 : 1.0), outer, { sz: 0.83, ao: 0.22, mottle: 0.05 }),
       // Belt, buckle, pouch, collar
-      cpart(Tor(0.158, 0.03, 18), PALETTE.leatherDark, { y: 0.0, rx: Math.PI / 2, sz: 0.8 }),
-      cpart(new THREE.BoxGeometry(0.07, 0.06, 0.03), accent, { y: 0.0, z: 0.13 }),
-      cpart(Sph(1, 10, 8), PALETTE.leather, { x: 0.14, y: -0.04, z: 0.06, sx: 0.055, sy: 0.06, sz: 0.04 }),
-      cpart(Tor(0.085, 0.028, 14), robe ? accent : PALETTE.linen, { y: 0.44, rx: Math.PI / 2 }),
+      cpart(Tor(0.2, 0.034, 16), PALETTE.leatherDark, { y: 0.0, rx: Math.PI / 2, sz: 0.83 }),
+      cpart(new THREE.BoxGeometry(0.085, 0.07, 0.035), accent, { y: 0.0, z: 0.17 }),
+      cpart(Sph(1, 10, 7), PALETTE.leather, { x: 0.17, y: -0.06, z: 0.08, sx: 0.065, sy: 0.07, sz: 0.05, ao: 0.3, mottle: 0.05 }),
+      cpart(Tor(0.1, 0.03, 12), robe ? accent : PALETTE.linen, { y: 0.455, rx: Math.PI / 2, sz: 0.9 }),
     ];
-    if (fem) torso.push(cpart(Sph(1, 12, 8), tunic, { y: 0.26, z: 0.08, sx: 0.15, sy: 0.08, sz: 0.07 }));
-    if (look.cape) torso.push(cpart(lathe([[0.17, 0.42], [0.22, 0.2], [0.27, -0.25]], 10, Math.PI * 1.2), look.cape, { sz: 0.8 }));
-    torso.push(cpart(Cyl(0.06, 0.07, 0.1, 10), skin, { y: 0.47 }));
+    if (!robe) {
+      // Satchel strap wrapping diagonally around the chest (shoulder to opposite hip).
+      torso.push(cpart(new THREE.TorusGeometry(cw * 0.97, 0.02, 4, 20), PALETTE.leatherDark, { y: 0.2, sz: 0.86, rx: Math.PI / 2, ry: 0.62 }));
+    }
+    if (fem) torso.push(cpart(Sph(1, 10, 7), tunic, { y: 0.27, z: 0.1, sx: 0.17, sy: 0.085, sz: 0.08 }));
+    if (look.cape) torso.push(cpart(lathe([[0.2, 0.42], [0.25, 0.2], [0.3, -0.25]], 10, Math.PI * 1.2), look.cape, { sz: 0.85 }));
+    torso.push(cpart(Cyl(0.072, 0.082, 0.1, 10), skin, { y: 0.49 }));
     this.addMesh(j.spine, torso);
 
-    // ---- arms (sleeve, bracer, hand with thumb)
+    // ---- arms: rounded deltoid, full sleeve, bracer, proper hand
     for (const [side, sx] of [['L', -1], ['R', 1]] as const) {
+      const sleeve = robe ? tunic : tunic;
       this.addMesh(j[`arm${side}`], [
-        cpart(Sph(1, 12, 8), robe ? tunic : outer, { y: 0.02, sx: 0.062, sy: 0.032, sz: 0.06 }),
-        cpart(Cap(0.06, 0.18), tunic, { y: -0.13 }),
+        cpart(Sph(1, 12, 8), sleeve, { y: -0.01, sx: 0.084, sy: 0.08, sz: 0.084, ao: 0.1 }),
+        // Tapered sleeve: full at the shoulder, gathered toward the elbow.
+        cpart(lathe([[0.066, -0.27], [0.074, -0.22], [0.082, -0.12], [0.084, -0.03], [0.07, 0.02]], 10), sleeve, { ao: 0.18 }),
       ]);
-      const sleeveEnd = robe ? tunic : PALETTE.leather;
+      const cuff = robe ? tunic : PALETTE.leather;
       this.addMesh(j[`elbow${side}`], [
-        cpart(Cap(0.05, 0.16), robe ? tunic : skin, { y: -0.11 }),
-        cpart(Cyl(robe ? 0.075 : 0.058, robe ? 0.09 : 0.055, robe ? 0.12 : 0.09, 10), sleeveEnd, { y: robe ? -0.16 : -0.15 }),
-        // Hand: palm, curled fingers, thumb
-        cpart(Sph(1, 10, 8), skin, { y: -0.245, sx: 0.05, sy: 0.06, sz: 0.042 }),
-        cpart(Sph(1, 10, 8), skin, { y: -0.3, z: 0.012, sx: 0.046, sy: 0.034, sz: 0.04 }),
-        cpart(Cap(0.017, 0.035, 2, 6), skin, { x: -sx * 0.035, y: -0.245, z: 0.03, rz: sx * 0.6, rx: -0.4 }),
+        cpart(Cap(0.064, 0.13), robe ? tunic : skin, { y: -0.1 }),
+        cpart(Cyl(robe ? 0.085 : 0.074, robe ? 0.1 : 0.068, robe ? 0.13 : 0.12, 10), cuff, { y: robe ? -0.15 : -0.14, ao: 0.2, mottle: 0.05 }),
+        cpart(Tor(robe ? 0.09 : 0.072, 0.009, 10), robe ? accent : shade(cuff, 0.7), { y: -0.1, rx: Math.PI / 2 }),
+        // Hand: broad palm, knuckle row, curled fingers, separate thumb
+        cpart(Sph(1, 10, 7), skin, { y: -0.245, sx: 0.06, sy: 0.068, sz: 0.048 }),
+        cpart(Sph(1, 10, 7), skin, { y: -0.292, z: 0.016, sx: 0.058, sy: 0.04, sz: 0.05, ao: 0.15 }),
+        cpart(Cap(0.022, 0.045, 2, 6), skin, { x: -sx * 0.045, y: -0.24, z: 0.035, rz: sx * 0.55, rx: -0.45 }),
       ]);
     }
 
     // ---- head
-    const R = 0.2;
+    const R = 0.192;
     const head: THREE.BufferGeometry[] = [
       cpart(new THREE.SphereGeometry(R, 18, 12), skin, { y: R * 0.95, sy: 1.04, sz: 0.96 }),
+      // Jaw and chin give the face a less doll-like shape.
+      // Kept inside the head's front surface so it never covers the painted face.
+      cpart(Sph(1, 12, 8), skin, { y: R * 0.48, z: R * 0.08, sx: R * 0.86, sy: R * 0.58, sz: R * 0.66 }),
       cpart(Sph(1, 10, 8), skin, { x: -R * 0.98, y: R * 0.9, sx: 0.035, sy: 0.05, sz: 0.035 }),
       cpart(Sph(1, 10, 8), skin, { x: R * 0.98, y: R * 0.9, sx: 0.035, sy: 0.05, sz: 0.035 }),
       cpart(Sph(1, 10, 8), shade(skin, 0.97), { y: R * 0.8, z: R * 0.94, sx: 0.024, sy: 0.026, sz: 0.026 }),
@@ -299,10 +336,14 @@ export class HeroModel {
       fringe(3, 0.07, 0.1);
       for (const sx of [-1, 1]) out.push(cpart(Sph(1, 10, 8), color, { x: sx * R * 0.94, y: hc + 0.0, z: 0.02, sx: 0.035, sy: 0.07, sz: 0.05 }));
     } else if (style === 1) {
-      const crown: [number, number, number][] = [[0.12, 0.3, 0.1], [0.2, 2.2, 0.095], [0.22, 4.0, 0.09], [0.16, 5.4, 0.09], [0.28, 1.2, 0.085], [0.3, 3.1, 0.085]];
-      for (const [t, ph, sz] of crown) lock(Math.PI * t, ph, sz, sz * 0.75, sz * 0.8, ph > 3 ? dark : color, 1.02);
-      fringe(5, 0.085, 0.35);
-      for (const sx of [-1, 1]) out.push(cpart(Sph(1, 10, 8), color, { x: sx * R * 0.95, y: hc + 0.01, z: 0.01, sx: 0.04, sy: 0.08, sz: 0.06 }));
+      // Tousled: a full crown volume and a fringe swept to one side in a few broad locks.
+      out.push(cpart(Sph(1, 12, 8), color, { y: hc + R * 0.42, z: -R * 0.08, sx: R * 1.08, sy: R * 0.72, sz: R * 1.02 }));
+      lock(Math.PI * 0.3, Math.PI / 2 + 0.55, 0.11, 0.06, 0.07, light);
+      lock(Math.PI * 0.32, Math.PI / 2 + 0.05, 0.12, 0.065, 0.075, color);
+      lock(Math.PI * 0.36, Math.PI / 2 - 0.5, 0.1, 0.06, 0.07, dark);
+      lock(Math.PI * 0.12, Math.PI * 1.4, 0.1, 0.07, 0.09, dark, 1.06);
+      // Temples: soften the hairline above the ears.
+      for (const ph of [0.15, Math.PI - 0.15]) lock(Math.PI * 0.42, ph, 0.04, 0.07, 0.075, color, 0.99);
     } else if (style === 2) {
       fringe(4, 0.08, -0.15);
       out.push(cpart(Cap(0.12, 0.22, 4, 12), color, { y: hc - R * 0.55, z: -R * 0.55, sx: 1.55, sz: 0.55, rx: 0.12 }));
@@ -413,11 +454,16 @@ export class HeroModel {
   update(dt: number, pose: HumanoidPose, speed: number, swingAge: number, time: number) {
     for (const n of JOINTS) this.target.get(n)!.set(0, 0, 0);
     const ht = this.hipTarget.set(0, 0, 0);
-    // Rest pose: relaxed arms, soft elbows.
-    this.set('armL', 0.05, 0, 0.12);
-    this.set('armR', 0.05, 0, -0.12);
-    this.set('elbowL', -0.22);
-    this.set('elbowR', -0.22);
+    // Rest pose: grounded A-stance, soft knees, arms hanging clear of a broad torso.
+    this.set('armL', 0.04, 0, 0.17);
+    this.set('armR', 0.04, 0, -0.17);
+    this.set('elbowL', -0.2);
+    this.set('elbowR', -0.2);
+    this.set('thighL', -0.04, 0, -0.05);
+    this.set('thighR', 0.02, 0, 0.05);
+    this.set('kneeL', 0.08);
+    this.set('kneeR', 0.06);
+    this.set('spine', 0.03);
     let snap = 14;
 
     if (pose !== 'dead') this.deadT = 0;
@@ -427,19 +473,22 @@ export class HeroModel {
       const ph = this.walkPhase;
       const s = Math.sin(ph);
       const amp = Math.min(1, 0.45 + speed * 0.13);
-      this.set('thighL', -s * 0.62 * amp);
-      this.set('thighR', s * 0.62 * amp);
-      this.set('kneeL', Math.max(0, Math.sin(ph - 1.3)) * 1.0 * amp + 0.08);
-      this.set('kneeR', Math.max(0, Math.sin(ph + Math.PI - 1.3)) * 1.0 * amp + 0.08);
-      ht.y = -0.03 + Math.abs(Math.cos(ph)) * 0.045;
-      this.set('hips', 0, s * 0.14, 0);
-      this.set('spine', 0.07 * amp, -s * 0.2, 0);
-      this.set('head', -0.04, s * 0.08, 0);
+      const c = Math.cos(ph);
+      this.set('thighL', -s * 0.55 * amp, 0, -0.03);
+      this.set('thighR', s * 0.55 * amp, 0, 0.03);
+      // Knee folds during the swing-through and stays soft at contact.
+      this.set('kneeL', Math.max(0, Math.sin(ph - 1.25)) * 0.95 * amp + 0.12);
+      this.set('kneeR', Math.max(0, Math.sin(ph + Math.PI - 1.25)) * 0.95 * amp + 0.12);
+      ht.y = -0.035 + Math.abs(c) * 0.04;
+      // Pelvis twists with the stride and drops over the swinging leg; chest counter-rotates.
+      this.set('hips', 0, s * 0.12, c * 0.035);
+      this.set('spine', 0.06 * amp, -s * 0.16, -c * 0.03);
+      this.set('head', -0.03, s * 0.06, c * 0.015);
       if (pose === 'walk') {
-        this.set('armL', s * 0.55 * amp, 0, 0.1);
-        this.set('armR', -s * 0.55 * amp, 0, -0.1);
-        this.set('elbowL', -0.35 - Math.max(0, -s) * 0.45);
-        this.set('elbowR', -0.35 - Math.max(0, s) * 0.45);
+        this.set('armL', s * 0.42 * amp, 0, 0.15);
+        this.set('armR', -s * 0.42 * amp, 0, -0.15);
+        this.set('elbowL', -0.3 - Math.max(0, -s) * 0.4);
+        this.set('elbowR', -0.3 - Math.max(0, s) * 0.4);
       }
       snap = 18;
     } else if (pose !== 'dead') {
