@@ -1,0 +1,598 @@
+import * as THREE from 'three';
+import { mulberry32 } from '../core/rng';
+import type { ResourceType } from '../data/resources';
+import { T, groundHeight, terrainHeight, BRIDGE_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
+import type { ResourceNode } from '../sim/world';
+import { blob, makeWorldMaterial, merge, part, place, prism } from './geom';
+
+const Box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+const Cyl = (rt: number, rb: number, h: number, seg = 7) => new THREE.CylinderGeometry(rt, rb, h, seg);
+const Cone = (r: number, h: number, seg = 7) => new THREE.ConeGeometry(r, h, seg);
+
+// ------------------------------------------------------------------ prefabs
+
+function treePrefab(seed: number, oak: boolean): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const trunkH = oak ? 1.3 : 1.4;
+  parts.push(part(Cyl(oak ? 0.2 : 0.14, oak ? 0.3 : 0.22, trunkH, 6), oak ? '#6e4a2c' : '#86592f', { y: trunkH / 2 }));
+  // Roots
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + rng();
+    parts.push(part(Box(0.12, 0.12, 0.42), '#6e4a2c', { x: Math.cos(a) * 0.22, y: 0.05, z: Math.sin(a) * 0.22, ry: -a + Math.PI / 2 }));
+  }
+  const greens = oak ? ['#3f8f3a', '#4c9e3f', '#5aa842', '#77b347'] : ['#56b947', '#6cc94d', '#4aa73e', '#83d457'];
+  const blobs = oak ? 5 : 4;
+  for (let i = 0; i < blobs; i++) {
+    const a = (i / blobs) * Math.PI * 2 + rng();
+    const r = i === 0 ? 0 : (oak ? 0.6 : 0.45) * (0.7 + rng() * 0.5);
+    const size = (oak ? 0.95 : 0.78) * (i === 0 ? 1.1 : 0.75 + rng() * 0.3);
+    parts.push(
+      part(blob(size, 1, 0.16, rng()), greens[i % greens.length], {
+        x: Math.cos(a) * r,
+        y: trunkH + (oak ? 0.55 : 0.6) + (i === 0 ? 0.35 : rng() * 0.35),
+        z: Math.sin(a) * r,
+        jitter: 0.08,
+      }),
+    );
+  }
+  if (!oak && rng() < 0.5) {
+    // A few red fruit for charm
+    for (let i = 0; i < 3; i++) {
+      const a = rng() * Math.PI * 2;
+      parts.push(part(blob(0.08), '#e24a3b', { x: Math.cos(a) * 0.75, y: trunkH + 0.5 + rng() * 0.5, z: Math.sin(a) * 0.75 }));
+    }
+  }
+  return merge(parts);
+}
+
+function stumpPrefab(oak: boolean): THREE.BufferGeometry {
+  return merge([
+    part(Cyl(oak ? 0.26 : 0.2, oak ? 0.32 : 0.25, 0.35, 7), oak ? '#6e4a2c' : '#86592f', { y: 0.17 }),
+    part(Cyl(oak ? 0.24 : 0.18, oak ? 0.24 : 0.18, 0.02, 7), '#e6c48f', { y: 0.36 }),
+  ]);
+}
+
+function pinePrefab(seed: number): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts = [part(Cyl(0.12, 0.18, 1.0, 6), '#7a4f2a', { y: 0.5 })];
+  const shades = ['#2f7d4f', '#3a8e57', '#469c5f'];
+  const tiers = 3 + Math.floor(rng() * 2);
+  for (let i = 0; i < tiers; i++) {
+    const r = 1.0 - i * 0.2;
+    parts.push(part(Cone(r, 1.1, 7), shades[i % 3], { y: 0.9 + i * 0.62, ry: rng() * 3, jitter: 0.06 }));
+  }
+  if (rng() < 0.3) parts.push(part(Cone(0.25, 0.3, 7), '#f4f7f5', { y: 0.9 + tiers * 0.62 - 0.1 }));
+  return merge(parts);
+}
+
+function rockPrefab(seed: number, ore: string | null, depleted: boolean): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const base = depleted ? '#8f8a82' : '#9a948a';
+  if (depleted) {
+    for (let i = 0; i < 3; i++) {
+      const a = rng() * Math.PI * 2;
+      parts.push(part(blob(0.22 + rng() * 0.1, 0, 0.25, rng()), base, { x: Math.cos(a) * 0.25, y: 0.1, z: Math.sin(a) * 0.25, sy: 0.6 }));
+    }
+    return merge(parts);
+  }
+  parts.push(part(blob(0.62, 0, 0.22, rng()), base, { y: 0.35, sy: 0.75, jitter: 0.07 }));
+  parts.push(part(blob(0.38, 0, 0.25, rng()), '#a8a297', { x: 0.35, y: 0.22, z: 0.2, sy: 0.7 }));
+  parts.push(part(blob(0.3, 0, 0.25, rng()), '#8c867c', { x: -0.3, y: 0.18, z: -0.25, sy: 0.7 }));
+  if (ore) {
+    for (let i = 0; i < 6; i++) {
+      const a = rng() * Math.PI * 2;
+      const y = 0.25 + rng() * 0.45;
+      const r = 0.48 - (y - 0.25) * 0.4;
+      parts.push(part(new THREE.OctahedronGeometry(0.1 + rng() * 0.05), ore, { x: Math.cos(a) * r, y, z: Math.sin(a) * r, rx: rng(), rz: rng(), jitter: 0 }));
+    }
+  }
+  return merge(parts);
+}
+
+const ORE_COLORS: Record<string, string> = {
+  copper_rock: '#ef8a3d',
+  tin_rock: '#e3ebf2',
+  iron_rock: '#b8503a',
+};
+
+function buildingPrefab(b: Building): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const w = b.w - 0.2;
+  const d = b.d - 0.2;
+  const wallH = b.style === 'hall' ? 2.6 : b.style === 'inn' ? 2.4 : 1.9;
+  const stone = '#a8a196';
+  const timber = '#6b4528';
+  parts.push(part(Box(w + 0.2, 0.35, d + 0.2), stone, { y: 0.17 }));
+  if (b.style === 'smithy') {
+    parts.push(part(Box(w, wallH, d), '#9a9184', { y: 0.35 + wallH / 2, jitter: 0.08 }));
+  } else {
+    parts.push(part(Box(w, wallH, d), b.wall, { y: 0.35 + wallH / 2 }));
+    // Timber frame
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) parts.push(part(Box(0.16, wallH, 0.16), timber, { x: (sx * w) / 2, y: 0.35 + wallH / 2, z: (sz * d) / 2 }));
+    }
+    parts.push(part(Box(w + 0.04, 0.14, d + 0.04), timber, { y: 0.35 + wallH * 0.55 }));
+    parts.push(part(Box(w + 0.04, 0.14, d + 0.04), timber, { y: 0.35 + wallH - 0.05 }));
+  }
+  // Roof (gable along the building's width axis, overhanging)
+  const roofH = b.style === 'hall' ? 1.9 : 1.4;
+  parts.push(part(prism(d + 0.7, roofH, w + 0.6), b.roof, { y: 0.35 + wallH, ry: Math.PI / 2, jitter: 0.06 }));
+  parts.push(part(Box(0.16, 0.14, w + 0.7), '#3b2a1f', { y: 0.35 + wallH + roofH, ry: Math.PI / 2 }));
+  // Chimney
+  parts.push(part(Box(0.45, 1.3, 0.45), stone, { x: w * 0.28, y: 0.35 + wallH + roofH * 0.6, z: -d * 0.15 }));
+  // Door on +z face (local), windows
+  const front = d / 2 + 0.03;
+  parts.push(part(Box(0.8, 1.35, 0.08), '#5b3a22', { y: 0.35 + 0.67, z: front }));
+  parts.push(part(Box(0.95, 0.12, 0.12), timber, { y: 0.35 + 1.4, z: front }));
+  parts.push(part(Box(0.08, 0.08, 0.06), '#e8c45a', { x: 0.25, y: 0.35 + 0.7, z: front + 0.05 }));
+  const win = (x: number, z: number, ry: number) => {
+    parts.push(part(Box(0.55, 0.5, 0.06), '#ffe7a1', { x, y: 0.35 + wallH * 0.62, z, ry, jitter: 0 }));
+    parts.push(part(Box(0.65, 0.08, 0.1), timber, { x, y: 0.35 + wallH * 0.62 - 0.28, z, ry }));
+  };
+  if (w > 3) {
+    win(-w * 0.3, front, 0);
+    win(w * 0.3, front, 0);
+  }
+  win(w / 2 + 0.03, 0, Math.PI / 2);
+  win(-w / 2 - 0.03, 0, Math.PI / 2);
+  win(0, -d / 2 - 0.03, 0);
+  if (b.style === 'hall') {
+    // Banners and steps
+    parts.push(part(Box(1.6, 0.18, 0.6), stone, { y: 0.09, z: front + 0.3 }));
+    for (const sx of [-1, 1]) {
+      parts.push(part(Box(0.5, 1.1, 0.04), '#3a5fb0', { x: sx * 1.4, y: 0.35 + wallH * 0.62, z: front + 0.02 }));
+      parts.push(part(Box(0.18, 0.18, 0.05), '#f2c94c', { x: sx * 1.4, y: 0.35 + wallH * 0.66, z: front + 0.05, rz: Math.PI / 4 }));
+    }
+  }
+  if (b.style === 'inn') {
+    parts.push(part(Box(0.08, 0.08, 0.9), timber, { x: 0.9, y: 0.35 + 1.9, z: front + 0.4 }));
+    parts.push(part(Box(0.7, 0.5, 0.06), '#c8893a', { x: 0.9, y: 0.35 + 1.55, z: front + 0.75 }));
+    parts.push(part(Cyl(0.1, 0.12, 0.25, 6), '#f5d36b', { x: 0.9, y: 0.35 + 1.55, z: front + 0.79, rx: Math.PI / 2 }));
+  }
+  if (b.style === 'smithy') {
+    parts.push(part(Box(0.9, 0.6, 0.9), '#5b5f68', { x: -w * 0.25, y: 0.35 + 0.3, z: front + 0.5 }));
+    parts.push(part(Box(0.5, 0.15, 0.5), '#ff8a2a', { x: -w * 0.25, y: 0.35 + 0.62, z: front + 0.5, jitter: 0 }));
+  }
+  return merge(parts);
+}
+
+function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.BufferGeometry | null {
+  const rng = mulberry32(seed);
+  switch (kind) {
+    case 'bush': {
+      const c = ['#4fae44', '#5dbb4a', '#3f9c3e'][variant % 3];
+      const parts = [part(blob(0.42, 0, 0.2, rng()), c, { y: 0.3, sy: 0.8 }), part(blob(0.3, 0, 0.2, rng()), c, { x: 0.3, y: 0.22, z: 0.1, sy: 0.8 })];
+      if (variant === 3) for (let i = 0; i < 4; i++) parts.push(part(blob(0.06), '#ff6fa8', { x: (rng() - 0.5) * 0.6, y: 0.45 + rng() * 0.1, z: (rng() - 0.5) * 0.6 }));
+      return merge(parts);
+    }
+    case 'boulder':
+      return merge([part(blob(0.5, 0, 0.25, rng()), '#9d978c', { y: 0.25, sy: 0.7, jitter: 0.08 }), part(blob(0.25, 0, 0.3, rng()), '#7fa65a', { x: 0.1, y: 0.5, sy: 0.3 })]);
+    case 'flowers': {
+      const cols = ['#ff6b6b', '#ffd93d', '#f7f7ff', '#c77dff', '#ff9ff3', '#74c0fc'];
+      const parts: THREE.BufferGeometry[] = [];
+      const n = 3 + Math.floor(rng() * 3);
+      const col = cols[Math.floor(rng() * cols.length)];
+      for (let i = 0; i < n; i++) {
+        const x = (rng() - 0.5) * 0.5;
+        const z = (rng() - 0.5) * 0.5;
+        parts.push(part(Box(0.03, 0.25, 0.03), '#3f8f35', { x, y: 0.12, z, sway: 1 }));
+        parts.push(part(new THREE.OctahedronGeometry(0.07), col, { x, y: 0.27, z, sway: 1, jitter: 0 }));
+      }
+      return merge(parts);
+    }
+    case 'wheat': {
+      const parts: THREE.BufferGeometry[] = [];
+      for (let i = 0; i < 5; i++) {
+        const x = (rng() - 0.5) * 0.8;
+        const z = (rng() - 0.5) * 0.8;
+        parts.push(part(Box(0.04, 0.6, 0.04), '#c9a646', { x, y: 0.3, z, sway: 1 }));
+        parts.push(part(Box(0.08, 0.2, 0.08), '#efcf5d', { x, y: 0.65, z, sway: 1 }));
+      }
+      return merge(parts);
+    }
+    case 'reeds': {
+      const parts: THREE.BufferGeometry[] = [];
+      for (let i = 0; i < 4; i++) {
+        const x = (rng() - 0.5) * 0.4;
+        const z = (rng() - 0.5) * 0.4;
+        parts.push(part(Box(0.04, 0.7, 0.04), '#6c9b3c', { x, y: 0.25, z, sway: 1 }));
+        if (i % 2 === 0) parts.push(part(Box(0.07, 0.18, 0.07), '#7a5232', { x, y: 0.62, z, sway: 1 }));
+      }
+      return merge(parts);
+    }
+    case 'mushroom': {
+      const cap = variant % 2 ? '#e8473c' : '#d98c3c';
+      const parts = [part(Cyl(0.05, 0.06, 0.2, 6), '#f3ead8', { y: 0.1 }), part(new THREE.SphereGeometry(0.14, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), cap, { y: 0.18 })];
+      parts.push(part(blob(0.03), '#ffffff', { x: 0.06, y: 0.28, z: 0.03 }));
+      parts.push(part(blob(0.025), '#ffffff', { x: -0.05, y: 0.27, z: -0.05 }));
+      return merge(parts);
+    }
+    case 'fence':
+      return merge([
+        part(Box(0.12, 0.8, 0.12), '#8b5e34', { y: 0.4 }),
+        part(Box(1.0, 0.09, 0.06), '#a87342', { y: 0.55 }),
+        part(Box(1.0, 0.09, 0.06), '#a87342', { y: 0.28 }),
+      ]);
+    case 'lamp':
+      return merge([
+        part(Cyl(0.06, 0.09, 2.0, 6), '#3f3a36', { y: 1.0 }),
+        part(Box(0.5, 0.06, 0.06), '#3f3a36', { x: 0.2, y: 1.95 }),
+        part(Box(0.24, 0.05, 0.24), '#3f3a36', { x: 0.4, y: 1.92 }),
+        part(Cone(0.18, 0.18, 4), '#3f3a36', { x: 0.4, y: 1.72, rx: Math.PI }),
+      ]);
+    case 'stall': {
+      const stripes = variant ? ['#e85d5d', '#fff4e0'] : ['#4f8fe0', '#fff4e0'];
+      const parts: THREE.BufferGeometry[] = [];
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(part(Box(0.1, 1.6, 0.1), '#8b5e34', { x: sx * 0.75, y: 0.8, z: sz * 0.45 }));
+      parts.push(part(Box(1.6, 0.1, 1.0), '#a87342', { y: 0.75 }));
+      for (let i = 0; i < 6; i++) parts.push(part(Box(0.29, 0.06, 1.2), stripes[i % 2], { x: -0.72 + i * 0.29, y: 1.65, rx: 0.15, jitter: 0 }));
+      const goods = ['#e8473c', '#f5c542', '#7bcf54', '#ff9f43'];
+      for (let i = 0; i < 6; i++) parts.push(part(blob(0.1), goods[i % 4], { x: -0.55 + (i % 3) * 0.5, y: 0.88, z: i < 3 ? -0.2 : 0.2 }));
+      return merge(parts);
+    }
+    case 'crate':
+      return merge([part(Box(0.7, 0.7, 0.7), '#b07a45', { y: 0.35 }), part(Box(0.74, 0.1, 0.74), '#7a5230', { y: 0.6 }), part(Box(0.74, 0.1, 0.74), '#7a5230', { y: 0.1 })]);
+    case 'barrel':
+      return merge([part(Cyl(0.3, 0.3, 0.8, 8), '#9a6a3c', { y: 0.4 }), part(Cyl(0.32, 0.32, 0.06, 8), '#4a4a4a', { y: 0.65 }), part(Cyl(0.32, 0.32, 0.06, 8), '#4a4a4a', { y: 0.15 })]);
+    case 'haystack':
+      return merge([part(blob(0.65, 1, 0.12, rng()), '#e8c45a', { y: 0.4, sy: 0.75, jitter: 0.08 })]);
+    case 'tent':
+      return merge([
+        part(Cone(1.3, 1.9, 5), variant ? '#9a6a3c' : '#8a5a3c', { y: 0.95, jitter: 0.1 }),
+        part(Box(0.5, 0.9, 0.05), '#3a2a1f', { y: 0.45, z: 1.0 }),
+        part(Cyl(0.04, 0.04, 0.6, 4), '#5b3a22', { y: 2.0 }),
+      ]);
+    case 'totem':
+      return merge([
+        part(Cyl(0.25, 0.3, 2.6, 6), '#7a5232', { y: 1.3 }),
+        part(Box(0.55, 0.5, 0.5), '#b8322b', { y: 2.2 }),
+        part(Box(0.4, 0.12, 0.05), '#f2e8c8', { y: 2.15, z: 0.27, jitter: 0 }),
+        part(Cone(0.12, 0.4, 4), '#f2e8c8', { x: -0.3, y: 2.6, rz: 0.4 }),
+        part(Cone(0.12, 0.4, 4), '#f2e8c8', { x: 0.3, y: 2.6, rz: -0.4 }),
+      ]);
+    case 'campfire': {
+      const parts: THREE.BufferGeometry[] = [];
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        parts.push(part(blob(0.16), '#7f7a72', { x: Math.cos(a) * 0.6, y: 0.08, z: Math.sin(a) * 0.6 }));
+      }
+      for (let i = 0; i < 4; i++) parts.push(part(Cyl(0.07, 0.07, 0.9, 5), '#5b3a22', { y: 0.15, ry: (i / 4) * Math.PI, rz: Math.PI / 2 - 0.2 }));
+      return merge(parts);
+    }
+    case 'spikes':
+      return merge([
+        part(Cyl(0.13, 0.15, 1.5, 5), '#7a5232', { x: -0.25, y: 0.75, rz: 0.15 }),
+        part(Cone(0.13, 0.4, 5), '#c9a87a', { x: -0.36, y: 1.65, rz: 0.15 }),
+        part(Cyl(0.13, 0.15, 1.7, 5), '#6e4a2c', { x: 0.2, y: 0.85, rz: -0.1 }),
+        part(Cone(0.13, 0.4, 5), '#c9a87a', { x: 0.29, y: 1.88, rz: -0.1 }),
+      ]);
+    case 'fountain': {
+      const parts: THREE.BufferGeometry[] = [];
+      parts.push(part(Cyl(1.45, 1.55, 0.5, 10), '#c4bcae', { y: 0.25 }));
+      parts.push(part(Cyl(1.28, 1.28, 0.06, 10), '#5fc8e8', { y: 0.52, jitter: 0 }));
+      parts.push(part(Cyl(0.2, 0.3, 1.2, 8), '#b5ad9f', { y: 0.9 }));
+      parts.push(part(Cyl(0.6, 0.35, 0.25, 8), '#c4bcae', { y: 1.5 }));
+      parts.push(part(Cyl(0.5, 0.5, 0.04, 8), '#7fd8f0', { y: 1.62, jitter: 0 }));
+      parts.push(part(Cone(0.18, 0.5, 6), '#7fd8f0', { y: 1.9, jitter: 0 }));
+      return merge(parts);
+    }
+    case 'shrine':
+      return merge([
+        part(Cyl(0.9, 1.0, 0.3, 8), '#b5ad9f', { y: 0.15 }),
+        part(Box(0.6, 1.1, 0.6), '#d6cfc2', { y: 0.85 }),
+        part(Box(0.8, 0.15, 0.8), '#c4bcae', { y: 1.45 }),
+      ]);
+    case 'waystone':
+      return merge([
+        part(Cyl(0.6, 0.7, 0.2, 7), '#8f8a82', { y: 0.1 }),
+        part(Box(0.5, 1.7, 0.35), '#a39d93', { y: 1.0, rz: 0.05, jitter: 0.08 }),
+        part(Box(0.25, 0.25, 0.05), '#6fe0ff', { y: 1.2, z: 0.19, rz: Math.PI / 4, jitter: 0 }),
+      ]);
+    case 'anvil':
+      return merge([part(Box(0.4, 0.4, 0.3), '#5b3a22', { y: 0.2 }), part(Box(0.7, 0.2, 0.3), '#4a4d55', { y: 0.5 }), part(Cone(0.12, 0.3, 4), '#4a4d55', { x: 0.45, y: 0.5, rz: Math.PI / 2 })]);
+    case 'signpost':
+      return merge([
+        part(Box(0.12, 1.6, 0.12), '#7a5232', { y: 0.8 }),
+        part(Box(0.9, 0.25, 0.06), '#b07a45', { x: 0.25, y: 1.3 }),
+        part(Box(0.8, 0.25, 0.06), '#b07a45', { x: -0.2, y: 1.0, ry: 0.4 }),
+      ]);
+    case 'pine':
+      return null; // handled via pinePrefab variants
+  }
+}
+
+// ------------------------------------------------------------------ static world
+
+const CHUNK = 16;
+
+class ChunkBatcher {
+  private buckets = new Map<string, THREE.BufferGeometry[]>();
+  add(x: number, z: number, g: THREE.BufferGeometry) {
+    const key = `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+    let b = this.buckets.get(key);
+    if (!b) this.buckets.set(key, (b = []));
+    b.push(g);
+  }
+  build(material: THREE.Material, shadows: boolean, name: string): THREE.Group {
+    const group = new THREE.Group();
+    group.name = name;
+    for (const geos of this.buckets.values()) {
+      const m = new THREE.Mesh(merge(geos), material);
+      m.castShadow = shadows;
+      m.receiveShadow = shadows;
+      m.matrixAutoUpdate = false;
+      group.add(m);
+    }
+    return group;
+  }
+}
+
+export interface Glow {
+  mesh: THREE.Object3D;
+  baseY: number;
+  phase: number;
+  kind: 'crystal' | 'flame' | 'lantern';
+}
+
+export interface StaticWorld {
+  group: THREE.Group;
+  glows: Glow[];
+  emitters: { x: number; y: number; z: number; kind: 'fire' | 'fountain' | 'chimney' }[];
+}
+
+export function buildStaticWorld(map: WorldMap, time: { value: number }): StaticWorld {
+  const rng = mulberry32(map.seed + 11);
+  const solid = new ChunkBatcher();
+  const soft = new ChunkBatcher();
+  const glows: Glow[] = [];
+  const emitters: StaticWorld['emitters'] = [];
+  const group = new THREE.Group();
+
+  const pinePrefabs = [0, 1, 2, 3].map((i) => pinePrefab(100 + i));
+  const prefabCache = new Map<string, THREE.BufferGeometry>();
+  const getPrefab = (kind: Decor['kind'], variant: number) => {
+    const key = `${kind}:${variant}`;
+    let p = prefabCache.get(key);
+    if (!p) {
+      const made = decorPrefab(kind, variant, 500 + variant * 17 + kind.length * 31);
+      if (!made) return null;
+      prefabCache.set(key, (p = made));
+    }
+    return p;
+  };
+  const softKinds = new Set(['flowers', 'wheat', 'reeds', 'mushroom']);
+
+  const glowMat = new THREE.MeshBasicMaterial({ color: '#7ff0ff' });
+  const flameMat = new THREE.MeshBasicMaterial({ color: '#ffb340' });
+  const flameCoreMat = new THREE.MeshBasicMaterial({ color: '#fff2a8' });
+  const lanternMat = new THREE.MeshBasicMaterial({ color: '#ffe08a' });
+  const crystalGeo = new THREE.OctahedronGeometry(0.28);
+  const flameGeo = new THREE.ConeGeometry(0.32, 0.9, 6);
+  const lanternGeo = new THREE.BoxGeometry(0.16, 0.2, 0.16);
+
+  for (const d of map.decor) {
+    const y = groundHeight(map, d.x, d.z);
+    if (d.kind === 'pine') {
+      solid.add(d.x, d.z, place(pinePrefabs[d.variant % 4], d.x, terrainHeight(map, d.x, d.z) - 0.05, d.z, d.rot, d.scale * 1.05));
+      continue;
+    }
+    const variant = d.kind === 'flowers' ? Math.floor(rng() * 8) : d.kind === 'mushroom' || d.kind === 'tent' || d.kind === 'stall' ? d.variant % 2 : d.kind === 'bush' ? d.variant : 0;
+    const pre = getPrefab(d.kind, variant);
+    if (!pre) continue;
+    const s = d.kind === 'fence' || d.kind === 'fountain' || d.kind === 'stall' ? 1 : d.scale;
+    const g = place(pre, d.x, y - 0.02, d.z, d.rot, s, softKinds.has(d.kind) ? 0.9 + rng() * 0.2 : 1);
+    (softKinds.has(d.kind) ? soft : solid).add(d.x, d.z, g);
+
+    if (d.kind === 'shrine' || d.kind === 'waystone') {
+      const m = new THREE.Mesh(crystalGeo, glowMat);
+      const by = y + (d.kind === 'shrine' ? 2.05 : 2.15);
+      m.position.set(d.x, by, d.z);
+      if (d.kind === 'waystone') m.scale.setScalar(0.7);
+      group.add(m);
+      glows.push({ mesh: m, baseY: by, phase: rng() * 6, kind: 'crystal' });
+    } else if (d.kind === 'campfire') {
+      const f = new THREE.Group();
+      const outer = new THREE.Mesh(flameGeo, flameMat);
+      const inner = new THREE.Mesh(flameGeo, flameCoreMat);
+      inner.scale.setScalar(0.55);
+      inner.position.y = -0.1;
+      f.add(outer, inner);
+      f.position.set(d.x, y + 0.5, d.z);
+      group.add(f);
+      glows.push({ mesh: f, baseY: y + 0.5, phase: 0, kind: 'flame' });
+      emitters.push({ x: d.x, y: y + 0.8, z: d.z, kind: 'fire' });
+    } else if (d.kind === 'lamp') {
+      const m = new THREE.Mesh(lanternGeo, lanternMat);
+      const lx = d.x + Math.cos(-d.rot) * 0.4;
+      const lz = d.z + Math.sin(-d.rot) * 0.4;
+      m.position.set(lx, y + 1.78, lz);
+      group.add(m);
+      glows.push({ mesh: m, baseY: y + 1.78, phase: rng() * 6, kind: 'lantern' });
+    } else if (d.kind === 'fountain') {
+      emitters.push({ x: d.x, y: y + 2.1, z: d.z, kind: 'fountain' });
+    }
+  }
+
+  for (const b of map.buildings) {
+    const pre = buildingPrefab(b);
+    const y = terrainHeight(map, b.x, b.z) - 0.1;
+    solid.add(b.x, b.z, place(pre, b.x, y, b.z, b.facing));
+    const lw = b.w - 0.2;
+    const ld = b.d - 0.2;
+    const wallH = b.style === 'hall' ? 2.6 : b.style === 'inn' ? 2.4 : 1.9;
+    const roofH = b.style === 'hall' ? 1.9 : 1.4;
+    const lx = lw * 0.28;
+    const lz = -ld * 0.15;
+    const c = Math.cos(b.facing);
+    const s = Math.sin(b.facing);
+    emitters.push({ x: b.x + lx * c + lz * s, y: y + 0.35 + wallH + roofH * 0.6 + 0.7, z: b.z - lx * s + lz * c, kind: 'chimney' });
+  }
+
+  // Bridges
+  const W = map.width;
+  for (let z = 0; z < map.height; z++) {
+    for (let x = 0; x < W; x++) {
+      if (map.tiles[z * W + x] !== T.Bridge) continue;
+      const parts: THREE.BufferGeometry[] = [];
+      const horiz = map.tiles[z * W + x - 1] === T.Bridge || map.tiles[z * W + x + 1] === T.Bridge || isLandPath(map, x - 1, z) || isLandPath(map, x + 1, z);
+      for (let i = 0; i < 4; i++) {
+        parts.push(part(Box(1.0, 0.1, 0.24), i % 2 ? '#a87342' : '#9a6a3c', horiz ? { x: -0.375 + i * 0.25, y: BRIDGE_Y - 0.05, ry: Math.PI / 2 } : { z: -0.375 + i * 0.25, y: BRIDGE_Y - 0.05 }));
+      }
+      const railEdge = (dx: number, dz: number) => {
+        const nx = x + dx;
+        const nz = z + dz;
+        const t = map.tiles[nz * W + nx];
+        return t !== T.Bridge && t !== T.Path;
+      };
+      const rails: [number, number][] = horiz ? [[0, -1], [0, 1]] : [[-1, 0], [1, 0]];
+      for (const [dx, dz] of rails) {
+        if (!railEdge(dx, dz)) continue;
+        parts.push(part(Box(0.1, 0.55, 0.1), '#6b4528', { x: dx * 0.45, y: BRIDGE_Y + 0.22, z: dz * 0.45 }));
+        parts.push(part(Box(dz !== 0 ? 1.0 : 0.08, 0.08, dx !== 0 ? 1.0 : 0.08), '#8b5e34', { x: dx * 0.45, y: BRIDGE_Y + 0.45, z: dz * 0.45 }));
+      }
+      parts.push(part(Cyl(0.09, 0.09, 1.6, 5), '#5b3a22', { x: 0.4, y: BRIDGE_Y - 0.8, z: 0.4 }));
+      solid.add(x, z, place(merge(parts), x + 0.5, 0, z + 0.5));
+    }
+  }
+
+  // Grass tufts on green tiles
+  const tuft = merge([
+    part(Box(0.04, 0.32, 0.02), '#6fc04b', { x: -0.05, y: 0.14, rz: 0.25, sway: 1, jitter: 0.1 }),
+    part(Box(0.04, 0.38, 0.02), '#7fd055', { y: 0.17, sway: 1, jitter: 0.1 }),
+    part(Box(0.04, 0.3, 0.02), '#5fb043', { x: 0.05, y: 0.13, rz: -0.25, ry: 0.8, sway: 1, jitter: 0.1 }),
+  ]);
+  for (let z = 1; z < map.height - 1; z++) {
+    for (let x = 1; x < W - 1; x++) {
+      const t = map.tiles[z * W + x];
+      if (t !== T.Grass && t !== T.Forest) continue;
+      if (map.blocked[z * W + x]) continue;
+      const n = rng() < 0.55 ? 1 + Math.floor(rng() * 2) : 0;
+      for (let i = 0; i < n; i++) {
+        const px = x + rng();
+        const pz = z + rng();
+        const tint = t === T.Forest ? 0.8 : 0.95 + rng() * 0.15;
+        soft.add(px, pz, place(tuft, px, terrainHeight(map, px, pz) - 0.03, pz, rng() * 6, 0.8 + rng() * 0.6, tint));
+      }
+    }
+  }
+
+  const solidMat = makeWorldMaterial();
+  const softMat = makeWorldMaterial({ sway: true, time });
+  group.add(solid.build(solidMat, true, 'props'));
+  const softGroup = soft.build(softMat, false, 'foliage');
+  softGroup.children.forEach((m) => ((m as THREE.Mesh).receiveShadow = true));
+  group.add(softGroup);
+  return { group, glows, emitters };
+}
+
+function isLandPath(map: WorldMap, x: number, z: number) {
+  return map.tiles[z * map.width + x] === T.Path;
+}
+
+// ------------------------------------------------------------------ resources (instanced, stateful)
+
+interface ResourceBatch {
+  full: THREE.InstancedMesh;
+  depleted: THREE.InstancedMesh;
+  nodes: ResourceNode[];
+  /** Per-instance base transforms. */
+  base: THREE.Matrix4[];
+}
+
+const tmpM = new THREE.Matrix4();
+const tmpQ = new THREE.Quaternion();
+const tmpS = new THREE.Vector3();
+const tmpP = new THREE.Vector3();
+const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+
+export class ResourceView {
+  readonly group = new THREE.Group();
+  private batches: ResourceBatch[] = [];
+  private dirty = new Set<ResourceBatch>();
+  private batchOf = new Map<number, { batch: ResourceBatch; i: number }>();
+
+  constructor(private map: WorldMap, nodes: ResourceNode[]) {
+    const material = makeWorldMaterial();
+    const byType = new Map<ResourceType, ResourceNode[]>();
+    for (const n of nodes) {
+      const arr = byType.get(n.def.id) ?? [];
+      arr.push(n);
+      byType.set(n.def.id, arr);
+    }
+    for (const [type, list] of byType) {
+      const isTree = type === 'tree' || type === 'oak';
+      const variants = isTree ? [0, 1, 2].map((v) => treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak')) : [0, 1].map((v) => rockPrefab(900 + v * 7 + type.length, ORE_COLORS[type] ?? null, false));
+      const depletedGeo = isTree ? stumpPrefab(type === 'oak') : rockPrefab(950, null, true);
+      // Split each type by variant so silhouettes vary.
+      variants.forEach((geo, v) => {
+        const subset = list.filter((_, i) => i % variants.length === v);
+        if (subset.length === 0) return;
+        const full = new THREE.InstancedMesh(geo, material, subset.length);
+        const dep = new THREE.InstancedMesh(depletedGeo, material, subset.length);
+        full.castShadow = true;
+        full.receiveShadow = true;
+        dep.castShadow = true;
+        const batch: ResourceBatch = { full, depleted: dep, nodes: subset, base: [] };
+        const rnd = mulberry32(subset.length * 31 + v);
+        subset.forEach((n, i) => {
+          const s = isTree ? 0.9 + rnd() * 0.3 : 0.9 + rnd() * 0.25;
+          tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2);
+          const m = new THREE.Matrix4().compose(new THREE.Vector3(n.x, terrainHeight(this.map, n.x, n.z) - 0.05, n.z), tmpQ, new THREE.Vector3(s, s, s));
+          batch.base.push(m);
+          full.setMatrixAt(i, n.depleted ? ZERO : m);
+          dep.setMatrixAt(i, n.depleted ? m : ZERO);
+          const tint = 0.92 + rnd() * 0.16;
+          full.setColorAt(i, new THREE.Color(tint, tint, tint));
+          this.batchOf.set(n.id, { batch, i });
+        });
+        full.computeBoundingSphere();
+        dep.computeBoundingSphere();
+        this.group.add(full, dep);
+        this.batches.push(batch);
+      });
+    }
+  }
+
+  /** Called each frame: updates depletion state and hit shake. */
+  update() {
+    for (const b of this.batches) {
+      b.nodes.forEach((n, i) => {
+        const shaking = n.hitAge < 0.35 && !n.depleted;
+        const wasShaking = (n as ResourceNode & { _shake?: boolean })._shake;
+        const st = (n as ResourceNode & { _dep?: boolean })._dep;
+        if (st !== n.depleted) {
+          (n as ResourceNode & { _dep?: boolean })._dep = n.depleted;
+          b.full.setMatrixAt(i, n.depleted ? ZERO : b.base[i]);
+          b.depleted.setMatrixAt(i, n.depleted ? b.base[i] : ZERO);
+          this.dirty.add(b);
+        }
+        if (shaking || wasShaking) {
+          (n as ResourceNode & { _shake?: boolean })._shake = shaking;
+          if (!n.depleted) {
+            if (shaking) {
+              const k = Math.sin(n.hitAge * 40) * (0.35 - n.hitAge) * 0.25;
+              b.base[i].decompose(tmpP, tmpQ, tmpS);
+              const wob = new THREE.Quaternion().setFromEuler(new THREE.Euler(k, 0, k * 0.6));
+              tmpM.compose(tmpP, tmpQ.clone().multiply(wob), tmpS);
+              b.full.setMatrixAt(i, tmpM);
+            } else b.full.setMatrixAt(i, b.base[i]);
+            this.dirty.add(b);
+          }
+        }
+      });
+    }
+    for (const b of this.dirty) {
+      b.full.instanceMatrix.needsUpdate = true;
+      b.depleted.instanceMatrix.needsUpdate = true;
+    }
+    this.dirty.clear();
+  }
+
+  /** Approximate height of a node's visual centre, for UI anchoring and picking. */
+  anchorHeight(n: ResourceNode): number {
+    const isTree = n.def.skill === 'woodcutting';
+    return terrainHeight(this.map, n.x, n.z) + (n.depleted ? 0.3 : isTree ? 2.0 : 0.6);
+  }
+}

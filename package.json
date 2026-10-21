@@ -1,0 +1,23 @@
+{
+  "name": "new-mmorpg",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile-first stylized isometric fantasy RPG — Phase 1 vertical slice",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "three": "0.169.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.169.0",
+    "typescript": "5.6.3",
+    "vite": "5.4.10",
+    "vitest": "2.1.4"
+  }
+}

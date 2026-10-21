@@ -1,0 +1,10 @@
+{
+  "name": "Brightwater — Fantasy RPG",
+  "short_name": "Brightwater",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#1d3b2a",
+  "theme_color": "#1d3b2a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -1,0 +1,306 @@
+import { itemDef } from '../data/items';
+
+const cache = new Map<string, string>();
+
+/** Procedurally painted item icons (original art, no external assets). Returns a data URL. */
+export function itemIcon(id: string): string {
+  const hit = cache.get(id);
+  if (hit) return hit;
+  const d = itemDef(id);
+  const S = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const { shape, color, accent = '#ffffff' } = d.icon;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  const outline = (w = 3) => {
+    g.lineWidth = w;
+    g.strokeStyle = 'rgba(20,12,6,0.85)';
+    g.stroke();
+  };
+  const shadow = () => {
+    g.fillStyle = 'rgba(0,0,0,0.18)';
+    g.beginPath();
+    g.ellipse(32, 54, 20, 5, 0, 0, Math.PI * 2);
+    g.fill();
+  };
+  shadow();
+  switch (shape) {
+    case 'log': {
+      g.save();
+      g.translate(32, 34);
+      g.rotate(-0.5);
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(-22, -9, 40, 18, 4);
+      g.fill();
+      outline();
+      g.strokeStyle = 'rgba(0,0,0,0.25)';
+      g.lineWidth = 2;
+      for (const y of [-3, 3]) {
+        g.beginPath();
+        g.moveTo(-18, y);
+        g.lineTo(10, y + 1);
+        g.stroke();
+      }
+      g.fillStyle = accent;
+      g.beginPath();
+      g.ellipse(18, 0, 6, 9, 0, 0, Math.PI * 2);
+      g.fill();
+      outline(2.5);
+      g.strokeStyle = 'rgba(120,70,30,0.6)';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.ellipse(18, 0, 3, 5, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+      break;
+    }
+    case 'ore': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(14, 44);
+      g.lineTo(18, 24);
+      g.lineTo(32, 14);
+      g.lineTo(48, 20);
+      g.lineTo(52, 40);
+      g.lineTo(40, 50);
+      g.lineTo(22, 50);
+      g.closePath();
+      g.fill();
+      outline();
+      g.fillStyle = 'rgba(255,255,255,0.18)';
+      g.beginPath();
+      g.moveTo(18, 24);
+      g.lineTo(32, 14);
+      g.lineTo(34, 28);
+      g.lineTo(22, 34);
+      g.closePath();
+      g.fill();
+      g.fillStyle = accent;
+      for (const [x, y, r] of [[26, 30, 5], [40, 26, 4], [36, 40, 5], [24, 43, 3]]) {
+        g.beginPath();
+        g.moveTo(x, y - r);
+        g.lineTo(x + r, y);
+        g.lineTo(x, y + r);
+        g.lineTo(x - r, y);
+        g.closePath();
+        g.fill();
+      }
+      break;
+    }
+    case 'gem': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(32, 12);
+      g.lineTo(50, 28);
+      g.lineTo(32, 52);
+      g.lineTo(14, 28);
+      g.closePath();
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      g.globalAlpha = 0.7;
+      g.beginPath();
+      g.moveTo(32, 12);
+      g.lineTo(40, 28);
+      g.lineTo(32, 34);
+      g.lineTo(24, 28);
+      g.closePath();
+      g.fill();
+      g.globalAlpha = 1;
+      break;
+    }
+    case 'coins': {
+      for (const [x, y] of [[22, 42], [40, 42], [31, 34], [26, 26], [38, 24]]) {
+        g.fillStyle = color;
+        g.beginPath();
+        g.ellipse(x, y, 10, 7, 0, 0, Math.PI * 2);
+        g.fill();
+        outline(2.5);
+        g.fillStyle = accent;
+        g.beginPath();
+        g.ellipse(x, y, 5, 3, 0, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'arrow': {
+      for (const off of [-6, 0, 6]) {
+        g.save();
+        g.translate(32 + off, 34);
+        g.rotate(-0.8);
+        g.strokeStyle = 'rgba(20,12,6,0.85)';
+        g.lineWidth = 5;
+        g.beginPath();
+        g.moveTo(-20, 0);
+        g.lineTo(18, 0);
+        g.stroke();
+        g.strokeStyle = color;
+        g.lineWidth = 3;
+        g.stroke();
+        g.fillStyle = '#9aa0a8';
+        g.beginPath();
+        g.moveTo(24, 0);
+        g.lineTo(16, -5);
+        g.lineTo(16, 5);
+        g.closePath();
+        g.fill();
+        outline(2);
+        g.fillStyle = accent;
+        g.beginPath();
+        g.moveTo(-20, 0);
+        g.lineTo(-14, -6);
+        g.lineTo(-10, 0);
+        g.lineTo(-14, 6);
+        g.closePath();
+        g.fill();
+        g.restore();
+      }
+      break;
+    }
+    case 'rune': {
+      g.fillStyle = '#b8b2a6';
+      g.beginPath();
+      g.roundRect(14, 14, 36, 36, 9);
+      g.fill();
+      outline();
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(18, 18, 28, 28, 7);
+      g.fill();
+      g.strokeStyle = accent;
+      g.lineWidth = 3.5;
+      g.beginPath();
+      g.arc(32, 32, 8, 0.3, Math.PI * 1.7);
+      g.moveTo(24, 26);
+      g.quadraticCurveTo(32, 20, 40, 26);
+      g.stroke();
+      break;
+    }
+    case 'gel': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(32, 12);
+      g.bezierCurveTo(46, 28, 52, 34, 48, 44);
+      g.bezierCurveTo(44, 54, 20, 54, 16, 44);
+      g.bezierCurveTo(12, 34, 18, 28, 32, 12);
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      g.beginPath();
+      g.ellipse(26, 36, 4, 7, -0.4, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'pelt': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(16, 18);
+      g.lineTo(26, 22);
+      g.lineTo(38, 22);
+      g.lineTo(48, 18);
+      g.lineTo(46, 32);
+      g.lineTo(50, 46);
+      g.lineTo(38, 44);
+      g.lineTo(32, 52);
+      g.lineTo(26, 44);
+      g.lineTo(14, 46);
+      g.lineTo(18, 32);
+      g.closePath();
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      g.beginPath();
+      g.ellipse(32, 34, 7, 10, 0, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'fang': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(22, 16);
+      g.quadraticCurveTo(44, 16, 44, 22);
+      g.quadraticCurveTo(40, 38, 28, 52);
+      g.quadraticCurveTo(30, 34, 22, 16);
+      g.fill();
+      outline();
+      g.strokeStyle = accent;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(26, 22);
+      g.quadraticCurveTo(36, 24, 32, 40);
+      g.stroke();
+      break;
+    }
+    case 'bone': {
+      g.save();
+      g.translate(32, 33);
+      g.rotate(-0.7);
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(-16, -4, 32, 8, 3);
+      for (const x of [-18, 18]) {
+        g.moveTo(x + 5, -5);
+        g.arc(x, -5, 5, 0, Math.PI * 2);
+        g.moveTo(x + 5, 5);
+        g.arc(x, 5, 5, 0, Math.PI * 2);
+      }
+      g.fill();
+      outline(2.5);
+      g.restore();
+      break;
+    }
+    case 'bread': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.ellipse(32, 36, 22, 13, 0, Math.PI, 0);
+      g.lineTo(54, 42);
+      g.quadraticCurveTo(32, 48, 10, 42);
+      g.closePath();
+      g.fill();
+      outline();
+      g.strokeStyle = accent;
+      g.lineWidth = 3;
+      for (const x of [22, 32, 42]) {
+        g.beginPath();
+        g.moveTo(x - 3, 28);
+        g.lineTo(x + 3, 34);
+        g.stroke();
+      }
+      break;
+    }
+    case 'axe':
+    case 'pickaxe': {
+      g.save();
+      g.translate(32, 32);
+      g.rotate(-0.7);
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(-3, -22, 6, 46, 3);
+      g.fill();
+      outline(2.5);
+      g.fillStyle = color;
+      g.beginPath();
+      if (shape === 'axe') {
+        g.moveTo(2, -20);
+        g.quadraticCurveTo(20, -24, 18, -6);
+        g.quadraticCurveTo(10, -10, 2, -8);
+      } else {
+        g.moveTo(-20, -14);
+        g.quadraticCurveTo(0, -26, 20, -14);
+        g.lineTo(18, -10);
+        g.quadraticCurveTo(0, -18, -18, -10);
+      }
+      g.closePath();
+      g.fill();
+      outline(2.5);
+      g.restore();
+      break;
+    }
+  }
+  const url = c.toDataURL();
+  cache.set(id, url);
+  return url;
+}
