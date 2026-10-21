@@ -1,9 +1,12 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
 import type { ResourceType } from '../data/resources';
-import { T, groundHeight, terrainHeight, BRIDGE_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
+import { T, groundHeight, terrainHeight, BRIDGE_Y, WATER_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
 import type { ResourceNode } from '../sim/world';
 import { blob, makeWorldMaterial, merge, part, place, prism } from './geom';
+import { ART } from './art';
+import { bridgePiers } from './bridges';
+import { addShowcaseDetail, buildHallV2, copperOreMaterial, copperRockV2 } from './showcase';
 
 const Box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const Cyl = (rt: number, rb: number, h: number, seg = 7) => new THREE.CylinderGeometry(rt, rb, h, seg);
@@ -416,8 +419,20 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
   }
 
   for (const b of map.buildings) {
-    const pre = buildingPrefab(b);
     const y = terrainHeight(map, b.x, b.z) - 0.1;
+    if (ART.v2 && b.style === 'hall') {
+      // Phase 2A showcase building: textured, detailed Elder's hall.
+      const hall = buildHallV2(b, map);
+      group.add(hall.group);
+      for (const g of hall.glows) glows.push({ mesh: g, baseY: g.position.y, phase: rng() * 6, kind: 'lantern' });
+      const c = Math.cos(b.facing);
+      const s = Math.sin(b.facing);
+      const lx = (b.w - 0.2) * 0.3;
+      const lz = -((b.d - 0.2) / 2 + 0.5) * 0.35;
+      emitters.push({ x: b.x + lx * c + lz * s, y: y + 0.45 + 2.6 + 1.9 * 0.55 + 1.5, z: b.z - lx * s + lz * c, kind: 'chimney' });
+      continue;
+    }
+    const pre = buildingPrefab(b);
     solid.add(b.x, b.z, place(pre, b.x, y, b.z, b.facing));
     const lw = b.w - 0.2;
     const ld = b.d - 0.2;
@@ -452,9 +467,30 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
         parts.push(part(Box(0.1, 0.55, 0.1), '#6b4528', { x: dx * 0.45, y: BRIDGE_Y + 0.22, z: dz * 0.45 }));
         parts.push(part(Box(dz !== 0 ? 1.0 : 0.08, 0.08, dx !== 0 ? 1.0 : 0.08), '#8b5e34', { x: dx * 0.45, y: BRIDGE_Y + 0.45, z: dz * 0.45 }));
       }
-      parts.push(part(Cyl(0.09, 0.09, 1.6, 5), '#5b3a22', { x: 0.4, y: BRIDGE_Y - 0.8, z: 0.4 }));
+      if (!ART.v2) parts.push(part(Cyl(0.09, 0.09, 1.6, 5), '#5b3a22', { x: 0.4, y: BRIDGE_Y - 0.8, z: 0.4 }));
       solid.add(x, z, place(merge(parts), x + 0.5, 0, z + 0.5));
     }
+  }
+
+  if (ART.v2) {
+    // Phase 2A bridge supports: pilings with a wet waterline band, rope lashing and stones at the base.
+    const piling = merge([
+      part(Cyl(0.11, 0.13, 1.5, 7), '#5e3c22', { y: BRIDGE_Y - 0.88, jitter: 0.06 }),
+      part(Cyl(0.125, 0.135, 0.16, 7), '#3b2a1c', { y: WATER_Y + 0.02 }),
+      part(Cyl(0.122, 0.122, 0.05, 7), '#c9b48a', { y: BRIDGE_Y - 0.38 }),
+      part(Cyl(0.122, 0.122, 0.05, 7), '#c9b48a', { y: BRIDGE_Y - 0.3 }),
+    ]);
+    const prng = mulberry32(map.seed + 404);
+    for (const pr of bridgePiers(map)) {
+      solid.add(pr.x, pr.z, place(piling, pr.x, 0, pr.z, prng() * 6));
+      for (let i = 0; i < 2; i++) {
+        const a = prng() * Math.PI * 2;
+        const sx = pr.x + Math.cos(a) * 0.25;
+        const sz = pr.z + Math.sin(a) * 0.25;
+        solid.add(sx, sz, place(merge([part(blob(0.14, 0, 0.3, prng()), '#7d8a7a', { sy: 0.6, jitter: 0.1 })]), sx, terrainHeight(map, sx, sz) + 0.05, sz));
+      }
+    }
+    addShowcaseDetail(map, solid, soft);
   }
 
   // Grass tufts on green tiles
@@ -496,6 +532,9 @@ function isLandPath(map: WorldMap, x: number, z: number) {
 interface ResourceBatch {
   full: THREE.InstancedMesh;
   depleted: THREE.InstancedMesh;
+  /** Optional extra layers sharing the same transforms (e.g. shiny ore crystals). */
+  fullExtra?: THREE.InstancedMesh;
+  depletedExtra?: THREE.InstancedMesh;
   nodes: ResourceNode[];
   /** Per-instance base transforms. */
   base: THREE.Matrix4[];
@@ -522,6 +561,10 @@ export class ResourceView {
     }
     for (const [type, list] of byType) {
       const isTree = type === 'tree' || type === 'oak';
+      if (ART.v2 && type === 'copper_rock') {
+        this.addCopperV2(list, material);
+        continue;
+      }
       const variants = isTree ? [0, 1, 2].map((v) => treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak')) : [0, 1].map((v) => rockPrefab(900 + v * 7 + type.length, ORE_COLORS[type] ?? null, false));
       const depletedGeo = isTree ? stumpPrefab(type === 'oak') : rockPrefab(950, null, true);
       // Split each type by variant so silhouettes vary.
@@ -553,6 +596,53 @@ export class ResourceView {
     }
   }
 
+  /** Phase 2A showcase mining node: veined copper outcrop + glinting ore crystals. */
+  private addCopperV2(list: ResourceNode[], material: THREE.Material) {
+    const oreMat = copperOreMaterial();
+    const dep = copperRockV2(951, true);
+    [0, 1].forEach((v) => {
+      const subset = list.filter((_, i) => i % 2 === v);
+      if (subset.length === 0) return;
+      const g = copperRockV2(1200 + v * 17, false);
+      const mk = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+        const m = new THREE.InstancedMesh(geo, mat, subset.length);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        this.group.add(m);
+        return m;
+      };
+      const batch: ResourceBatch = {
+        full: mk(g.rock, material),
+        depleted: mk(dep.rock, material),
+        fullExtra: mk(g.ore, oreMat),
+        depletedExtra: mk(dep.ore, oreMat),
+        nodes: subset,
+        base: [],
+      };
+      const rnd = mulberry32(subset.length * 37 + v);
+      subset.forEach((n, i) => {
+        const s = 0.95 + rnd() * 0.2;
+        tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2);
+        const m = new THREE.Matrix4().compose(new THREE.Vector3(n.x, terrainHeight(this.map, n.x, n.z) - 0.05, n.z), tmpQ, new THREE.Vector3(s, s, s));
+        batch.base.push(m);
+        this.setFull(batch, i, n.depleted ? ZERO : m);
+        this.setDepleted(batch, i, n.depleted ? m : ZERO);
+      });
+      for (const m of [batch.full, batch.depleted, batch.fullExtra!, batch.depletedExtra!]) m.computeBoundingSphere();
+      this.batches.push(batch);
+    });
+  }
+
+  private setFull(b: ResourceBatch, i: number, m: THREE.Matrix4) {
+    b.full.setMatrixAt(i, m);
+    b.fullExtra?.setMatrixAt(i, m);
+  }
+
+  private setDepleted(b: ResourceBatch, i: number, m: THREE.Matrix4) {
+    b.depleted.setMatrixAt(i, m);
+    b.depletedExtra?.setMatrixAt(i, m);
+  }
+
   /** Last rendered state per node id, so instance matrices are only rewritten on change. */
   private shown = new Map<number, { depleted: boolean; shaking: boolean }>();
 
@@ -563,8 +653,8 @@ export class ResourceView {
         const prev = this.shown.get(n.id) ?? { depleted: false, shaking: false };
         const shaking = n.hitAge < 0.35 && !n.depleted;
         if (prev.depleted !== n.depleted) {
-          b.full.setMatrixAt(i, n.depleted ? ZERO : b.base[i]);
-          b.depleted.setMatrixAt(i, n.depleted ? b.base[i] : ZERO);
+          this.setFull(b, i, n.depleted ? ZERO : b.base[i]);
+          this.setDepleted(b, i, n.depleted ? b.base[i] : ZERO);
           this.dirty.add(b);
         }
         if (shaking) {
@@ -572,18 +662,17 @@ export class ResourceView {
           b.base[i].decompose(tmpP, tmpQ, tmpS);
           tmpQ.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(k, 0, k * 0.6)));
           tmpM.compose(tmpP, tmpQ, tmpS);
-          b.full.setMatrixAt(i, tmpM);
+          this.setFull(b, i, tmpM);
           this.dirty.add(b);
         } else if (prev.shaking && !n.depleted) {
-          b.full.setMatrixAt(i, b.base[i]);
+          this.setFull(b, i, b.base[i]);
           this.dirty.add(b);
         }
         this.shown.set(n.id, { depleted: n.depleted, shaking });
       });
     }
     for (const b of this.dirty) {
-      b.full.instanceMatrix.needsUpdate = true;
-      b.depleted.instanceMatrix.needsUpdate = true;
+      for (const m of [b.full, b.depleted, b.fullExtra, b.depletedExtra]) if (m) m.instanceMatrix.needsUpdate = true;
     }
     this.dirty.clear();
   }

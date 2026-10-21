@@ -33,7 +33,7 @@ export interface HumanoidLook {
   cape?: string;
 }
 
-export type HeldTool = 'none' | 'sword' | 'bow' | 'staff' | 'axe' | 'pickaxe' | 'spear' | 'club';
+export type HeldTool = 'none' | 'sword' | 'bow' | 'staff' | 'axe' | 'pickaxe' | 'spear' | 'club' | 'walkingstaff';
 
 export type HumanoidPose = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'talk';
 

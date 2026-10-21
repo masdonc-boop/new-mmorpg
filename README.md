@@ -49,6 +49,8 @@ Note: Pages sites are publicly accessible, and Pages on private repos requires a
 
 Progress saves automatically to the device. Add `?reset` to the URL to start over.
 
+**Visual style (Phase 2A preview):** new rounded characters (player + Elder Maren), new water, the detailed Elder's hall, veined copper rocks and extra ground detail around the village. Switch between *Phase 2A* and *Classic* in ⚙ Settings → Visual style, or add `?classic` to the URL. See [docs/ART_STYLE.md](docs/ART_STYLE.md).
+
 ## Project layout
 
 ```

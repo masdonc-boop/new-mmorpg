@@ -28,6 +28,8 @@ export interface HudCallbacks {
   getRotation(): boolean;
   setSound(on: boolean): void;
   getSound(): boolean;
+  setArtV2(on: boolean): void;
+  getArtV2(): boolean;
   zoom(f: number): void;
   resetCamera(): void;
   newCharacter(): void;
@@ -741,6 +743,15 @@ export class Hud {
       seg.appendChild(b);
     }
     row('Graphics', seg, 'Low disables shadows for older phones');
+    const art = el('div', 'seg');
+    for (const [label, on] of [['Phase 2A', true], ['Classic', false]] as const) {
+      const b = el('button', this.cb.getArtV2() === on ? 'on' : '', label);
+      b.addEventListener('click', () => {
+        if (this.cb.getArtV2() !== on) this.cb.setArtV2(on);
+      });
+      art.appendChild(b);
+    }
+    row('Visual style', art, 'Phase 2A preview: new characters, water and showcase art. Reloads the game.');
     const rot = el('button', `toggle ${this.cb.getRotation() ? 'on' : ''}`, this.cb.getRotation() ? 'On' : 'Off');
     rot.addEventListener('click', () => {
       this.cb.setRotation(!this.cb.getRotation());

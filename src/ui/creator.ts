@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { Humanoid } from '../render/characters';
+import { ART } from '../render/art';
+import { HeroModel } from '../render/hero';
 import { DEFAULT_APPEARANCE, type Appearance } from '../sim/world';
 
 const SKINS = ['#f6d3b8', '#e8b48f', '#d19a6e', '#b37a4f', '#8d5a3b', '#5e3b26'];
@@ -51,13 +53,13 @@ export function runCharacterCreator(parent: HTMLElement): Promise<{ name: string
     rim.position.y = -0.32;
     scene.add(rim);
 
-    let model: Humanoid | null = null;
+    let model: Humanoid | HeroModel | null = null;
     const rebuild = () => {
       if (model) {
         scene.remove(model.root);
         model.dispose();
       }
-      model = new Humanoid({ ...look }, true);
+      model = ART.v2 ? new HeroModel({ ...look }) : new Humanoid({ ...look }, true);
       model.setTool('sword');
       scene.add(model.root);
     };

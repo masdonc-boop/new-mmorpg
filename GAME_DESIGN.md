@@ -32,6 +32,7 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 ### Presentation
 - Colourful, stylized, readable art; lush environments; satisfying feedback (particles, hit numbers, level-up bursts).
 - Original or appropriately licensed assets only. Phase 1 art is entirely procedural and generated in code.
+- Art direction, proportions, palette, lighting and LOD rules: see [docs/ART_STYLE.md](docs/ART_STYLE.md) (Phase 2A).
 - **Camera behaviour remains subject to actual mobile gameplay testing.** Default: elevated isometric follow camera with pinch zoom; rotation is an experimental toggle in Settings.
 
 ## Phase 1 vertical slice (delivered)

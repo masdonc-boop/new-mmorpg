@@ -8,7 +8,9 @@ import { Humanoid, SlimeModel, WolfModel, type HeldTool, type HumanoidLook } fro
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, ResourceView, type StaticWorld } from './props';
-import { buildTerrain, buildWater } from './terrain';
+import { buildTerrain, buildWater, setWaterQuality } from './terrain';
+import { ART } from './art';
+import { HeroModel } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
 
@@ -21,9 +23,12 @@ interface EnemyView {
   lastHit: number;
 }
 
+/** Either the classic blocky rig or the Phase 2A rounded rig; both share one animation contract. */
+type CharacterRig = Humanoid | HeroModel;
+
 interface NpcView {
   npc: Npc;
-  model: Humanoid;
+  model: CharacterRig;
 }
 
 export type PickResult = { kind: 'entity'; id: number } | { kind: 'ground'; x: number; z: number } | null;
@@ -38,12 +43,13 @@ export class GameRenderer {
   private sun: THREE.DirectionalLight;
   private time = { value: 0 };
   private terrain: THREE.Mesh;
+  private water: THREE.Mesh;
   private staticWorld: StaticWorld;
   private resources: ResourceView;
   private particles = new Particles(450);
   private projectiles: Projectiles;
   private markers = new Markers();
-  private playerModel: Humanoid;
+  private playerModel: CharacterRig;
   private enemyViews = new Map<number, EnemyView>();
   private npcViews: NpcView[] = [];
   private raycaster = new THREE.Raycaster();
@@ -81,7 +87,8 @@ export class GameRenderer {
     const map = world.map;
     this.terrain = buildTerrain(map);
     this.scene.add(this.terrain);
-    this.scene.add(buildWater(map, this.time));
+    this.water = buildWater(map, this.time);
+    this.scene.add(this.water);
     this.staticWorld = buildStaticWorld(map, this.time);
     this.scene.add(this.staticWorld.group);
     this.resources = new ResourceView(map, world.nodes);
@@ -91,13 +98,18 @@ export class GameRenderer {
     this.scene.add(this.projectiles.group);
     this.scene.add(this.markers.target, this.markers.tap);
 
-    this.playerModel = new Humanoid(this.playerLook(), true);
-    this.playerModel.enableSilhouette();
+    this.playerModel = this.makePlayerModel();
     this.scene.add(this.playerModel.root);
 
     for (const npc of world.npcs) {
       const l = NPCS[npc.def.id].look;
-      const model = new Humanoid({ ...l });
+      // Phase 2A prototype: Elder Maren is the showcase NPC for the new character style.
+      let model: CharacterRig;
+      if (ART.v2 && npc.def.id === 'elder') {
+        const hero = new HeroModel({ ...l, elder: true, eyes: '#5b6fa8', outer: '#d9cba8', accent: '#e3b64a' });
+        hero.setTool('walkingstaff');
+        model = hero;
+      } else model = new Humanoid({ ...l });
       model.root.position.set(npc.x, groundHeight(map, npc.x, npc.z), npc.z);
       this.scene.add(model.root);
       this.npcViews.push({ npc, model });
@@ -118,9 +130,14 @@ export class GameRenderer {
   refreshPlayerModel() {
     this.scene.remove(this.playerModel.root);
     this.playerModel.dispose();
-    this.playerModel = new Humanoid(this.playerLook(), true);
-    this.playerModel.enableSilhouette();
+    this.playerModel = this.makePlayerModel();
     this.scene.add(this.playerModel.root);
+  }
+
+  private makePlayerModel(): CharacterRig {
+    const m = ART.v2 ? new HeroModel(this.playerLook()) : new Humanoid(this.playerLook(), true);
+    m.enableSilhouette();
+    return m;
   }
 
   private addEnemyView(e: Enemy) {
@@ -148,6 +165,7 @@ export class GameRenderer {
     const dpr = window.devicePixelRatio || 1;
     const ratio = q === 'high' ? Math.min(dpr, 2) : q === 'balanced' ? Math.min(dpr, 1.5) : 1;
     this.renderer.setPixelRatio(ratio);
+    if (ART.v2) setWaterQuality(this.water, q === 'low');
     const shadows = q !== 'low';
     this.renderer.shadowMap.enabled = shadows;
     this.sun.castShadow = shadows;

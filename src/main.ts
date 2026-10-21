@@ -5,6 +5,7 @@ import { GameWorld, TICK_SECONDS, type SaveData } from './sim/world';
 import { runCharacterCreator } from './ui/creator';
 import { Hud } from './ui/hud';
 import { Audio } from './ui/audio';
+import { ART } from './render/art';
 import type { GameEvent } from './sim/world';
 
 const SAVE_KEY = 'brightwater.save.v1';
@@ -15,6 +16,8 @@ interface Settings {
   rotation: boolean;
   zoom: number;
   sound: boolean;
+  /** Phase 2A visual style preview (rounded characters, new water, showcase assets). */
+  artV2: boolean;
 }
 
 function loadJson<T>(key: string): T | null {
@@ -48,6 +51,9 @@ async function boot() {
   const params = new URLSearchParams(location.search);
   if (params.has('reset')) localStorage.removeItem(SAVE_KEY);
 
+  const early = loadJson<Partial<Settings>>(SETTINGS_KEY);
+  ART.v2 = params.has('classic') ? false : early?.artV2 ?? true;
+
   let save = loadJson<SaveData>(SAVE_KEY);
   if (save?.version !== 1) save = null;
   loading.style.display = 'none';
@@ -66,7 +72,7 @@ async function boot() {
   // Let the loading screen paint before the (synchronous) scene build.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
 
-  const settings: Settings = { quality: defaultQuality(), rotation: false, zoom: 1, sound: true, ...loadJson<Partial<Settings>>(SETTINGS_KEY) };
+  const settings: Settings = { quality: defaultQuality(), rotation: false, zoom: 1, sound: true, artV2: true, ...loadJson<Partial<Settings>>(SETTINGS_KEY) };
   const persistSettings = () => saveJson(SETTINGS_KEY, settings);
 
   const renderer = new GameRenderer(canvas, app, world);
@@ -137,6 +143,13 @@ async function boot() {
       persistSettings();
     },
     getSound: () => settings.sound,
+    getArtV2: () => ART.v2,
+    setArtV2: (on) => {
+      settings.artV2 = on;
+      persistSettings();
+      persist();
+      location.reload();
+    },
     zoom: (f) => applyZoom(f),
     resetCamera: () => {
       renderer.camYaw = Math.PI / 4;
