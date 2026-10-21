@@ -228,6 +228,7 @@ export class HeroModel {
   private old: boolean;
   // Bow rig
   private bowMount = new THREE.Group();
+  private wandTip: THREE.Object3D | null = null;
   private bowString: THREE.Mesh[] = [];
   private nockedArrow = new THREE.Group();
   private bowTip = { x: 0, y: 0 };
@@ -489,15 +490,18 @@ export class HeroModel {
       ]),
     );
     this.buildBow(wood);
-    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.075, 1), new THREE.MeshBasicMaterial({ color: '#b39cff' }));
-    orb.position.y = 0.98;
+    // Wand: forearm-length, gripped at the base, crystal at the tip.
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.032, 1), new THREE.MeshBasicMaterial({ color: '#b39cff' }));
+    orb.position.y = 0.4;
+    this.wandTip = orb;
     this.tools.set(
       'staff',
       this.toolMesh(
         [
-          cpart(Cyl(0.024, 0.032, 1.3, 7), '#6b4426', { y: 0.3 }),
-          cpart(Tor(0.06, 0.018, 10), '#6b4426', { y: 0.94, rx: Math.PI / 2 }),
-          cpart(Cyl(0.03, 0.03, 0.08, 8), PALETTE.gold, { y: 0.84 }),
+          cpart(Cyl(0.011, 0.019, 0.42, 7), '#6b4426', { y: 0.16 }),
+          cpart(Cyl(0.022, 0.022, 0.03, 8), PALETTE.gold, { y: -0.03 }),
+          cpart(Cyl(0.017, 0.017, 0.025, 8), PALETTE.gold, { y: 0.07 }),
+          cpart(Cyl(0.016, 0.011, 0.03, 8), PALETTE.gold, { y: 0.375 }),
         ],
         orb,
       ),
@@ -641,8 +645,13 @@ export class HeroModel {
     this.drawIn = draw;
   }
 
-  /** World position arrows leave from (the arrow rest at the bow's grip). Returns false if no bow is raised. */
+  /** World position projectiles leave from: the arrow rest for a bow, the crystal tip for a wand. False otherwise. */
   projectileOrigin(out: THREE.Vector3): boolean {
+    if (this.held === 'staff' && this.wandTip) {
+      this.root.updateWorldMatrix(true, true);
+      out.setFromMatrixPosition(this.wandTip.matrixWorld);
+      return true;
+    }
     if (this.held !== 'bow') return false;
     this.root.updateWorldMatrix(true, true);
     out.set(0.03, 0.02, 0).applyMatrix4(this.bowMount.matrixWorld);
@@ -931,8 +940,8 @@ export class HeroModel {
     const sword = this.tools.get('sword')!;
     sword.rotation.x = Math.PI / 2 + 0.85 * (1 - this.ready);
     const staff = this.tools.get('staff')!;
-    staff.rotation.x = (Math.PI / 2) * this.ready + 0.06 * (1 - this.ready);
-    staff.position.y = lerp(-0.42, -0.03, this.ready);
+    // Wand: tip down and slightly forward at rest, pointing ahead when casting.
+    staff.rotation.x = Math.PI / 2 + 0.95 * (1 - this.ready);
     if (this.held === 'walkingstaff' || this.held === 'spear') {
       // Grounded carry: keep the shaft near-vertical in world space whatever the forearm does.
       const t = this.tools.get(this.held)!;
@@ -945,13 +954,12 @@ export class HeroModel {
       return;
     }
     if (this.held !== 'bow') return;
-    // Carry: solved in body space so the bow hangs outside the leg in the body's side plane,
-    // riser in the hand, top limb tipped forward and the string toward the back. It follows the
-    // arm's swing so it moves with the hand rather than floating.
+    // Carry: solved in body space. Held at the riser in the hanging hand with the limbs horizontal
+    // (front to back) outside the leg, string up. It follows the arm's swing.
     this.root.updateWorldMatrix(true, true);
     const swingX = this.joints.armL.rotation.x + this.joints.elbowL.rotation.x * 0.5;
-    const carryBody = tmpQb.setFromAxisAngle(tmpV.set(1, 0, 0), 0.45 + swingX * 0.8).multiply(
-      new THREE.Quaternion().setFromRotationMatrix(tmpMb.makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0))),
+    const carryBody = tmpQb.setFromAxisAngle(tmpV.set(1, 0, 0), 0.08 + swingX * 0.6).multiply(
+      new THREE.Quaternion().setFromRotationMatrix(tmpMb.makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0))),
     );
     const handQc = this.handL.getWorldQuaternion(new THREE.Quaternion());
     const rootQc = this.root.getWorldQuaternion(new THREE.Quaternion());

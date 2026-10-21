@@ -492,12 +492,12 @@ export class GameRenderer {
       }
       case 'projectile': {
         const from = this.playerModel.root.position.clone().add(new THREE.Vector3(Math.sin(p.facing) * 0.4, 1.2, Math.cos(p.facing) * 0.4));
-        // Arrows leave from the bow itself when the new rig is holding one.
-        if (e.style === 'ranged' && this.playerModel instanceof HeroModel) this.playerModel.projectileOrigin(from);
+        // Arrows leave from the bow, spells from the wand tip, when the new rig holds one.
+        if (e.style !== 'melee' && this.playerModel instanceof HeroModel) this.playerModel.projectileOrigin(from);
         const view = this.enemyViews.get(e.target);
         const getTo = () => (view ? view.root.position.clone().add(new THREE.Vector3(0, enemyHeight(view.enemy) * 0.45, 0)) : from);
         this.projectiles.spawn(e.style === 'magic' ? 'magic' : 'arrow', from, getTo, e.flight);
-        if (e.style === 'magic') this.particles.emit({ x: from.x, y: from.y + 0.3, z: from.z, count: 8, color: ['#c9b6ff', '#ffffff'], speed: 1, up: 1, gravity: 0, life: 0.4, size: 0.07 });
+        if (e.style === 'magic') this.particles.emit({ x: from.x, y: from.y, z: from.z, count: 8, color: ['#c9b6ff', '#ffffff'], speed: 1, up: 1, gravity: 0, life: 0.4, size: 0.07 });
         break;
       }
       case 'attack': {

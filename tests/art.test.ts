@@ -256,7 +256,8 @@ describe('Bow handling', () => {
     const b = m.debugBow();
     expect(b.grip.distanceTo(b.handL)).toBeLessThan(0.02); // grip is in the palm
     expect(b.stringLocalX).toBeLessThan(-0.12); // the string sits well behind the grip
-    expect(b.up.y).toBeGreaterThan(0.6); // carried mostly upright at the side, angled forward
+    expect(Math.abs(b.up.y)).toBeLessThan(0.3); // carried horizontally at the side, limbs front to back
+    expect(Math.abs(b.up.z)).toBeGreaterThan(0.9);
     m.dispose();
   });
 
@@ -360,7 +361,7 @@ describe('Arm swing and bow carry clearance', () => {
     m.dispose();
   });
 
-  it('carries the bow outside the body with the string toward the back', () => {
+  it('carries the bow horizontally at the side, outside the body', () => {
     for (const speed of [0, 1.6]) {
       const m = new HeroModel(look);
       m.setTool('bow');
@@ -369,11 +370,34 @@ describe('Arm swing and bow carry clearance', () => {
         if (i < 60) continue;
         const b = m.debugBow();
         expect(-b.grip.x).toBeGreaterThan(0.27);
-        expect(b.up.y).toBeGreaterThan(0.75);
-        // String (bow -x) points backward: the belly faces forward.
-        expect(b.belly.z).toBeGreaterThan(0.4);
+        // Limbs horizontal, front to back, string on top (belly down).
+        expect(Math.abs(b.up.y)).toBeLessThan(0.35);
+        expect(Math.abs(b.up.z)).toBeGreaterThan(0.9);
+        expect(b.belly.y).toBeLessThan(-0.8);
+        // Both limb tips stay outside the leg line.
+        expect(-b.grip.x - 0.05).toBeGreaterThan(0.22);
       }
       m.dispose();
     }
+  });
+
+  it('uses a hand-sized wand: tip down at rest, pointing ahead when casting, spells leave from the tip', () => {
+    const m = new HeroModel(look);
+    m.setTool('staff');
+    const wand = (m as unknown as { tools: Map<string, THREE.Object3D> }).tools.get('staff')!;
+    m.root.updateWorldMatrix(true, true);
+    const size = new THREE.Box3().setFromObject(wand).getSize(new THREE.Vector3());
+    expect(Math.max(size.x, size.y, size.z)).toBeLessThan(0.5);
+    for (let i = 0; i < 90; i++) m.update(1 / 60, 'idle', 0, 99, i / 60);
+    const tip = new THREE.Vector3();
+    expect(m.projectileOrigin(tip)).toBe(true);
+    const hand = handX(m, 'R');
+    expect(tip.y).toBeLessThan(hand.y - 0.2);
+    m.setCombat(1, 0, 0);
+    for (let i = 0; i < 90; i++) m.update(1 / 60, 'idle', 0, 99, i / 60);
+    m.projectileOrigin(tip);
+    const h2 = handX(m, 'R');
+    expect(tip.z - h2.z).toBeGreaterThan(0.25);
+    m.dispose();
   });
 });
