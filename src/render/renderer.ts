@@ -390,6 +390,7 @@ export class GameRenderer {
 
   private updateOverlay(dt: number) {
     const w = this.world;
+    this.overlay.root.style.visibility = w.player.dead ? 'hidden' : '';
     const sel = this.selectedId();
     for (const v of this.enemyViews.values()) {
       const e = v.enemy;

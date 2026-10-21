@@ -66,7 +66,7 @@ const DIRS = [
  * excluding the start tile, or null if unreachable. If the goal is blocked, the path
  * ends on the closest reachable tile adjacent to it (used for trees, rocks, NPCs).
  */
-export function findPath(map: WorldMap, sx: number, sz: number, gx: number, gz: number, maxNodes = 6000): PathPoint[] | null {
+export function findPath(map: WorldMap, sx: number, sz: number, gx: number, gz: number, maxNodes = 14000): PathPoint[] | null {
   const W = map.width;
   const start = Math.floor(sz) * W + Math.floor(sx);
   const gtx = Math.floor(gx);

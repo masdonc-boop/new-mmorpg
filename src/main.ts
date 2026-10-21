@@ -4,6 +4,8 @@ import { GameRenderer } from './render/renderer';
 import { GameWorld, TICK_SECONDS, type SaveData } from './sim/world';
 import { runCharacterCreator } from './ui/creator';
 import { Hud } from './ui/hud';
+import { Audio } from './ui/audio';
+import type { GameEvent } from './sim/world';
 
 const SAVE_KEY = 'brightwater.save.v1';
 const SETTINGS_KEY = 'brightwater.settings.v1';
@@ -12,6 +14,7 @@ interface Settings {
   quality: 'high' | 'balanced' | 'low';
   rotation: boolean;
   zoom: number;
+  sound: boolean;
 }
 
 function loadJson<T>(key: string): T | null {
@@ -63,7 +66,7 @@ async function boot() {
   // Let the loading screen paint before the (synchronous) scene build.
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
 
-  const settings: Settings = { quality: defaultQuality(), rotation: false, zoom: 1, ...loadJson<Partial<Settings>>(SETTINGS_KEY) };
+  const settings: Settings = { quality: defaultQuality(), rotation: false, zoom: 1, sound: true, ...loadJson<Partial<Settings>>(SETTINGS_KEY) };
   const persistSettings = () => saveJson(SETTINGS_KEY, settings);
 
   const renderer = new GameRenderer(canvas, app, world);
@@ -72,6 +75,46 @@ async function boot() {
   loading.remove();
 
   const issue: GameWorld['issue'] = (cmd) => world.issue(cmd);
+  const audio = new Audio();
+  audio.enabled = settings.sound;
+  const unlockAudio = () => audio.unlock();
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
+  window.addEventListener('mousedown', unlockAudio);
+  window.addEventListener('keydown', unlockAudio);
+  let lastLootSfx = 0;
+  const playFor = (e: GameEvent) => {
+    const pid = world.player.id;
+    switch (e.type) {
+      case 'attack':
+        if (e.source === pid) audio.play(world.player.style === 'melee' ? 'swing' : world.player.style === 'ranged' ? 'bow' : 'magic');
+        break;
+      case 'damage':
+        if (e.target === pid) audio.play(e.amount > 0 ? 'hurt' : 'miss');
+        else audio.play(e.hit && e.amount > 0 ? 'hit' : 'miss');
+        break;
+      case 'gather': {
+        const n = world.get(e.node);
+        if (n && 'def' in n && 'skill' in n.def) audio.play(n.def.skill === 'woodcutting' ? 'chop' : 'mine');
+        break;
+      }
+      case 'loot':
+        if (performance.now() - lastLootSfx > 150) audio.play('loot');
+        lastLootSfx = performance.now();
+        break;
+      case 'levelUp':
+        audio.play('levelup');
+        break;
+      case 'quest':
+        if (e.complete) audio.play('quest');
+        break;
+      case 'death':
+        if (e.id === pid) audio.play('death');
+        break;
+      case 'heal':
+        audio.play('eat');
+        break;
+    }
+  };
   let joyScreen = { x: 0, y: 0 };
 
   const hud = new Hud(app, world, {
@@ -89,6 +132,11 @@ async function boot() {
       persistSettings();
     },
     getRotation: () => settings.rotation,
+    setSound: (on) => {
+      settings.sound = audio.enabled = on;
+      persistSettings();
+    },
+    getSound: () => settings.sound,
     zoom: (f) => applyZoom(f),
     resetCamera: () => {
       renderer.camYaw = Math.PI / 4;
@@ -145,6 +193,9 @@ async function boot() {
   hud.root.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
   hud.root.addEventListener('mousedown', (e) => e.stopPropagation());
   hud.root.addEventListener('mouseup', (e) => e.stopPropagation());
+  hud.root.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('button')) audio.play('click');
+  });
 
   const resize = () => renderer.resize(window.innerWidth, window.innerHeight);
   window.addEventListener('resize', resize);
@@ -190,6 +241,7 @@ async function boot() {
     for (const e of world.drainEvents()) {
       renderer.handleEvent(e);
       hud.handleEvent(e);
+      playFor(e);
     }
     renderer.render(dt, acc / TICK_SECONDS);
     hud.update(dt);

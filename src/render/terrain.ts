@@ -8,7 +8,7 @@ export const TILE_COLORS: Record<number, string> = {
   [T.Path]: '#dcb878',
   [T.Sand]: '#f1dc9c',
   [T.Water]: '#c9b98a',
-  [T.Rocky]: '#a59a86',
+  [T.Rocky]: '#9b958c',
   [T.Plaza]: '#cfc6b3',
   [T.Bridge]: '#c9b98a',
   [T.Field]: '#b58a4e',
@@ -56,6 +56,13 @@ export function buildTerrain(map: WorldMap): THREE.Mesh {
       // Higher ground is a touch lighter and cooler, underwater darker.
       if (h > 1.6 && grassy) acc.lerp(c.set('#a3b86a'), Math.min(0.5, (h - 1.6) * 0.25));
       if (h < WATER_Y) acc.multiplyScalar(0.75);
+      // Stony hills: mossy patches and darker crags.
+      const isRock = acc.r > 0.25 && Math.abs(acc.r - acc.b) < 0.08 && Math.abs(acc.g - acc.r) < 0.08;
+      if (isRock) {
+        const m = fbm(vx * 0.3, vz * 0.3, 55);
+        if (m > 0.58) acc.lerp(c.set('#7fa65a'), (m - 0.58) * 2.2);
+        else if (m < 0.4) acc.multiplyScalar(0.85 + m * 0.3);
+      }
       const k = 0.94 + Math.random() * 0.1;
       colors[i * 3] = acc.r * k;
       colors[i * 3 + 1] = acc.g * k;

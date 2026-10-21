@@ -24,6 +24,8 @@ export interface HudCallbacks {
   getQuality(): string;
   setRotation(on: boolean): void;
   getRotation(): boolean;
+  setSound(on: boolean): void;
+  getSound(): boolean;
   zoom(f: number): void;
   resetCamera(): void;
   newCharacter(): void;
@@ -39,6 +41,7 @@ export class Hud {
   private targetName!: HTMLDivElement;
   private targetFill!: HTMLDivElement;
   private styleBtn!: HTMLButtonElement;
+  private status!: HTMLDivElement;
   private log!: HTMLDivElement;
   private xpDrops!: HTMLDivElement;
   private banner!: HTMLDivElement;
@@ -123,6 +126,8 @@ export class Hud {
     this.log = el('div', 'msg-log');
     this.root.appendChild(this.log);
 
+    this.status = el('div', 'action-status hidden');
+    this.root.appendChild(this.status);
     const actions = el('div', 'actions');
     this.styleBtn = el('button', 'style-btn');
     this.styleBtn.addEventListener('click', () => {
@@ -238,6 +243,7 @@ export class Hud {
     if (this.styleBtn.innerHTML !== label) this.styleBtn.innerHTML = label;
     this.styleBtn.dataset.style = p.style;
 
+    this.updateStatus();
     this.drawMinimap();
     this.updateQuestTracker();
     if (this.openPanel === 'inventory' && this.invDirty) this.renderInventory();
@@ -251,6 +257,22 @@ export class Hud {
       this.fpsAcc.frames = 0;
       this.fpsAcc.t = 0;
     }
+  }
+
+  private updateStatus() {
+    const w = this.world;
+    const a = w.player.action;
+    let text = '';
+    if (a?.type === 'attack') {
+      const e = w.enemyById(a.target);
+      if (e) text = `${STYLE_ICON[w.player.style]} Fighting ${e.def.name}`;
+    } else if (a?.type === 'gather') {
+      const n = w.gatheringNode;
+      if (n) text = `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
+    } else if (a?.type === 'talk') text = '💬 Walking over…';
+    else if (w.player.path.length > 0) text = '👣 Walking';
+    if (this.status.textContent !== text) this.status.textContent = text;
+    this.status.classList.toggle('hidden', !text);
   }
 
   private drawMinimap() {
@@ -685,6 +707,12 @@ export class Hud {
       this.renderSettings();
     });
     row('Camera rotation (experimental)', rot, 'Drag with one finger or twist with two; Q/E on keyboard');
+    const snd = el('button', `toggle ${this.cb.getSound() ? 'on' : ''}`, this.cb.getSound() ? 'On' : 'Off');
+    snd.addEventListener('click', () => {
+      this.cb.setSound(!this.cb.getSound());
+      this.renderSettings();
+    });
+    row('Sound effects', snd);
     const reset = el('button', '', 'Reset');
     reset.addEventListener('click', () => this.cb.resetCamera());
     row('Camera', reset, 'Restore default angle and zoom');

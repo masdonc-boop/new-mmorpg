@@ -457,7 +457,7 @@ export function generateWorld(seed = 1337): WorldMap {
     decor,
     enemySpawns,
     npcs,
-    spawn: { x: 56.5, z: 69.8 },
+    spawn: { x: 56.5, z: 63.4 },
     regions: REGIONS,
     checkpoints,
   };
