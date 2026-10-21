@@ -306,20 +306,7 @@ export function buildHallV2(b: Building, map: WorldMap): { group: THREE.Group; g
     gold: new THREE.MeshLambertMaterial({ color: PALETTE.gold }),
     flowers: new THREE.MeshLambertMaterial({ color: '#e8566a', flatShading: true }),
   };
-  const group = new THREE.Group();
-  for (const [k, list] of Object.entries(L)) {
-    if (list.length === 0) continue;
-    for (const g of list) {
-      if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
-    }
-    const geo = mergeGeometries(list.map((g) => (g.index ? g.toNonIndexed() : g)), false)!;
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mats[k]);
-    mesh.castShadow = k !== 'glass';
-    mesh.receiveShadow = true;
-    mesh.name = `hall-${k}`;
-    group.add(mesh);
-  }
+  const group = bakeLayers(L, mats, 'hall');
   group.position.set(b.x, terrainHeight(map, b.x, b.z) - 0.1, b.z);
   group.rotation.y = b.facing;
 
@@ -331,6 +318,208 @@ export function buildHallV2(b: Building, map: WorldMap): { group: THREE.Group; g
     group.add(lantern);
     glows.push(lantern);
   }
+  return { group, glows };
+}
+
+/** Merges each material layer into one mesh (one draw call per material). */
+function bakeLayers(L: Record<string, THREE.BufferGeometry[]>, mats: Record<string, THREE.Material>, prefix: string): THREE.Group {
+  const group = new THREE.Group();
+  for (const [k, list] of Object.entries(L)) {
+    if (list.length === 0) continue;
+    for (const g of list) {
+      if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+    }
+    const geo = mergeGeometries(list.map((g) => (g.index ? g.toNonIndexed() : g)), false)!;
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, mats[k]);
+    mesh.castShadow = k !== 'glass';
+    mesh.receiveShadow = true;
+    mesh.name = `${prefix}-${k}`;
+    group.add(mesh);
+  }
+  return group;
+}
+
+// ------------------------------------------------------------------ Bank of Brightwater
+
+/**
+ * The village bank: a sturdy stone ground floor with pilasters and an iron-banded door, plaster and
+ * timber upper storey under a dark green shingle roof, barred glowing windows, a hanging gold-coin
+ * sign, and an outdoor counter under a striped awning where the banker serves customers.
+ * Local frame: door on +z. `counterZ` is the counter's distance in front of the building centre.
+ */
+export function buildBankV2(b: Building, map: WorldMap, counterZ: number, counterLen: number): { group: THREE.Group; glows: THREE.Object3D[] } {
+  const w = b.w - 0.2;
+  const d = b.d - 0.2;
+  const wallH = 2.8;
+  const roofH = 1.7;
+  const base = 0.4;
+  const stoneH = 1.55;
+  const top = base + wallH;
+  const upperH = wallH - stoneH;
+  const front = d / 2 + 0.05;
+  const L: Record<string, THREE.BufferGeometry[]> = { stone: [], plaster: [], wood: [], roof: [], dark: [], glass: [], cloth: [], stripe: [], gold: [] };
+
+  // Plinth, rusticated ground floor, steps
+  L.stone.push(xf(tbox(w + 0.4, base, d + 0.4), { y: base / 2 }));
+  L.stone.push(xf(tbox(w + 0.1, stoneH, d + 0.1), { y: base + stoneH / 2 }));
+  L.stone.push(xf(tbox(w + 0.22, 0.14, d + 0.22), { y: base + stoneH + 0.02 }));
+  L.stone.push(xf(tbox(2.1, 0.16, 0.6), { y: 0.08, z: front + 0.42 }));
+  // Plaster upper storey in a timber frame
+  L.plaster.push(xf(tbox(w, upperH, d, 0.8), { y: base + stoneH + upperH / 2 }));
+  const beam = 0.13;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) L.wood.push(xf(tbox(beam + 0.04, upperH + 0.05, beam + 0.04), { x: (sx * w) / 2, y: base + stoneH + upperH / 2, z: (sz * d) / 2 }));
+  L.wood.push(xf(tbox(w + 0.12, beam, beam), { y: top - 0.05, z: d / 2 + 0.02 }));
+  L.wood.push(xf(tbox(w + 0.12, beam, beam), { y: top - 0.05, z: -d / 2 - 0.02 }));
+  L.wood.push(xf(tbox(beam, beam, d + 0.12), { y: top - 0.05, x: w / 2 + 0.02 }));
+  L.wood.push(xf(tbox(beam, beam, d + 0.12), { y: top - 0.05, x: -w / 2 - 0.02 }));
+  for (const xs of [-w / 2 + 1.0, -0.35, 0.35, w / 2 - 1.0]) for (const zf of [1, -1]) L.wood.push(xf(tbox(0.1, upperH, 0.09), { x: xs, y: base + stoneH + upperH / 2, z: zf * (d / 2 + 0.03) }));
+
+  // Roof: shingled slabs, gables, ridge log
+  const half = d / 2 + 0.45;
+  const slope = Math.atan2(roofH, half);
+  const slabW = Math.hypot(half, roofH) + 0.1;
+  for (const sz of [1, -1]) L.roof.push(xf(tbox(w + 0.8, 0.12, slabW, 1.25), { y: top + roofH / 2 + 0.02, z: (sz * half) / 2, rx: sz * slope }));
+  const gable = new THREE.Shape();
+  gable.moveTo(-d / 2, 0);
+  gable.lineTo(d / 2, 0);
+  gable.lineTo(0, roofH - 0.05);
+  gable.closePath();
+  for (const sx of [1, -1]) {
+    const g = new THREE.ShapeGeometry(gable);
+    xf(g, { ry: (sx * Math.PI) / 2, x: (sx * w) / 2, y: top });
+    L.plaster.push(g);
+    L.wood.push(xf(tbox(0.1, 0.1, d * 0.6), { x: sx * (w / 2 + 0.02), y: top + roofH * 0.38 }));
+    // Round gable window
+    L.glass.push(xf(new THREE.CircleGeometry(0.22, 12), { x: sx * (w / 2 + 0.03), y: top + roofH * 0.55, ry: (sx * Math.PI) / 2 }));
+    L.wood.push(xf(new THREE.TorusGeometry(0.24, 0.045, 6, 14), { x: sx * (w / 2 + 0.04), y: top + roofH * 0.55, ry: (sx * Math.PI) / 2 }));
+  }
+  L.wood.push(xf(Cyl(0.11, 0.11, w + 0.9, 8), { y: top + roofH + 0.06, rz: Math.PI / 2 }));
+  // Stone chimney at the back
+  L.stone.push(xf(tbox(0.6, 1.7, 0.6), { x: -w * 0.3, y: top + roofH * 0.55 + 0.35, z: -half * 0.4 }));
+  L.dark.push(xf(Box(0.7, 0.1, 0.7), { x: -w * 0.3, y: top + roofH * 0.55 + 1.24, z: -half * 0.4 }));
+
+  // Pilasters with capitals either side of an arched, iron-banded door
+  for (const sx of [-1, 1]) {
+    L.stone.push(xf(tbox(0.34, stoneH + 0.6, 0.22), { x: sx * 0.95, y: base + (stoneH + 0.6) / 2, z: front + 0.06 }));
+    L.stone.push(xf(tbox(0.46, 0.14, 0.32), { x: sx * 0.95, y: base + stoneH + 0.66, z: front + 0.08 }));
+  }
+  L.stone.push(xf(tbox(2.36, 0.22, 0.3), { y: base + stoneH + 0.8, z: front + 0.08 }));
+  L.wood.push(xf(tbox(1.1, 1.5, 0.1, 1.4), { y: base + 0.75, z: front }));
+  L.wood.push(xf(new THREE.CylinderGeometry(0.55, 0.55, 0.1, 14, 1, false, -Math.PI / 2, Math.PI), { y: base + 1.5, z: front, rx: Math.PI / 2 }));
+  L.stone.push(xf(new THREE.TorusGeometry(0.61, 0.08, 6, 14, Math.PI), { y: base + 1.5, z: front + 0.03 }));
+  for (const y of [base + 0.3, base + 0.85, base + 1.4]) L.dark.push(xf(Box(1.06, 0.07, 0.03), { y, z: front + 0.07 }));
+  for (let i = 0; i < 3; i++) L.dark.push(xf(new THREE.SphereGeometry(0.03, 6, 4), { x: -0.38 + i * 0.38, y: base + 0.85, z: front + 0.09 }));
+  L.gold.push(xf(new THREE.TorusGeometry(0.07, 0.016, 6, 10), { x: 0.32, y: base + 0.8, z: front + 0.1 }));
+
+  // Barred windows: ground floor (stone reveal, iron bars) and upper storey (timber frame)
+  const win = (x: number, z: number, ry: number, y: number, bars: boolean) => {
+    const o = (g: THREE.BufferGeometry, lx: number, ly: number, lz: number) => {
+      const c = Math.cos(ry);
+      const s2 = Math.sin(ry);
+      return xf(g, { x: x + lx * c + lz * s2, y: y + ly, z: z - lx * s2 + lz * c, ry });
+    };
+    L.glass.push(o(Box(0.56, 0.62, 0.04), 0, 0, 0.02));
+    if (bars) {
+      L.stone.push(o(tbox(0.78, 0.12, 0.16), 0, -0.38, 0.06));
+      L.stone.push(o(tbox(0.74, 0.1, 0.12), 0, 0.37, 0.05));
+      for (let i = -2; i <= 2; i++) L.dark.push(o(Box(0.035, 0.62, 0.035), i * 0.11, 0, 0.07));
+      L.dark.push(o(Box(0.56, 0.035, 0.035), 0, 0.05, 0.07));
+    } else {
+      L.wood.push(o(tbox(0.7, 0.09, 0.1), 0, 0.36, 0.04));
+      L.wood.push(o(tbox(0.74, 0.1, 0.16), 0, -0.36, 0.06));
+      for (const sx of [-1, 1]) L.wood.push(o(tbox(0.08, 0.7, 0.1), sx * 0.32, 0, 0.04));
+      L.wood.push(o(tbox(0.05, 0.62, 0.06), 0, 0, 0.06));
+      for (const sx of [-1, 1]) L.cloth.push(o(tbox(0.3, 0.68, 0.05), sx * 0.54, 0, 0.11));
+    }
+  };
+  const lowY = base + 0.85;
+  const upY = base + stoneH + upperH / 2;
+  for (const x of [-w * 0.33, w * 0.33]) {
+    win(x, front, 0, lowY, true);
+    win(x, front, 0, upY, false);
+    win(x, -d / 2 - 0.05, Math.PI, upY, false);
+  }
+  for (const sx of [-1, 1]) {
+    win(sx * (w / 2 + 0.05), -d * 0.2, (sx * Math.PI) / 2, lowY, true);
+    win(sx * (w / 2 + 0.05), d * 0.2, (sx * Math.PI) / 2, upY, false);
+  }
+
+  // Hanging sign: iron bracket from the wall above the door, green board with a gold coin emblem.
+  const signY = top - 0.1;
+  const signX = w * 0.33 + 0.7;
+  L.dark.push(xf(Box(0.06, 0.06, 0.95), { x: signX, y: signY + 0.5, z: front + 0.45 }));
+  L.dark.push(xf(Box(0.05, 0.4, 0.05), { x: signX, y: signY + 0.32, z: front + 0.1, rx: 0.9 }));
+  for (const sz of [0.2, 0.75]) L.dark.push(xf(Box(0.02, 0.16, 0.02), { x: signX, y: signY + 0.4, z: front + sz }));
+  L.cloth.push(xf(tbox(0.08, 0.6, 0.72), { x: signX, y: signY + 0.02, z: front + 0.48 }));
+  L.wood.push(xf(tbox(0.1, 0.68, 0.8), { x: signX - 0.01, y: signY + 0.02, z: front + 0.48 }));
+  for (const sx of [-1, 1]) {
+    L.gold.push(xf(Cyl(0.16, 0.16, 0.03, 16), { x: signX + sx * 0.06, y: signY + 0.05, z: front + 0.48, rz: Math.PI / 2 }));
+    L.dark.push(xf(Cyl(0.1, 0.1, 0.02, 12), { x: signX + sx * 0.08, y: signY + 0.05, z: front + 0.48, rz: Math.PI / 2 }));
+    L.gold.push(xf(Cyl(0.06, 0.06, 0.025, 10), { x: signX + sx * 0.09, y: signY + 0.05, z: front + 0.48, rz: Math.PI / 2 }));
+  }
+
+  // Counter: stone base, polished wood top with gold trim, front panels, brass bell, ledger and coins.
+  const cz = counterZ;
+  const cH = 1.0;
+  L.stone.push(xf(tbox(counterLen, cH - 0.1, 0.55), { y: (cH - 0.1) / 2, z: cz }));
+  L.wood.push(xf(tbox(counterLen + 0.12, 0.09, 0.7), { y: cH, z: cz }));
+  L.gold.push(xf(Box(counterLen + 0.14, 0.03, 0.03), { y: cH - 0.05, z: cz + 0.36 }));
+  for (const px of [-0.5, 0.5]) L.wood.push(xf(tbox(0.68, 0.55, 0.05), { x: px * (counterLen - 0.5), y: 0.45, z: cz + 0.29 }));
+  for (const px of [-0.5, 0.5]) L.cloth.push(xf(Box(0.5, 0.38, 0.03), { x: px * (counterLen - 0.5), y: 0.45, z: cz + 0.32 }));
+  L.gold.push(xf(new THREE.SphereGeometry(0.08, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), { x: counterLen * 0.32, y: cH + 0.05, z: cz + 0.05 }));
+  L.dark.push(xf(Cyl(0.1, 0.1, 0.02, 10), { x: counterLen * 0.32, y: cH + 0.055, z: cz + 0.05 }));
+  L.cloth.push(xf(Box(0.3, 0.05, 0.22), { x: -counterLen * 0.3, y: cH + 0.07, z: cz - 0.05, ry: 0.2 }));
+  L.stripe.push(xf(Box(0.28, 0.02, 0.2), { x: -counterLen * 0.3, y: cH + 0.1, z: cz - 0.05, ry: 0.2 }));
+  for (let i = 0; i < 4; i++) L.gold.push(xf(Cyl(0.055, 0.055, 0.025, 10), { x: -0.05 + (i % 2) * 0.02, y: cH + 0.06 + i * 0.026, z: cz + 0.12 }));
+  // Striped canopy over the door, kept short so the banker behind the counter stays in view from the
+  // high gameplay camera.
+  const aw0 = front;
+  const aw1 = front + 0.75;
+  const awTop = base + stoneH + 0.62;
+  const awLow = awTop - 0.38;
+  const awLen = Math.hypot(aw1 - aw0, awTop - awLow);
+  const awAng = Math.atan2(awTop - awLow, aw1 - aw0);
+  const stripes = 7;
+  const span = counterLen + 0.5;
+  for (let i = 0; i < stripes; i++) {
+    const layer = i % 2 ? L.stripe : L.cloth;
+    layer.push(xf(Box(span / stripes, 0.04, awLen), { x: -span / 2 + (i + 0.5) * (span / stripes), y: (awTop + awLow) / 2, z: (aw0 + aw1) / 2, rx: awAng }));
+    // Scalloped valance
+    layer.push(xf(Box(span / stripes, 0.18, 0.03), { x: -span / 2 + (i + 0.5) * (span / stripes), y: awLow - 0.1, z: aw1 + 0.01 }));
+  }
+  for (const sx of [-1, 1]) L.dark.push(xf(Box(0.04, 0.04, 0.8), { x: sx * (span / 2 - 0.1), y: awTop - 0.25, z: aw0 + 0.35, rx: -0.5 }));
+  // Lamp post at the end of the counter
+  const postX = counterLen / 2 + 0.25;
+  L.wood.push(xf(Cyl(0.05, 0.065, 1.95, 7), { x: postX, y: 0.98, z: cz }));
+  L.dark.push(xf(Box(0.05, 0.05, 0.32), { x: postX, y: 1.9, z: cz - 0.13 }));
+
+  const mats: Record<string, THREE.Material> = {
+    stone: texturedMaterial(stoneTexture('#b3aa9c'), '#b3aa9c'),
+    plaster: texturedMaterial(plasterTexture(b.wall), b.wall),
+    wood: texturedMaterial(woodTexture('#6e472c'), PALETTE.timber),
+    roof: texturedMaterial(shingleTexture(b.roof), b.roof),
+    dark: new THREE.MeshLambertMaterial({ color: '#33302e' }),
+    glass: new THREE.MeshBasicMaterial({ color: '#ffd98a', side: THREE.DoubleSide }),
+    cloth: new THREE.MeshLambertMaterial({ color: '#2f6b52', side: THREE.DoubleSide }),
+    stripe: new THREE.MeshLambertMaterial({ color: '#efe2bf', side: THREE.DoubleSide }),
+    gold: new THREE.MeshLambertMaterial({ color: PALETTE.gold }),
+  };
+  const group = bakeLayers(L, mats, 'bank');
+  group.position.set(b.x, terrainHeight(map, b.x, b.z) - 0.1, b.z);
+  group.rotation.y = b.facing;
+
+  const glows: THREE.Object3D[] = [];
+  for (const sx of [-1, 1]) {
+    const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.16), new THREE.MeshBasicMaterial({ color: '#ffe08a' }));
+    lantern.position.set(sx * 1.25, base + 1.55, front + 0.18);
+    group.add(lantern);
+    glows.push(lantern);
+  }
+  const counterLamp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.2, 0.14), new THREE.MeshBasicMaterial({ color: '#ffe08a' }));
+  counterLamp.position.set(counterLen / 2 + 0.25, 1.75, cz - 0.27);
+  group.add(counterLamp);
+  glows.push(counterLamp);
   return { group, glows };
 }
 

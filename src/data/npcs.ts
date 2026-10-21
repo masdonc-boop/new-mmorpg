@@ -1,4 +1,4 @@
-export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith';
+export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker';
 
 export interface NpcDef {
   id: NpcId;
@@ -8,6 +8,10 @@ export interface NpcDef {
   look: { skin: string; hair: string; hairStyle: number; tunic: string; trousers: string; robe?: boolean; beard?: boolean };
   /** Generic lines used when no quest dialogue applies. */
   idleLines: string[];
+  /** Service this NPC provides when talked to (opens that interface instead of dialogue). */
+  service?: 'bank';
+  /** How close the player must be to use the NPC (e.g. across a counter). Default 1.9. */
+  reach?: number;
 }
 
 export const NPCS: Record<NpcId, NpcDef> = {
@@ -44,5 +48,12 @@ export const NPCS: Record<NpcId, NpcDef> = {
       'Bring me ore once my forge is rebuilt and I will teach you to smith. For now, keep mining!',
       'A good pickaxe is worth more than a good sword. Well — almost.',
     ],
+  },
+  banker: {
+    id: 'banker', name: 'Wendell Coinsworth', title: 'Banker',
+    look: { skin: '#e2b48c', hair: '#8a8478', hairStyle: 0, tunic: '#2f5d4a', trousers: '#2f2a26', beard: true },
+    idleLines: ['Welcome to the Bank of Brightwater. Your valuables are safe with us.'],
+    service: 'bank',
+    reach: 2.7,
   },
 };

@@ -48,6 +48,7 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 | Survival | HP from Hitpoints level, out-of-combat regen, food, death, respawn choice |
 | Gathering | Woodcutting (trees, oaks) and Mining (copper, tin, iron + rare gems); node depletion & regrowth; auto-continue to nearby nodes |
 | Items | 28-slot inventory enforced by the simulation; only currency, ammo and runes stack (per item definition); gathered resources (logs, ores, gems, later fish) take one slot each; gathering stops with "Your inventory is full." and never rolls, grants xp or depletes a node without room; quest rewards wait until they fit; older saves migrate with any excess held, not deleted; drop with confirmation for valuable items; eat/move |
+| Bank | Bank of Brightwater on the west side of the plaza; banker Wendell Coinsworth behind an outdoor counter (tap him or the counter). 200 slots (`Bank.capacity`, expandable); every item type stacks into one bank slot; deposit 1 / 5 / X / all, deposit inventory, deposit held items; withdraw 1 / 5 / X / all, never more than the inventory can hold (non-stackables one per slot); search, categories and slot count; closes when you walk away |
 | Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining |
 | Quest | "The Elder's Request" — talk, gather 5 logs, defeat 3 slimes, rewards |
 | Persistence | Local save (localStorage) every 10s and on backgrounding |
@@ -56,6 +57,13 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 - XP: combat grants 1.2 xp per damage split across the style's skills, plus 0.4 Hitpoints xp per damage. Gathering grants fixed xp per success.
 - HP scale is ×10 (Hitpoints 10 → 100 HP) so hits read as satisfying numbers.
 - Aggressive monsters ignore players whose combat level exceeds roughly twice their own (except bosses).
+
+## Banking (design notes)
+
+- **Rules live in the simulation.** `src/sim/bank.ts` holds the `Bank` store and the transfer functions; the client only sends `bankDeposit`, `bankDepositAll`, `bankDepositHeld`, `bankWithdraw` and `bankClose` commands, and redraws from the `bank`, `bankOpen`, `bankClose` and `bankFull` events. The simulation re-checks on every command that the player is standing at a banker, so a future server can accept the same messages unchanged.
+- **Atomic transfers.** Each transfer first works out how much both sides can take, then moves exactly that amount out of one container and into the other. A transfer can be smaller than asked (e.g. withdraw-all with 3 free slots) and says so, but it never duplicates or loses items.
+- **Per character now, account-wide later.** The bank is a standalone object saved under its own `bank` key. Moving to account-wide storage means keying that store by account on the server; the transfer rules stay the same.
+- **Migration.** Saves from before the bank load with an empty bank; items held after the inventory migration can be deposited straight into the bank.
 
 ## Architecture for multiplayer
 

@@ -53,6 +53,10 @@ export interface Decor {
   variant: number;
 }
 
+/** Where the banker stands, behind the bank counter (counter top spans BANK_COUNTER). */
+export const BANKER = { x: 49.4, z: 60.0 };
+export const BANK_COUNTER = { x: 50.45, z: 60.0, len: 1.9 };
+
 export interface Building {
   x: number;
   z: number;
@@ -60,7 +64,7 @@ export interface Building {
   d: number;
   /** Direction the door faces, radians around Y (0 = +z). */
   facing: number;
-  style: 'house' | 'hall' | 'inn' | 'smithy';
+  style: 'house' | 'hall' | 'inn' | 'smithy' | 'bank';
   wall: string;
   roof: string;
 }
@@ -256,7 +260,8 @@ export function generateWorld(seed = 1337): WorldMap {
   const S = Math.PI;
   const buildings: Building[] = [
     { x: 56, z: 55.5, w: 7, d: 5, facing: 0, style: 'hall', wall: '#efe2c4', roof: '#4b6fb3' },
-    { x: 46.5, z: 60, w: 4, d: 4, facing: S / 2, style: 'house', wall: '#f3e6cf', roof: '#c4553b' },
+    // Bank of Brightwater: door and counter face the plaza (east).
+    { x: 46, z: 60, w: 6, d: 5, facing: S / 2, style: 'bank', wall: '#efe4cc', roof: '#2f5d4a' },
     { x: 46.5, z: 71.5, w: 4, d: 4, facing: S / 2, style: 'house', wall: '#e9dcc0', roof: '#d4893a' },
     { x: 66, z: 58.5, w: 6, d: 5, facing: -S / 2, style: 'inn', wall: '#f0dcb8', roof: '#8a3d5c' },
     { x: 66.5, z: 72.5, w: 5, d: 4, facing: -S / 2, style: 'smithy', wall: '#c9b9a1', roof: '#5a5f6b' },
@@ -274,6 +279,14 @@ export function generateWorld(seed = 1337): WorldMap {
         if (tiles[idx(x, z)] === T.Path) tiles[idx(x, z)] = T.Grass;
       }
     }
+  }
+
+  // Bank counter in front of the bank door; the banker stands between counter and door.
+  for (const z of [59, 60]) {
+    blocked[idx(49, z)] = 1;
+    occ[idx(49, z)] = 1;
+    blocked[idx(50, z)] = 1;
+    occ[idx(50, z)] = 1;
   }
 
   // --- Village props ---
@@ -434,6 +447,7 @@ export function generateWorld(seed = 1337): WorldMap {
       ],
     },
     { id: 'smith', x: 62.6, z: 73.4, facing: -S / 2 },
+    { id: 'banker', x: BANKER.x, z: BANKER.z, facing: S / 2 },
   ];
   for (const n of npcs) if (!n.patrol) blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
 

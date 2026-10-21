@@ -8,6 +8,7 @@ import { TILE_COLORS } from '../render/terrain';
 import { itemIcon } from './icons';
 import { MapViewer } from './mapview';
 import { clearKeepingScroll } from './dom';
+import { BankView } from './bankview';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -16,7 +17,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -54,6 +55,8 @@ export class Hud {
   private bagBadge!: HTMLSpanElement;
   /** Two-tap confirmation that survives panel re-renders (live loot updates rebuild the buttons). */
   private armed = { key: '', until: 0 };
+  private bankView: BankView | null = null;
+  private bankDirty = false;
   private panel!: HTMLDivElement;
   private panelBody!: HTMLDivElement;
   private panelTitle!: HTMLDivElement;
@@ -230,12 +233,12 @@ export class Hud {
       }
     }
     g.putImageData(img, 0, 0);
-    // Buildings
-    g.fillStyle = '#8a5a3c';
+    // Buildings (the bank in gold)
     for (const b of map.buildings) {
       const rot = Math.abs(Math.sin(b.facing)) > 0.5;
       const w = rot ? b.d : b.w;
       const d = rot ? b.w : b.d;
+      g.fillStyle = b.style === 'bank' ? '#d9b45a' : '#8a5a3c';
       g.fillRect(b.x - w / 2, b.z - d / 2, w, d);
     }
     // Trees and rocks as dots
@@ -279,6 +282,10 @@ export class Hud {
     const settled = !this.panelTouching && performance.now() - this.lastPanelScroll > 250;
     if (settled && this.openPanel === 'inventory' && this.invDirty) this.renderInventory();
     if (settled && this.openPanel === 'skills' && this.skillsDirty) this.renderSkills();
+    if (this.openPanel === 'bank' && this.bankDirty && this.bankView && !this.bankView.touching && performance.now() - this.bankView.lastScroll > 200) {
+      this.bankDirty = false;
+      this.bankView.refresh();
+    }
     this.updateDeath();
 
     this.fpsAcc.frames++;
@@ -335,7 +342,8 @@ export class Hud {
     for (const e of this.world.enemies) if (e.alive && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.id === 'goblin_warlord' ? '#ff2d2d' : '#ff7043', e.def.id === 'goblin_warlord' ? 1.4 : 0.8);
     for (const n of this.world.npcs) {
       const m = this.world.npcMarker(n.def.id);
-      dot(n.x, n.z, m === 'available' || m === 'ready' ? '#ffd84d' : '#fff59d', m ? 1.3 : 0.9);
+      if (n.def.service === 'bank') dot(n.x, n.z, '#f5c542', 1.3);
+      else dot(n.x, n.z, m === 'available' || m === 'ready' ? '#ffd84d' : '#fff59d', m ? 1.3 : 0.9);
     }
     for (const c of this.world.map.checkpoints) dot(c.x, c.z, this.world.player.checkpoints.has(c.id) ? '#6fe0ff' : '#9fb4bf', 1);
     g.restore();
@@ -446,6 +454,25 @@ export class Hud {
       case 'inventoryFull':
         this.flashNotice('Your inventory is full.');
         this.invDirty = true;
+        this.bankDirty = true;
+        break;
+      case 'bankOpen':
+        this.toggle('bank');
+        break;
+      case 'bankClose':
+        if (this.openPanel === 'bank') {
+          this.leaveBank(false);
+          this.toggle(null);
+          this.addLog('You step away from the bank.', 'info');
+        }
+        break;
+      case 'bank':
+        this.bankDirty = true;
+        this.invDirty = true;
+        break;
+      case 'bankFull':
+        this.flashNotice('Your bank is full.');
+        this.bankDirty = true;
         break;
     }
     if (e.type === 'attack' || e.type === 'damage') this.invDirty = true;
@@ -584,6 +611,8 @@ export class Hud {
   toggle(id: PanelId | null) {
     this.mapViewer?.dispose();
     this.mapViewer = null;
+    if (this.openPanel === 'bank' && id !== 'bank' && this.bankView) this.leaveBank(true);
+    if (id === 'bank' && this.openPanel === 'bank') return;
     if (id === null || this.openPanel === id) {
       this.openPanel = null;
       this.panel.classList.add('hidden');
@@ -595,14 +624,28 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
     else if (id === 'skills') this.renderSkills();
     else if (id === 'quests') this.renderQuests();
     else if (id === 'map') this.renderMap();
+    else if (id === 'bank') this.renderBank();
     else this.renderSettings();
+  }
+
+  private renderBank() {
+    clearKeepingScroll(this.panelBody);
+    this.bankView = new BankView(this.world, (c) => this.cb.command(c), (key, btn, prompt) => this.confirmTap(key, btn, prompt));
+    this.panelBody.appendChild(this.bankView.root);
+    this.bankDirty = false;
+  }
+
+  /** Tear down the bank view; tell the simulation unless it closed the bank itself. */
+  private leaveBank(notify: boolean) {
+    this.bankView = null;
+    if (notify) this.cb.command({ type: 'bankClose' });
   }
 
   get panelOpen() {

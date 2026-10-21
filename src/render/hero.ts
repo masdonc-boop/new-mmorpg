@@ -32,6 +32,10 @@ export interface HeroLook extends HumanoidLook {
   age?: 'young' | 'adult' | 'old';
   /** Outfit kit layered over the base body. */
   armor?: 'guard';
+  /** Small round reading spectacles. */
+  spectacles?: boolean;
+  /** Carried prop with its own idle behaviour: a clerk's ledger (book in the left hand, quill in the right). */
+  prop?: 'ledger';
 }
 
 interface PartOpts {
@@ -101,6 +105,7 @@ const Sph = (r: number, w = 10, h = 7) => new THREE.SphereGeometry(r, Math.min(w
 const Cap = (r: number, len: number, cap = 3, rad = 8) => new THREE.CapsuleGeometry(r, len, Math.min(cap, 3), Math.min(rad, 8));
 const Cyl = (rt: number, rb: number, h: number, seg = 10, open = false) => new THREE.CylinderGeometry(rt, rb, h, Math.min(seg, 10), 1, open);
 const Tor = (r: number, t: number, seg = 16, arc = Math.PI * 2) => new THREE.TorusGeometry(r, t, 5, Math.min(seg, 14), arc);
+const Box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 
 /** Lathe from (radius, y) pairs, optionally leaving an opening at the front (+z). */
 function lathe(profile: [number, number][], seg = 14, frontGap = 0): THREE.BufferGeometry {
@@ -394,6 +399,16 @@ export class HeroModel {
       head.push(cpart(Cyl(R * 1.5, R * 1.55, 0.025, 16), shade(PALETTE.iron, 0.85), { y: R * 1.13 }));
       head.push(cpart(Tor(R * 1.12, 0.014, 16), shade(PALETTE.iron, 0.7), { y: R * 1.16, rx: Math.PI / 2 }));
     }
+    if (look.spectacles) {
+      // Round wire spectacles resting on the nose, arms running back to the ears.
+      const ey = R * 1.0;
+      const ez = R * 0.99;
+      for (const sx of [-1, 1]) {
+        head.push(cpart(Tor(0.042, 0.0065, 14), PALETTE.gold, { x: sx * 0.071, y: ey, z: ez, ry: sx * 0.2 }));
+        head.push(cpart(Cyl(0.005, 0.005, R * 0.95, 4), PALETTE.gold, { x: sx * R * 0.86, y: ey + 0.01, z: R * 0.45, rx: Math.PI / 2, ry: -sx * 0.18 }));
+      }
+      head.push(cpart(Cyl(0.005, 0.005, 0.05, 4), PALETTE.gold, { y: ey + 0.012, z: ez + 0.012, rz: Math.PI / 2 }));
+    }
     this.addMesh(j.head, head);
 
     const eyes = look.eyes ?? '#4a7a3a';
@@ -413,7 +428,57 @@ export class HeroModel {
     }
 
     this.buildTools();
+    if (look.prop === 'ledger') this.buildLedger();
   }
+
+  // ---- clerk props (banker): open ledger in the left hand, quill in the right
+  private ledger: THREE.Group | null = null;
+  private quill: THREE.Group | null = null;
+
+  private buildLedger() {
+    const cover = '#5a2e2a';
+    const book = [
+      cpart(Box(0.2, 0.018, 0.27), cover, { x: -0.1, rz: 0.16 }),
+      cpart(Box(0.2, 0.018, 0.27), cover, { x: 0.1, rz: -0.16 }),
+      cpart(Box(0.185, 0.03, 0.25), '#f3ead2', { x: -0.095, y: 0.02, rz: 0.16 }),
+      cpart(Box(0.185, 0.03, 0.25), '#f3ead2', { x: 0.095, y: 0.02, rz: -0.16 }),
+      cpart(Cyl(0.014, 0.014, 0.27, 6), PALETTE.gold, { y: -0.006, rx: Math.PI / 2 }),
+      cpart(Box(0.012, 0.004, 0.2), '#8a1f2a', { x: 0.03, y: 0.04, z: 0.06, rz: -0.16 }),
+    ];
+    this.ledger = new THREE.Group();
+    const bm = new THREE.Mesh(cmerge(book), this.material);
+    bm.castShadow = true;
+    this.geometries.push(bm.geometry);
+    this.ledger.add(bm);
+    this.handL.add(this.ledger);
+    const quill = [cpart(Cyl(0.006, 0.004, 0.2, 5), '#3a3330', { y: 0.06 }), cpart(Sph(1, 8, 6), '#f4f1ea', { y: 0.15, sx: 0.022, sy: 0.08, sz: 0.006, rz: 0.15 })];
+    this.quill = new THREE.Group();
+    const qm = new THREE.Mesh(cmerge(quill), this.material);
+    this.geometries.push(qm.geometry);
+    this.quill.add(qm);
+    this.quill.position.set(0, -0.05, 0.03);
+    this.quill.rotation.set(-1.0, 0, 0.2);
+    this.handR.add(this.quill);
+  }
+
+  /**
+   * Banker idle: reads and writes in the ledger, looking up now and then; when someone talks to
+   * them they lower the book a little and look up at the customer.
+   */
+  private applyClerk(pose: HumanoidPose, time: number) {
+    const talking = pose === 'talk';
+    const cycle = (time % 8) / 8;
+    const writing = !talking && cycle < 0.6;
+    const look = talking ? 1 : writing ? 0 : 1;
+    this.set('armL', -0.6 + 0.15 * look, 0.75, -0.05);
+    this.set('elbowL', -1.25 + 0.15 * look);
+    const scribble = writing ? Math.sin(time * 11) * 0.035 + Math.sin(time * 3.1) * 0.04 : 0;
+    this.set('armR', -0.62 + (writing ? 0 : 0.35), -0.3 + scribble, 0.16);
+    this.set('elbowR', writing ? -1.35 : -0.6);
+    // Head: down at the page while writing, up (with a slow glance) otherwise.
+    this.set('head', writing ? 0.32 : 0.02, writing ? 0 : Math.sin(time * 0.6) * 0.25, 0);
+  }
+
 
   private addMesh(parent: THREE.Object3D, parts: THREE.BufferGeometry[]) {
     const g = cmerge(parts);
@@ -700,6 +765,8 @@ export class HeroModel {
       this.set('armR', -0.2, 0, 0.04);
       this.set('elbowR', -0.8);
     }
+    const clerk = this.look.prop === 'ledger' && (pose === 'idle' || pose === 'talk') && speed < 0.3;
+    if (clerk) this.applyClerk(pose, time);
     let snap = 14;
     if (pose !== 'dead') this.deadT = 0;
 
@@ -969,6 +1036,15 @@ export class HeroModel {
 
   /** Weapon carry vs. ready orientation, and the bow's world-space alignment. */
   private updateCarry(swingAge: number) {
+    if (this.ledger) {
+      // Keep the open ledger level-ish and facing the reader whatever the wrist does.
+      this.root.updateWorldMatrix(true, true);
+      const rq = this.root.getWorldQuaternion(new THREE.Quaternion());
+      const hq = this.handL.getWorldQuaternion(new THREE.Quaternion());
+      const desired = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.55, -0.35, 0));
+      this.ledger.quaternion.copy(hq.invert().multiply(rq).multiply(desired));
+      this.ledger.position.set(0, -0.08, 0).add(new THREE.Vector3(0.06, 0, 0.04).applyQuaternion(this.ledger.quaternion));
+    }
     const sword = this.tools.get('sword')!;
     sword.rotation.x = Math.PI / 2 + 0.85 * (1 - this.ready);
     const staff = this.tools.get('staff')!;

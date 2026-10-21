@@ -8,6 +8,7 @@ import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
+import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
 import { generateWorld, isBlocked, regionAt, type Checkpoint, type WorldMap } from './worldmap';
@@ -47,6 +48,15 @@ export type Command =
   | { type: 'claimOverflow' }
   /** Permanently discard all held overflow items (the client confirms first). */
   | { type: 'discardOverflow' }
+  /** Bank: deposit up to qty of the item in an inventory slot (all of that item type, across slots). */
+  | { type: 'bankDeposit'; slot: number; qty: number }
+  /** Bank: deposit the whole inventory. */
+  | { type: 'bankDepositAll' }
+  /** Bank: move held overflow items into the bank. */
+  | { type: 'bankDepositHeld' }
+  /** Bank: withdraw up to qty of an item (as many as fit). */
+  | { type: 'bankWithdraw'; item: ItemId; qty: number }
+  | { type: 'bankClose' }
   | { type: 'acceptQuest'; quest: string }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
 
@@ -80,7 +90,12 @@ export type GameEvent =
   | { type: 'quest'; quest: string; stage: number; complete: boolean }
   | { type: 'checkpoint'; id: string; name: string }
   | { type: 'region'; name: string; levels: string }
-  | { type: 'inventoryFull' };
+  | { type: 'inventoryFull' }
+  | { type: 'bankOpen'; npc: NpcId }
+  | { type: 'bankClose' }
+  /** Bank contents changed (refresh the bank interface). */
+  | { type: 'bank' }
+  | { type: 'bankFull' };
 
 export type AnimState = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'hit';
 
@@ -92,6 +107,8 @@ export type PlayerAction =
 
 /** Monster drops stay visible only to the player who earned them for this long... */
 export const LOOT_PRIVATE_SECONDS = 10 * 60;
+/** Extra distance beyond a banker's reach before an open bank closes (walking away). */
+export const BANK_LEAVE_MARGIN = 1.5;
 /** ...then anyone can see and take them for this long, after which they disappear. */
 export const LOOT_PUBLIC_SECONDS = 5 * 60;
 
@@ -170,6 +187,10 @@ export class Player implements Mover {
    * They are kept (and saved) until the player claims them into free slots or discards them.
    */
   overflow: ItemStack[] = [];
+  /** Bank storage (per character for now; see Bank). */
+  bank = new Bank();
+  /** Id of the banker the player is using, while the bank interface is open. */
+  bankAt: number | null = null;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -299,6 +320,8 @@ export interface SaveData {
   inventory: (ItemStack | null)[];
   /** Held items that did not fit in the inventory (see Player.overflow). Optional for older saves. */
   overflow?: ItemStack[];
+  /** Bank contents (optional: saves from before the bank start with an empty bank). */
+  bank?: ItemStack[];
   quests: Record<string, QuestProgress>;
   checkpoints: string[];
   /** Monster drops still on the ground (optional for older saves). */
@@ -379,6 +402,7 @@ export class GameWorld {
       xp: { ...p.skills.xp },
       inventory: p.inventory.toJSON(),
       overflow: p.overflow.map((o) => ({ ...o })),
+      bank: p.bank.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
       ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
@@ -388,6 +412,7 @@ export class GameWorld {
   private loadPlayer(s: SaveData) {
     const p = this.player;
     p.skills = new Skills(s.xp);
+    p.bank = Bank.restore(s.bank);
     const restored = Inventory.restore(s.inventory);
     p.inventory = restored.inventory;
     p.overflow = restored.overflow;
@@ -488,6 +513,18 @@ export class GameWorld {
       case 'claimOverflow':
         this.claimOverflow();
         break;
+      case 'bankDeposit':
+      case 'bankDepositAll':
+      case 'bankDepositHeld':
+      case 'bankWithdraw':
+        this.bankCommand(cmd);
+        break;
+      case 'bankClose':
+        if (p.bankAt !== null) {
+          p.bankAt = null;
+          this.emit({ type: 'bankClose' });
+        }
+        break;
       case 'discardOverflow':
         if (p.overflow.length) {
           p.overflow = [];
@@ -516,6 +553,10 @@ export class GameWorld {
     }
     this.updatePlayer(dt);
     this.updateGroundItems(dt);
+    if (p.bankAt !== null && !this.activeBanker()) {
+      p.bankAt = null;
+      this.emit({ type: 'bankClose' });
+    }
     for (const e of this.enemies) this.updateEnemy(e, dt);
     for (const n of this.nodes) {
       n.hitAge += dt;
@@ -862,6 +903,81 @@ export class GameWorld {
     } else this.inventoryFull();
   }
 
+  // ---------------------------------------------------------------- bank
+
+  /** The banker the player is using, if they are still close enough to use the bank. */
+  private activeBanker(): Npc | null {
+    const p = this.player;
+    if (p.bankAt === null || p.dead) return null;
+    const n = this.byId.get(p.bankAt);
+    if (!(n instanceof Npc) || n.def.service !== 'bank') return null;
+    return dist(p.x, p.z, n.x, n.z) <= (n.def.reach ?? 1.9) + BANK_LEAVE_MARGIN ? n : null;
+  }
+
+  /** Whether bank commands are currently accepted (the interface is open and the player is at the bank). */
+  get bankOpen(): boolean {
+    return this.activeBanker() !== null;
+  }
+
+  /** Validates and applies one bank command. Every transfer is all-or-nothing per item type. */
+  private bankCommand(cmd: Extract<Command, { type: 'bankDeposit' | 'bankDepositAll' | 'bankDepositHeld' | 'bankWithdraw' }>) {
+    const p = this.player;
+    if (!this.activeBanker()) {
+      this.message('You need to be at the bank to do that.', 'warn');
+      return;
+    }
+    const inv = p.inventory;
+    const bank = p.bank;
+    const name = (item: ItemId) => itemDef(item).name;
+    const report = (r: TransferResult, verb: string) => {
+      if (r.limit === 'bankFull') {
+        this.emit({ type: 'bankFull' });
+        this.message(r.moved > 0 ? `Your bank is full: only ${r.moved} ${name(r.item)} could be deposited.` : `Your bank is full. Free a slot to deposit ${name(r.item)}.`, 'warn');
+      } else if (r.limit === 'inventoryFull') {
+        if (r.moved > 0) this.message(`Only ${r.moved} ${name(r.item)} fit in your inventory.`, 'warn');
+        else this.inventoryFull();
+      } else if (r.moved > 0) {
+        this.message(`${verb} ${r.moved > 1 ? `${r.moved} x ` : ''}${name(r.item)}.`);
+      }
+    };
+    switch (cmd.type) {
+      case 'bankDeposit': {
+        const s = Number.isInteger(cmd.slot) ? inv.slots[cmd.slot] : null;
+        if (!s) return;
+        report(depositItem(bank, inv, s.item, cmd.qty), 'You deposit');
+        break;
+      }
+      case 'bankWithdraw': {
+        if (!isItemId(cmd.item)) return;
+        report(withdrawItem(bank, inv, cmd.item, cmd.qty), 'You withdraw');
+        break;
+      }
+      case 'bankDepositAll': {
+        const results = depositInventory(bank, inv);
+        const moved = results.reduce((a, r) => a + r.moved, 0);
+        const blocked = results.filter((r) => r.limit === 'bankFull');
+        if (moved > 0) this.message(`You deposit ${moved} item${moved === 1 ? '' : 's'}.`);
+        if (blocked.length) {
+          this.emit({ type: 'bankFull' });
+          this.message(`Your bank is full. Kept in your inventory: ${blocked.map((r) => name(r.item)).join(', ')}.`, 'warn');
+        }
+        break;
+      }
+      case 'bankDepositHeld': {
+        if (!p.overflow.length) return;
+        const r = depositStacks(bank, p.overflow);
+        p.overflow = r.left;
+        if (r.moved > 0) this.message(`You deposit ${r.moved} held item${r.moved === 1 ? '' : 's'}.`, 'good');
+        if (r.left.length) {
+          this.emit({ type: 'bankFull' });
+          this.message('Your bank is full. Some held items are still waiting.', 'warn');
+        }
+        break;
+      }
+    }
+    this.emit({ type: 'bank' });
+  }
+
   /** Moves as many held overflow items as fit into the inventory. */
   claimOverflow() {
     const p = this.player;
@@ -1001,10 +1117,15 @@ export class GameWorld {
       p.action = null;
       return;
     }
-    if (!this.approach(n.x, n.z, 1.9, true)) return;
+    if (!this.approach(n.x, n.z, n.def.reach ?? 1.9, true)) return;
     p.action = null;
     p.facing = Math.atan2(n.x - p.x, n.z - p.z);
     n.talkAge = 0;
+    if (n.def.service === 'bank') {
+      p.bankAt = n.id;
+      this.emit({ type: 'bankOpen', npc: n.def.id });
+      return;
+    }
     this.emit({ type: 'dialogue', dialogue: this.talkTo(n) });
   }
 

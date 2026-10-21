@@ -76,6 +76,7 @@ Every humanoid of a human-like race uses **one rig** (`HeroModel`): hips → spi
   - kit: robe (`elder`), guard armour (`armor: 'guard'` with tabard, pauldrons and kettle helm)
   - held prop
 - **Genuinely different races** (goblins, creatures) may use their own rig, but should reuse the same joint names so animation logic can be shared.
+- **Props can carry their own idle.** For example, the banker holds a ledger and quill: he reads and writes, looks up now and then, and lowers the book when spoken to.
 - **NPCs move with the player's locomotion system.** For example, a patrolling NPC walks at `NPC_WALK_SPEED` with the same IK gait.
 
 ### Budget per character
@@ -130,7 +131,7 @@ Still water and flowing water are deliberately different.
 ## 6. Level of detail
 | Distance / role | Detail |
 |---|---|
-| Player, Elder Maren, Captain Bram (prototype) | Full soft rig (above) |
+| Player, Elder Maren, Captain Bram, Wendell the banker | Full soft rig (above) |
 | Ordinary NPCs, enemies (until rollout) | Classic rigs |
 | Hero buildings | Textured, about 7 merged meshes (stone, plaster, wood, roof, glass, cloth, trim) |
 | Ordinary buildings | Vertex-coloured merged chunks |

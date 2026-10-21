@@ -32,12 +32,14 @@ describe('Phase 2A character rig', () => {
       { ...look, armor: 'guard' as const, helmet: true, beard: true, build: 1.12, height: 1.04 },
       { ...look, age: 'old' as const, robe: true, build: 0.95 },
       { ...look, bodyType: 1 as const, build: 0.9, beard: false, cape: '#8a3d5c' },
+      // Banker: spectacles and a ledger + quill with its own reading/writing idle.
+      { ...look, beard: true, build: 1.08, spectacles: true, prop: 'ledger' as const },
     ];
     for (const v of variants) {
       const m = new HeroModel(v);
       m.setTool('spear');
       for (const pose of POSES) m.update(1 / 30, pose, pose === 'walk' ? 1.5 : 0, 99, 1);
-      expect(m.meshCount()).toBeLessThanOrEqual(17);
+      expect(m.meshCount()).toBeLessThanOrEqual(19);
       expect(m.triangleCount()).toBeLessThan(10000);
       m.dispose();
     }

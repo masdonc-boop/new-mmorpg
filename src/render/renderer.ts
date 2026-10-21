@@ -3,7 +3,7 @@ import { lerp } from '../core/math';
 import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
-import { groundHeight } from '../sim/worldmap';
+import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
 import { Enemy, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type ItemId } from '../data/items';
 import { itemIcon } from '../ui/icons';
@@ -45,6 +45,9 @@ const SKY = '#9fd6ef';
 const HERO_NPC_LOOKS: Partial<Record<NpcId, { look: Partial<HeroLook>; tool: HeldTool }>> = {
   elder: { look: { elder: true, age: 'old', eyes: '#5b6fa8', outer: '#d9cba8', accent: '#e3b64a', build: 0.95, height: 0.97 }, tool: 'walkingstaff' },
   guard: { look: { armor: 'guard', helmet: true, beard: true, build: 1.12, height: 1.04, eyes: '#5a3a24', outer: '#5b5f68', accent: '#c9a45c' }, tool: 'spear' },
+  // Wendell the banker: cream shirt, bottle-green waistcoat with gold trim, grey hair and beard,
+  // spectacles, and an open ledger he writes in between customers.
+  banker: { look: { tunic: '#e9dfc6', outer: '#2f5d4a', accent: '#e3b64a', trousers: '#2f2a26', eyes: '#4a5a7a', build: 1.08, height: 0.98, spectacles: true, prop: 'ledger', hairStyle: 0 }, tool: 'none' },
 };
 
 export class GameRenderer {
@@ -512,7 +515,7 @@ export class GameRenderer {
       const n = v.npc;
       const a = this.project(n.x, groundHeight(w.map, n.x, n.z) + 2.25, n.z);
       const near = Math.hypot(n.x - w.player.x, n.z - w.player.z) < 14;
-      this.overlay.plate(n.id, a, { name: n.def.name, kind: 'npc', show: near, marker: w.npcMarker(n.def.id) });
+      this.overlay.plate(n.id, a, { name: n.def.service === 'bank' ? `${n.def.name} · Bank` : n.def.name, kind: 'npc', show: near, marker: w.npcMarker(n.def.id) });
     }
     this.overlay.update(dt);
   }
@@ -680,6 +683,8 @@ export class GameRenderer {
     for (const n of w.npcs) {
       const y = groundHeight(map, n.x, n.z);
       consider(n.id, n.x, y + 1, n.z);
+      // Tapping the bank counter means the banker behind it.
+      if (n.def.service === 'bank') consider(n.id, BANK_COUNTER.x, y + 0.95, BANK_COUNTER.z, 0.9);
     }
     for (const n of w.nodes) {
       if (Math.abs(n.x - w.player.x) > 30 || Math.abs(n.z - w.player.z) > 30) continue;

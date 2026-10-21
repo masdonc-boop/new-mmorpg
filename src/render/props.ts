@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
 import type { ResourceType } from '../data/resources';
-import { T, groundHeight, terrainHeight, BRIDGE_Y, WATER_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
+import { T, groundHeight, terrainHeight, BANK_COUNTER, BRIDGE_Y, WATER_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
 import type { ResourceNode } from '../sim/world';
 import { blob, makeWorldMaterial, merge, part, place, prism } from './geom';
 import { ART } from './art';
 import { bridgePiers } from './bridges';
-import { addShowcaseDetail, buildHallV2, copperOreMaterial, copperRockV2 } from './showcase';
+import { addShowcaseDetail, buildBankV2, buildHallV2, copperOreMaterial, copperRockV2 } from './showcase';
 
 const Box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const Cyl = (rt: number, rb: number, h: number, seg = 7) => new THREE.CylinderGeometry(rt, rb, h, seg);
@@ -420,6 +420,21 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
 
   for (const b of map.buildings) {
     const y = terrainHeight(map, b.x, b.z) - 0.1;
+    if (b.style === 'bank') {
+      // Counter distance in front of the building centre, along the facing direction.
+      const counterZ = (BANK_COUNTER.x - b.x) * Math.sin(b.facing) + (BANK_COUNTER.z - b.z) * Math.cos(b.facing);
+      if (ART.v2) {
+        const bank = buildBankV2(b, map, counterZ, BANK_COUNTER.len);
+        group.add(bank.group);
+        for (const g of bank.glows) glows.push({ mesh: g, baseY: g.position.y, phase: rng() * 6, kind: 'lantern' });
+        continue;
+      }
+      const y = terrainHeight(map, b.x, b.z) - 0.1;
+      const counter = merge([part(Box(BANK_COUNTER.len, 1.0, 0.6), '#8a6a48', { y: 0.5, z: counterZ }), part(Box(BANK_COUNTER.len + 0.1, 0.08, 0.7), '#e3b64a', { y: 1.02, z: counterZ })]);
+      solid.add(b.x, b.z, place(buildingPrefab(b), b.x, y, b.z, b.facing));
+      solid.add(b.x, b.z, place(counter, b.x, y, b.z, b.facing));
+      continue;
+    }
     if (ART.v2 && b.style === 'hall') {
       // Phase 2A showcase building: textured, detailed Elder's hall.
       const hall = buildHallV2(b, map);
