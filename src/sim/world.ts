@@ -187,12 +187,28 @@ export class ResourceNode {
   constructor(public id: number, public def: ResourceDef, public x: number, public z: number, public index: number) {}
 }
 
+export const NPC_WALK_SPEED = 1.5;
+
 export class Npc {
   facing: number;
   talkAge = 99;
   idleLine = 0;
-  constructor(public id: number, public def: NpcDef, public x: number, public z: number, public baseFacing: number) {
+  prevX: number;
+  prevZ: number;
+  moving = false;
+  waypoint = 1;
+  waitTimer = 2;
+  constructor(
+    public id: number,
+    public def: NpcDef,
+    public x: number,
+    public z: number,
+    public baseFacing: number,
+    public patrol: { x: number; z: number }[] | null = null,
+  ) {
     this.facing = baseFacing;
+    this.prevX = x;
+    this.prevZ = z;
   }
 }
 
@@ -244,7 +260,7 @@ export class GameWorld {
     else this.giveStarterKit();
 
     this.map.npcs.forEach((n, i) => {
-      const npc = new Npc(100 + i, NPCS[n.id], n.x, n.z, n.facing);
+      const npc = new Npc(100 + i, NPCS[n.id], n.x, n.z, n.facing, n.patrol ?? null);
       this.npcs.push(npc);
       this.byId.set(npc.id, npc);
     });
@@ -407,12 +423,7 @@ export class GameWorld {
         }
       }
     }
-    for (const n of this.npcs) {
-      n.talkAge += dt;
-      const d = dist(n.x, n.z, p.x, p.z);
-      const want = d < 4 ? Math.atan2(p.x - n.x, p.z - n.z) : n.baseFacing;
-      n.facing += angleDiff(n.facing, want) * Math.min(1, dt * 5);
-    }
+    for (const n of this.npcs) this.updateNpc(n, dt);
     // Resolve projectile hits.
     for (let i = this.pending.length - 1; i >= 0; i--) {
       const h = this.pending[i];
@@ -421,6 +432,38 @@ export class GameWorld {
       const e = this.byId.get(h.target);
       if (e instanceof Enemy && e.alive) this.damageEnemy(e, h.damage, h.hit, h.style);
     }
+  }
+
+  /** Idle NPCs turn to face a nearby player; patrolling NPCs walk their route, pausing to chat. */
+  private updateNpc(n: Npc, dt: number) {
+    const p = this.player;
+    n.talkAge += dt;
+    n.prevX = n.x;
+    n.prevZ = n.z;
+    n.moving = false;
+    const d = dist(n.x, n.z, p.x, p.z);
+    const engaged = n.talkAge < 4 || (p.action?.type === 'talk' && p.action.npc === n.id) || d < 1.6;
+    let want = d < 4 ? Math.atan2(p.x - n.x, p.z - n.z) : n.baseFacing;
+    if (n.patrol && !engaged) {
+      if (n.waitTimer > 0) {
+        n.waitTimer -= dt;
+      } else {
+        const wp = n.patrol[n.waypoint];
+        const dw = dist(n.x, n.z, wp.x, wp.z);
+        if (dw < 0.05) {
+          n.waypoint = (n.waypoint + 1) % n.patrol.length;
+          n.waitTimer = 2 + this.rng() * 3;
+        } else {
+          const step = Math.min(dw, NPC_WALK_SPEED * dt);
+          n.x += ((wp.x - n.x) / dw) * step;
+          n.z += ((wp.z - n.z) / dw) * step;
+          n.moving = true;
+          want = Math.atan2(wp.x - n.x, wp.z - n.z);
+        }
+      }
+      if (!n.moving && d >= 4) want = n.facing;
+    }
+    n.facing += angleDiff(n.facing, want) * Math.min(1, dt * (n.moving ? 8 : 5));
   }
 
   private updatePlayer(dt: number) {

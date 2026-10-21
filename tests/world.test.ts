@@ -199,3 +199,50 @@ describe('Simulation', () => {
     expect(w2.player.skills.xp.mining).toBe(500);
   });
 });
+
+describe('NPC patrols', () => {
+  it('walks the guard along a fully walkable route and back', () => {
+    const w = new GameWorld();
+    const guard = w.npcs.find((n) => n.def.id === 'guard')!;
+    expect(guard.patrol).not.toBeNull();
+    const route = guard.patrol!;
+    for (let i = 0; i < route.length; i++) {
+      const a = route[i];
+      const b = route[(i + 1) % route.length];
+      for (let t = 0; t <= 1; t += 0.05) {
+        const x = a.x + (b.x - a.x) * t;
+        const z = a.z + (b.z - a.z) * t;
+        for (const [ox, oz] of [[0.28, 0], [-0.28, 0], [0, 0.28], [0, -0.28]]) expect(isBlocked(w.map, x + ox, z + oz)).toBe(false);
+      }
+    }
+    // Keep the player far away so the guard is not distracted.
+    w.player.x = w.player.prevX = 56.5;
+    w.player.z = w.player.prevZ = 90.5;
+    const seen = new Set<number>();
+    let moved = 0;
+    for (let i = 0; i < 30 * 40; i++) {
+      const bx = guard.x;
+      w.tick();
+      if (guard.x !== bx) moved++;
+      seen.add(guard.waypoint);
+    }
+    expect(moved).toBeGreaterThan(100);
+    expect(seen.size).toBe(route.length);
+  });
+
+  it('stops patrolling to face the player during a conversation', () => {
+    const w = new GameWorld();
+    const guard = w.npcs.find((n) => n.def.id === 'guard')!;
+    w.player.x = w.player.prevX = guard.x + 1.2;
+    w.player.z = w.player.prevZ = guard.z;
+    guard.waitTimer = 0;
+    w.issue({ type: 'interact', target: guard.id });
+    for (let i = 0; i < 30 * 3; i++) w.tick();
+    const events = w.drainEvents();
+    expect(events.some((e) => e.type === 'dialogue')).toBe(true);
+    const x = guard.x;
+    for (let i = 0; i < 30; i++) w.tick();
+    expect(guard.x).toBe(x);
+    expect(Math.abs(Math.atan2(w.player.x - guard.x, w.player.z - guard.z) - guard.facing) % (Math.PI * 2)).toBeLessThan(0.3);
+  });
+});

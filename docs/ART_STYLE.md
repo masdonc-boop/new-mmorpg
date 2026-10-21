@@ -33,15 +33,50 @@ The target is a charming, sturdy fantasy adventurer with a handcrafted feel. It 
 - **Stance:** a grounded A-stance with feet apart, soft knees, arms hanging clear of the torso with relaxed elbows, and a slight forward lean.
 - **Body types:** *Broad* has wider shoulders. *Slender* has a narrower chest and slightly wider hips.
 
-### Joints and animation
-The skeleton is hips → spine → head, with thigh → knee and arm → elbow → hand. Poses are written as target rotations and blended with critically damped smoothing, so walk, idle and attack transitions never pop.
+### Joints and animation (revision 3: shared rig)
+Every humanoid of a human-like race uses **one rig** (`HeroModel`): hips → spine → head, thigh → knee → ankle, and arm → elbow → hand. Poses are written as target rotations and blended with critically damped smoothing, so walk, run, idle, turn and attack transitions never pop.
 
-- **Walk:** opposing arm and leg swing (relaxed, with elbows bending on the forward swing), knee flex during swing-through and soft knees at contact, pelvis twist and hip drop with the chest counter-rotating, and a two-beat bob.
+**Locomotion is solved, not keyframed.**
+- **Legs use two-bone IK.** Each foot follows a stance/swing cycle on the ground plane, and the hip lowers only as far as the planted foot needs. Ankles keep the planted sole flat.
+- **Gait is speed-synchronised:** cadence = speed × stance ÷ stride. A planted foot moves backward exactly as fast as the body moves forward, so feet never slide at any speed.
+- **Walk to run is a continuous blend** (`gaitParams`):
+  - stance fraction: 0.62 → 0.42
+  - stride: 0.82 → 0.96 m
+  - foot lift: 0.07 → 0.13 m
+  - crouch: 0.035 → 0.07 m
+- **Upper body:**
+  - The pelvis twists with the stepping leg and the chest counter-rotates.
+  - Arms swing opposite the legs, with more elbow bend when running.
+  - The character leans into turns (`setTurnRate`).
+  - Vertical bounce stays under about 7 cm.
+- **Age changes the gait, not the rig.** The *old* age adds a stoop and a shorter, slower step.
 - **Idle:** breathing, a slow weight shift and head glances.
+
+**Weapon handling**
+- **Bow:** carried in the **bow hand (left)**, gripped at the riser, with the limbs near-vertical and angled forward and out so the string stays clear of the body.
+  - The attack goes **raise → draw → release → return**.
+  - When aiming, the bow's orientation is solved in world space: limbs vertical with a slight cant, belly toward the target.
+  - The right hand draws the string by IK along the arrow line. Only the string moves; it snaps straight on release.
+  - Arrows spawn at the arrow rest (`projectileOrigin`) and fly to the target.
+- **Sword:** pointing down beside the leg when relaxed, and level and forward when ready.
+- **Staff:** upright when relaxed, and thrust forward when casting.
+- **Spear and walking staff:** grounded carries. The shaft is solved to stay near-vertical in world space, whatever the arm is doing.
 - **Melee:** anticipation, strike, then follow-through, with torso twist and a lunge step.
-- **Ranged:** turned side-on, with a full draw and release.
 - **Magic:** both arms raise, then the staff thrusts.
 - **Chop and mine:** a two-handed overhead swing in a planted stance.
+
+### NPC design standard
+- **Same race, same body.** Villagers, guards and the player share anatomy, proportions, face style, materials and animation quality.
+- **Individuality comes from `HeroLook` parameters, never from a different model:**
+  - `build` (girth) and `height`
+  - `age` (young, adult or old)
+  - body type, skin tone, eye colour
+  - hair style and colour, beard
+  - outfit colours (`outer`, `accent`)
+  - kit: robe (`elder`), guard armour (`armor: 'guard'` with tabard, pauldrons and kettle helm)
+  - held prop
+- **Genuinely different races** (goblins, creatures) may use their own rig, but should reuse the same joint names so animation logic can be shared.
+- **NPCs move with the player's locomotion system.** For example, a patrolling NPC walks at `NPC_WALK_SPEED` with the same IK gait.
 
 ### Budget per character
 At most about 16 meshes (each body segment is merged into one draw call with one shared material) and **under 9k triangles**. The face decal is the only extra material.
@@ -95,7 +130,7 @@ Still water and flowing water are deliberately different.
 ## 6. Level of detail
 | Distance / role | Detail |
 |---|---|
-| Player, quest NPCs | Full soft rig (above) |
+| Player, Elder Maren, Captain Bram (prototype) | Full soft rig (above) |
 | Ordinary NPCs, enemies (until rollout) | Classic rigs |
 | Hero buildings | Textured, about 7 merged meshes (stone, plaster, wood, roof, glass, cloth, trim) |
 | Ordinary buildings | Vertex-coloured merged chunks |
@@ -106,7 +141,7 @@ Still water and flowing water are deliberately different.
 - **Don't:** cube-headed characters, photoreal textures, pure white or pure black, neon saturation, sharp specular "plastic" highlights, or detail too small to read at the gameplay zoom.
 
 ## 8. Rollout plan (not done in Phase 2A)
-1. Convert the remaining villagers to the soft rig, with a per-NPC outfit palette.
+1. Convert the remaining villagers (Tilly, Hilda) to the shared rig through `HERO_NPC_LOOKS`, after the Bram prototype is approved.
 2. Goblins and wolves get soft-family variants with the same joint names.
 3. Apply the textured kit (shingles, stone, timber) to the other village buildings.
 4. Give tin and iron rocks their own mineral treatments (tin: silver-grey crystals; iron: rust-red banding).

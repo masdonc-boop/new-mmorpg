@@ -6,11 +6,15 @@ import type { HeldTool, HumanoidLook, HumanoidPose } from './characters';
 import { faceTexture } from './textures';
 
 /**
- * Phase 2A character rig: rounded, stylised proportions (≈4.5 heads tall), painted face,
- * shaped hair, hands with thumbs, boots, and layered clothing (tunic, open jerkin, belt, collar).
+ * Shared humanoid rig for the player and human NPCs (Phase 2A standard): rounded, sturdy
+ * proportions, painted face, shaped hair, hands with thumbs, boots and layered clothing.
+ * Variety comes from HeroLook (build, height, age, hair, beard, outfit kit, accessories).
+ *
+ * Animation: legs are solved with two-bone IK from a speed-synchronised gait cycle so planted
+ * feet do not slide; ankles keep feet flat; archery uses a dedicated bow rig and planar arm IK.
  *
  * Performance: every rigid body segment is merged into ONE smooth-shaded, vertex-coloured mesh
- * that shares a single material, so a full character is ~15 draw calls.
+ * that shares a single material, so a full character is ~16 draw calls.
  */
 
 export interface HeroLook extends HumanoidLook {
@@ -20,6 +24,14 @@ export interface HeroLook extends HumanoidLook {
   /** Outer layer colour (jerkin / shawl). */
   outer?: string;
   elder?: boolean;
+  /** Width multiplier for torso, hips and limbs (1 = standard adventurer). */
+  build?: number;
+  /** Overall height multiplier. */
+  height?: number;
+  /** Older characters stoop slightly and walk with a shorter, slower step. */
+  age?: 'young' | 'adult' | 'old';
+  /** Outfit kit layered over the base body. */
+  armor?: 'guard';
 }
 
 interface PartOpts {
@@ -77,6 +89,8 @@ function cpart(geo: THREE.BufferGeometry, color: string, o: PartOpts = {}): THRE
 }
 
 function cmerge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  // Polyhedra are non-indexed; mixing them with indexed primitives requires de-indexing everything.
+  if (parts.some((p) => !p.index) && parts.some((p) => p.index)) parts = parts.map((p) => (p.index ? p.toNonIndexed() : p));
   const g = mergeGeometries(parts, false)!;
   for (const p of parts) p.dispose();
   g.computeBoundingSphere();
@@ -123,19 +137,73 @@ type JointName =
   | 'thighR'
   | 'kneeL'
   | 'kneeR'
+  | 'ankleL'
+  | 'ankleR'
   | 'armL'
   | 'armR'
   | 'elbowL'
   | 'elbowR';
 
-const JOINTS: JointName[] = ['hips', 'spine', 'head', 'thighL', 'thighR', 'kneeL', 'kneeR', 'armL', 'armR', 'elbowL', 'elbowR'];
+const JOINTS: JointName[] = ['hips', 'spine', 'head', 'thighL', 'thighR', 'kneeL', 'kneeR', 'ankleL', 'ankleR', 'armL', 'armR', 'elbowL', 'elbowR'];
+const LEG_JOINTS = new Set<JointName>(['thighL', 'thighR', 'kneeL', 'kneeR', 'ankleL', 'ankleR']);
+
+/** Rig dimensions (world units at height 1). */
+export const RIG = {
+  hipY: 0.92,
+  hipJointY: -0.03,
+  thigh: 0.41,
+  shin: 0.4,
+  /** Ankle joint height above the ground when the foot is flat. */
+  ankleH: 0.08,
+  upperArm: 0.27,
+  forearm: 0.3,
+} as const;
+
+/** Two-bone planar IK. Returns [thigh, knee] angles (thigh negative = forward, knee positive = flexed). */
+export function legIK(dz: number, dy: number, a = RIG.thigh, b = RIG.shin): [number, number] {
+  const d = Math.min(Math.max(Math.hypot(dz, dy), 0.05), a + b - 1e-4);
+  const alpha = Math.atan2(dz, -dy);
+  const bend = Math.PI - Math.acos(Math.min(1, Math.max(-1, (a * a + b * b - d * d) / (2 * a * b))));
+  const lean = Math.acos(Math.min(1, Math.max(-1, (a * a + d * d - b * b) / (2 * a * d))));
+  return [-alpha - lean, bend];
+}
+
+/** Gait parameters blended between a relaxed walk and a jog by speed (units/s). */
+export function gaitParams(speed: number) {
+  const r = smoothstep(2.6, 4.2, speed);
+  const stance = lerp(0.62, 0.42, r);
+  const stride = lerp(0.82, 0.96, r);
+  // Cadence chosen so the planted foot moves backward at exactly the ground speed: no foot sliding.
+  const cadence = speed > 0.05 ? (speed * stance) / stride : 0;
+  return { run: r, stance, stride, cadence, lift: lerp(0.07, 0.13, r), crouch: lerp(0.035, 0.07, r) };
+}
+
+/** Foot offset (forward, lift) relative to the hip for a leg at gait phase φ ∈ [0,1). */
+export function footAt(phase: number, stance: number, stride: number, lift: number): { z: number; lift: number; planted: boolean } {
+  const f = ((phase % 1) + 1) % 1;
+  if (f < stance) return { z: stride / 2 - (f / stance) * stride, lift: 0, planted: true };
+  const u = (f - stance) / (1 - stance);
+  const e = u * u * (3 - 2 * u);
+  return { z: -stride / 2 + stride * e, lift: lift * Math.sin(Math.PI * u), planted: false };
+}
+
+const smoothstep = (a: number, b: number, x: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const tmpV = new THREE.Vector3();
+const tmpV2 = new THREE.Vector3();
+const tmpQa = new THREE.Quaternion();
+const tmpQb = new THREE.Quaternion();
+const tmpMb = new THREE.Matrix4();
 
 export class HeroModel {
   readonly root = new THREE.Group();
   readonly joints: Record<JointName, THREE.Group>;
   private handR = new THREE.Group();
   private handL = new THREE.Group();
-  private tools = new Map<HeldTool, THREE.Object3D>();
+  private tools = new Map<HeldTool, THREE.Group>();
   private material: THREE.MeshLambertMaterial;
   private faceMat: THREE.MeshLambertMaterial;
   private faceOpen: THREE.Texture | null;
@@ -143,12 +211,26 @@ export class HeroModel {
   private target = new Map<JointName, THREE.Vector3>();
   private hipOffset = new THREE.Vector3();
   private hipTarget = new THREE.Vector3();
-  private walkPhase = 0;
+  private gaitPhase = 0;
+  private loco = 0;
   private flash = 0;
   private deadT = 0;
   private blinkT = 2 + Math.random() * 3;
   private held: HeldTool = 'none';
   private geometries: THREE.BufferGeometry[] = [];
+  private turnRate = 0;
+  private aimIn = 0;
+  private aim = 0;
+  private drawIn = 0;
+  private readyIn = 0;
+  private ready = 0;
+  private shoulderX: number;
+  private old: boolean;
+  // Bow rig
+  private bowMount = new THREE.Group();
+  private bowString: THREE.Mesh[] = [];
+  private nockedArrow = new THREE.Group();
+  private bowTip = { x: 0, y: 0 };
   style: CombatStyle = 'melee';
 
   constructor(public look: HeroLook) {
@@ -161,32 +243,39 @@ export class HeroModel {
     }
     this.joints = j;
     const fem = look.bodyType === 1;
+    const build = look.build ?? 1;
+    const limb = 1 + (build - 1) * 0.6;
+    this.old = look.age === 'old';
     const skin = look.skin;
-    const tunic = look.tunic;
+    const tunic = look.armor === 'guard' ? '#80878f' : look.tunic;
     const trousers = look.trousers;
     const outer = look.outer ?? (look.robe ? shade(tunic, 0.7) : PALETTE.leather);
     const accent = look.accent ?? PALETTE.gold;
     const boots = PALETTE.leatherDark;
     const robe = !!look.robe;
+    const guard = look.armor === 'guard';
+    if (look.height) this.root.scale.setScalar(look.height);
 
-    // ---- hierarchy (sturdy adventurer: ~1.8 units tall, broad shoulders, solid limbs)
-    const hipY = 0.9;
-    j.hips.position.y = hipY;
+    // ---- hierarchy
+    j.hips.position.y = RIG.hipY;
     this.root.add(j.hips);
     j.hips.add(j.spine);
     j.spine.position.y = 0.06;
     j.spine.add(j.head);
     j.head.position.y = 0.49;
-    const shoulderX = fem ? 0.235 : 0.265;
+    this.shoulderX = (fem ? 0.235 : 0.265) * build;
     for (const [side, sx] of [['L', -1], ['R', 1]] as const) {
       const thigh = j[`thigh${side}`];
-      thigh.position.set(sx * (fem ? 0.115 : 0.112), -0.03, 0);
+      thigh.position.set(sx * (fem ? 0.115 : 0.112) * build, RIG.hipJointY, 0);
       j.hips.add(thigh);
       const knee = j[`knee${side}`];
-      knee.position.y = -0.41;
+      knee.position.y = -RIG.thigh;
       thigh.add(knee);
+      const ankle = j[`ankle${side}`];
+      ankle.position.y = -RIG.shin;
+      knee.add(ankle);
       const arm = j[`arm${side}`];
-      arm.position.set(sx * shoulderX, 0.355, -0.005);
+      arm.position.set(sx * this.shoulderX, 0.355, -0.005);
       j.spine.add(arm);
       const elbow = j[`elbow${side}`];
       elbow.position.y = -0.27;
@@ -198,71 +287,80 @@ export class HeroModel {
 
     // ---- pelvis + tunic skirt / robe (moves with hips)
     const hem = shade(tunic, 0.72);
-    const pelvis: THREE.BufferGeometry[] = [cpart(Sph(1, 12, 8), trousers, { y: -0.03, sx: fem ? 0.245 : 0.235, sy: 0.15, sz: 0.17, ao: 0.2 })];
+    const pelvis: THREE.BufferGeometry[] = [cpart(Sph(1, 12, 8), trousers, { y: -0.03, sx: (fem ? 0.245 : 0.235) * build, sy: 0.15, sz: 0.17 * build, ao: 0.2 })];
     if (robe) {
-      pelvis.push(cpart(lathe([[0.2, 0.05], [0.235, -0.2], [0.29, -0.55], [0.33, -0.86], [0.31, -0.88]], 18), tunic, { ao: 0.3 }));
-      pelvis.push(cpart(Tor(0.32, 0.026, 16), accent, { y: -0.84, rx: Math.PI / 2 }));
+      pelvis.push(cpart(lathe([[0.2, 0.05], [0.235, -0.2], [0.29, -0.55], [0.33, -0.86], [0.31, -0.88]], 18), tunic, { ao: 0.3, sx: build, sz: build }));
+      pelvis.push(cpart(Tor(0.32, 0.026, 16), accent, { y: -0.84, rx: Math.PI / 2, sx: build, sy: build }));
     } else {
-      pelvis.push(cpart(lathe([[0.205, 0.06], [0.228, -0.06], [0.265, -0.21], [0.258, -0.235]], 16, 0.55), tunic, { ao: 0.25 }));
-      // Stitched hem band
-      pelvis.push(cpart(lathe([[0.262, -0.2], [0.268, -0.215], [0.262, -0.235]], 16, 0.55), hem, { mottle: 0.02 }));
+      pelvis.push(cpart(lathe([[0.205, 0.06], [0.228, -0.06], [0.265, -0.21], [0.258, -0.235]], 16, 0.55), tunic, { ao: 0.25, sx: build, sz: build, mottle: guard ? 0.14 : 0.03 }));
+      pelvis.push(cpart(lathe([[0.262, -0.2], [0.268, -0.215], [0.262, -0.235]], 16, 0.55), hem, { mottle: 0.02, sx: build, sz: build }));
+    }
+    if (guard) {
+      // Tabard skirt panels (front and back)
+      pelvis.push(cpart(new THREE.BoxGeometry(0.24, 0.3, 0.02), look.tunic, { y: -0.13, z: 0.27 * build, rx: -0.12 }));
+      pelvis.push(cpart(new THREE.BoxGeometry(0.24, 0.3, 0.02), look.tunic, { y: -0.13, z: -0.27 * build, rx: 0.12 }));
     }
     this.addMesh(j.hips, pelvis);
 
-    // ---- legs: solid thighs and calves, chunky handmade boots
+    // ---- legs: thigh, calf + boot shaft (knee), foot (ankle)
     const bootLight = shade(boots, 1.35);
     for (const side of ['L', 'R'] as const) {
-      this.addMesh(j[`thigh${side}`], [cpart(Cap(0.1, 0.2), trousers, { y: -0.2, ao: 0.15 })]);
+      this.addMesh(j[`thigh${side}`], [cpart(Cap(0.1 * limb, 0.2), trousers, { y: -0.2, ao: 0.15 })]);
       this.addMesh(j[`knee${side}`], [
-        cpart(Cap(0.088, 0.17, 3, 8), trousers, { y: -0.12, ao: 0.1 }),
-        // Boot: shaft, folded cuff, laces, rounded foot with toe cap, heel and sole
-        cpart(Cyl(0.102, 0.094, 0.2, 10), boots, { y: -0.3, ao: 0.25 }),
-        cpart(lathe([[0.1, -0.2], [0.122, -0.165], [0.118, -0.13], [0.104, -0.125]], 12), bootLight, { mottle: 0.05 }),
-        cpart(Tor(0.098, 0.011, 12), shade(boots, 0.7), { y: -0.27, rx: Math.PI / 2 }),
-        cpart(Sph(1, 12, 8), boots, { y: -0.41, z: 0.055, sx: 0.098, sy: 0.075, sz: 0.165 }),
-        cpart(Sph(1, 10, 6), bootLight, { y: -0.415, z: 0.15, sx: 0.07, sy: 0.05, sz: 0.06, mottle: 0.05 }),
-        cpart(new THREE.BoxGeometry(0.13, 0.05, 0.08), shade(boots, 0.6), { y: -0.445, z: -0.055 }),
-        cpart(Cyl(0.098, 0.098, 0.03, 12), '#2a1c12', { y: -0.465, z: 0.045, sz: 1.85 }),
+        cpart(Cap(0.088 * limb, 0.17, 3, 8), trousers, { y: -0.12, ao: 0.1 }),
+        cpart(Cyl(0.102 * limb, 0.094 * limb, 0.2, 10), boots, { y: -0.3, ao: 0.25 }),
+        cpart(lathe([[0.1 * limb, -0.2], [0.122 * limb, -0.165], [0.118 * limb, -0.13], [0.104 * limb, -0.125]], 12), bootLight, { mottle: 0.05 }),
+        cpart(Tor(0.098 * limb, 0.011, 12), shade(boots, 0.7), { y: -0.27, rx: Math.PI / 2 }),
+      ]);
+      this.addMesh(j[`ankle${side}`], [
+        cpart(Sph(1, 12, 8), boots, { y: -0.01, z: 0.055, sx: 0.098 * limb, sy: 0.075, sz: 0.165 }),
+        cpart(Sph(1, 10, 6), bootLight, { y: -0.015, z: 0.15, sx: 0.07 * limb, sy: 0.05, sz: 0.06, mottle: 0.05 }),
+        cpart(new THREE.BoxGeometry(0.13 * limb, 0.05, 0.08), shade(boots, 0.6), { y: -0.045, z: -0.055 }),
+        cpart(Cyl(0.098 * limb, 0.098 * limb, 0.03, 12), '#2a1c12', { y: -0.065, z: 0.045, sz: 1.85 }),
       ]);
     }
 
-    // ---- torso: broad chest, sloped shoulders, layered tunic + leather jerkin + strap
-    const cw = fem ? 0.215 : 0.25;
+    // ---- torso
+    const cw = (fem ? 0.215 : 0.25) * build;
     const torso: THREE.BufferGeometry[] = [
-      cpart(lathe([[0.19, -0.03], [0.198, 0.08], [cw * 0.95, 0.2], [cw, 0.3], [cw * 0.96, 0.36], [cw * 0.78, 0.415], [0.13, 0.465], [0.08, 0.49]], 16), tunic, { sz: 0.82, ao: 0.18 }),
-      // Open-front leather jerkin with darker edging
-      cpart(lathe([[0.205, -0.01], [0.212, 0.08], [cw * 0.95 + 0.018, 0.2], [cw + 0.018, 0.3], [cw * 0.96 + 0.016, 0.36], [cw * 0.78 + 0.014, 0.42], [0.145, 0.46]], 16, robe ? 0.6 : 1.0), outer, { sz: 0.83, ao: 0.22, mottle: 0.05 }),
-      // Belt, buckle, pouch, collar
-      cpart(Tor(0.2, 0.034, 16), PALETTE.leatherDark, { y: 0.0, rx: Math.PI / 2, sz: 0.83 }),
-      cpart(new THREE.BoxGeometry(0.085, 0.07, 0.035), accent, { y: 0.0, z: 0.17 }),
-      cpart(Sph(1, 10, 7), PALETTE.leather, { x: 0.17, y: -0.06, z: 0.08, sx: 0.065, sy: 0.07, sz: 0.05, ao: 0.3, mottle: 0.05 }),
+      cpart(lathe([[0.19 * build, -0.03], [0.198 * build, 0.08], [cw * 0.95, 0.2], [cw, 0.3], [cw * 0.96, 0.36], [cw * 0.78, 0.415], [0.13, 0.465], [0.08, 0.49]], 16), tunic, { sz: 0.82, ao: 0.18, mottle: guard ? 0.14 : 0.03 }),
+      cpart(lathe([[0.205 * build, -0.01], [0.212 * build, 0.08], [cw * 0.95 + 0.018, 0.2], [cw + 0.018, 0.3], [cw * 0.96 + 0.016, 0.36], [cw * 0.78 + 0.014, 0.42], [0.145, 0.46]], 16, robe ? 0.6 : guard ? 1.5 : 1.0), outer, { sz: 0.83, ao: 0.22, mottle: 0.05 }),
+      cpart(Tor(0.2 * build, 0.034, 16), PALETTE.leatherDark, { y: 0.0, rx: Math.PI / 2, sz: 0.83 }),
+      cpart(new THREE.BoxGeometry(0.085, 0.07, 0.035), accent, { y: 0.0, z: 0.17 * build }),
+      cpart(Sph(1, 10, 7), PALETTE.leather, { x: 0.17 * build, y: -0.06, z: 0.08, sx: 0.065, sy: 0.07, sz: 0.05, ao: 0.3, mottle: 0.05 }),
       cpart(Tor(0.1, 0.03, 12), robe ? accent : PALETTE.linen, { y: 0.455, rx: Math.PI / 2, sz: 0.9 }),
     ];
-    if (!robe) {
-      // Satchel strap wrapping diagonally around the chest (shoulder to opposite hip).
+    if (guard) {
+      // Blue tabard over mail, with a gold crest.
+      for (const zf of [1, -1]) torso.push(cpart(new THREE.BoxGeometry(0.26 * build, 0.42, 0.02), look.tunic, { y: 0.17, z: zf * (cw * 0.84 + 0.02), rx: zf * 0.08 }));
+      torso.push(cpart(new THREE.OctahedronGeometry(0.06, 0), PALETTE.gold, { y: 0.24, z: cw * 0.84 + 0.04, sz: 0.3 }));
+    } else if (!robe) {
       torso.push(cpart(new THREE.TorusGeometry(cw * 0.93, 0.02, 4, 20), PALETTE.leatherDark, { y: 0.21, sz: 0.88, rx: Math.PI / 2, ry: 0.6 }));
     }
     if (fem) torso.push(cpart(Sph(1, 10, 7), tunic, { y: 0.27, z: 0.1, sx: 0.17, sy: 0.085, sz: 0.08 }));
     if (look.cape) torso.push(cpart(lathe([[0.2, 0.42], [0.25, 0.2], [0.3, -0.25]], 10, Math.PI * 1.2), look.cape, { sz: 0.85 }));
-    torso.push(cpart(Cyl(0.072, 0.082, 0.1, 10), skin, { y: 0.49 }));
+    torso.push(cpart(Cyl(0.072 * limb, 0.082 * limb, 0.1, 10), skin, { y: 0.49 }));
     this.addMesh(j.spine, torso);
 
-    // ---- arms: rounded deltoid, full sleeve, bracer, proper hand
+    // ---- arms
     for (const [side, sx] of [['L', -1], ['R', 1]] as const) {
-      const sleeve = robe ? tunic : tunic;
-      this.addMesh(j[`arm${side}`], [
-        cpart(Sph(1, 12, 8), sleeve, { y: -0.01, sx: 0.084, sy: 0.08, sz: 0.084, ao: 0.1 }),
-        // Tapered sleeve: full at the shoulder, gathered toward the elbow.
-        cpart(lathe([[0.066, -0.27], [0.074, -0.22], [0.082, -0.12], [0.084, -0.03], [0.07, 0.02]], 10), sleeve, { ao: 0.18 }),
-      ]);
+      const sleeve = tunic;
+      const upper = [
+        cpart(Sph(1, 12, 8), sleeve, { y: -0.01, sx: 0.084 * limb, sy: 0.08, sz: 0.084 * limb, ao: 0.1 }),
+        cpart(lathe([[0.066 * limb, -0.27], [0.074 * limb, -0.22], [0.082 * limb, -0.12], [0.084 * limb, -0.03], [0.07 * limb, 0.02]], 10), sleeve, { ao: 0.18, mottle: guard ? 0.14 : 0.03 }),
+      ];
+      if (guard) {
+        upper.push(cpart(new THREE.SphereGeometry(0.11 * limb, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), PALETTE.iron, { y: -0.02, x: sx * 0.01, sy: 0.85 }));
+        upper.push(cpart(Tor(0.105 * limb, 0.012, 12), shade(PALETTE.iron, 0.75), { y: -0.02, rx: Math.PI / 2 }));
+      }
+      this.addMesh(j[`arm${side}`], upper);
       const cuff = robe ? tunic : PALETTE.leather;
       this.addMesh(j[`elbow${side}`], [
-        cpart(Cap(0.064, 0.13), robe ? tunic : skin, { y: -0.1 }),
-        cpart(Cyl(robe ? 0.085 : 0.074, robe ? 0.1 : 0.068, robe ? 0.13 : 0.12, 10), cuff, { y: robe ? -0.15 : -0.14, ao: 0.2, mottle: 0.05 }),
-        cpart(Tor(robe ? 0.09 : 0.072, 0.009, 10), robe ? accent : shade(cuff, 0.7), { y: -0.1, rx: Math.PI / 2 }),
-        // Hand: broad palm, knuckle row, curled fingers, separate thumb
-        cpart(Sph(1, 10, 7), skin, { y: -0.245, sx: 0.06, sy: 0.068, sz: 0.048 }),
-        cpart(Sph(1, 10, 7), skin, { y: -0.292, z: 0.016, sx: 0.058, sy: 0.04, sz: 0.05, ao: 0.15 }),
+        cpart(Cap(0.064 * limb, 0.13), robe ? tunic : skin, { y: -0.1 }),
+        cpart(Cyl(robe ? 0.085 : 0.074 * limb, robe ? 0.1 : 0.068 * limb, robe ? 0.13 : 0.12, 10), cuff, { y: robe ? -0.15 : -0.14, ao: 0.2, mottle: 0.05 }),
+        cpart(Tor(robe ? 0.09 : 0.072 * limb, 0.009, 10), robe ? accent : shade(cuff, 0.7), { y: -0.1, rx: Math.PI / 2 }),
+        cpart(Sph(1, 10, 7), skin, { y: -0.245, sx: 0.06 * limb, sy: 0.068, sz: 0.048 }),
+        cpart(Sph(1, 10, 7), skin, { y: -0.292, z: 0.016, sx: 0.058 * limb, sy: 0.04, sz: 0.05, ao: 0.15 }),
         cpart(Cap(0.022, 0.045, 2, 6), skin, { x: -sx * 0.045, y: -0.24, z: 0.035, rz: sx * 0.55, rx: -0.45 }),
       ]);
     }
@@ -271,22 +369,29 @@ export class HeroModel {
     const R = 0.192;
     const head: THREE.BufferGeometry[] = [
       cpart(new THREE.SphereGeometry(R, 18, 12), skin, { y: R * 0.95, sy: 1.04, sz: 0.96 }),
-      // Jaw and chin give the face a less doll-like shape.
-      // Kept inside the head's front surface so it never covers the painted face.
-      cpart(Sph(1, 12, 8), skin, { y: R * 0.48, z: R * 0.08, sx: R * 0.86, sy: R * 0.58, sz: R * 0.66 }),
+      cpart(Sph(1, 12, 8), skin, { y: R * 0.48, z: R * 0.08, sx: R * 0.86 * (guard ? 1.06 : 1), sy: R * 0.58, sz: R * 0.66 }),
       cpart(Sph(1, 10, 8), skin, { x: -R * 0.98, y: R * 0.9, sx: 0.035, sy: 0.05, sz: 0.035 }),
       cpart(Sph(1, 10, 8), skin, { x: R * 0.98, y: R * 0.9, sx: 0.035, sy: 0.05, sz: 0.035 }),
-      cpart(Sph(1, 10, 8), shade(skin, 0.97), { y: R * 0.8, z: R * 0.94, sx: 0.024, sy: 0.026, sz: 0.026 }),
+      cpart(Sph(1, 10, 8), shade(skin, 0.97), { y: R * 0.8, z: R * 0.94, sx: 0.024 * (guard ? 1.2 : 1), sy: 0.026, sz: 0.026 }),
     ];
-    this.buildHair(head, look.hair, look.hairStyle % 5, R);
-    if (look.beard) head.push(cpart(Sph(1, 12, 10), look.hair, { y: R * 0.35, z: R * 0.55, sx: 0.15, sy: 0.12, sz: 0.1 }));
+    if (!look.helmet) this.buildHair(head, look.hair, look.hairStyle % 5, R);
+    if (look.beard) {
+      // Full beard hugging the jaw, and a moustache.
+      head.push(cpart(Sph(1, 12, 9), look.hair, { y: R * 0.4, z: R * 0.42, sx: R * 0.92, sy: R * 0.62, sz: R * 0.6, mottle: 0.08 }));
+      head.push(cpart(Sph(1, 10, 6), shade(look.hair, 1.1), { y: R * 0.62, z: R * 0.86, sx: R * 0.42, sy: R * 0.12, sz: R * 0.16 }));
+    }
+    if (look.helmet) {
+      // Kettle hat: steel crown with a wide brim.
+      head.push(cpart(new THREE.SphereGeometry(R * 1.12, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), PALETTE.iron, { y: R * 1.15, sy: 0.85 }));
+      head.push(cpart(Cyl(R * 1.5, R * 1.55, 0.025, 16), shade(PALETTE.iron, 0.85), { y: R * 1.13 }));
+      head.push(cpart(Tor(R * 1.12, 0.014, 16), shade(PALETTE.iron, 0.7), { y: R * 1.16, rx: Math.PI / 2 }));
+    }
     this.addMesh(j.head, head);
 
-    // Painted face decal on a spherical patch just above the skin.
     const eyes = look.eyes ?? '#4a7a3a';
     const brows = look.hair === '#e8e8e8' ? '#b9b9b9' : shade(look.hair, 0.8);
-    this.faceOpen = faceTexture({ eyes, skin, brows, blush: !look.elder, elder: look.elder });
-    this.faceClosed = faceTexture({ eyes, skin, brows, blush: !look.elder, elder: look.elder, closed: true });
+    this.faceOpen = faceTexture({ eyes, skin, brows, blush: !look.elder && !look.beard, elder: look.elder });
+    this.faceClosed = faceTexture({ eyes, skin, brows, blush: !look.elder && !look.beard, elder: look.elder, closed: true });
     this.faceMat = new THREE.MeshLambertMaterial({ map: this.faceOpen, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
     if (this.faceOpen) {
       const faceGeo = new THREE.SphereGeometry(R * 1.006, 12, 8, Math.PI / 2 - 1.05, 2.1, 0.32 * Math.PI, 0.5 * Math.PI);
@@ -363,6 +468,7 @@ export class HeroModel {
     m.castShadow = true;
     g.add(m);
     if (extra) g.add(extra);
+    // Default grip: handle runs along the tool's +y, held at the palm, pointing forward.
     g.rotation.x = Math.PI / 2;
     g.position.y = -0.03;
     return g;
@@ -382,13 +488,7 @@ export class HeroModel {
         cpart(new THREE.ConeGeometry(0.012, 0.09, 4), steel, { y: 0.78, sz: 0.35, sx: 3.7 }),
       ]),
     );
-    const bow = this.toolMesh([
-      cpart(Tor(0.42, 0.022, 18, Math.PI * 0.85), wood, { rz: Math.PI / 2 + Math.PI * 0.075 }),
-      cpart(Cyl(0.03, 0.03, 0.12, 8), PALETTE.leather, { x: 0.42 }),
-      cpart(Cyl(0.005, 0.005, 0.82, 4), '#f2efe6', { x: 0.2 }),
-    ]);
-    bow.rotation.set(Math.PI / 2, Math.PI / 2, 0);
-    this.tools.set('bow', bow);
+    this.buildBow(wood);
     const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.075, 1), new THREE.MeshBasicMaterial({ color: '#b39cff' }));
     orb.position.y = 0.98;
     this.tools.set(
@@ -426,14 +526,94 @@ export class HeroModel {
         cpart(Sph(0.04, 8, 6), '#7fe0c0', { y: 1.13, z: 0.05 }),
       ]),
     );
-    // A walking staff stands upright beside the body instead of pointing forward.
-    const ws = this.tools.get('walkingstaff')!;
-    ws.rotation.set(0, 0, 0.06);
-    ws.position.set(0, -0.4, 0.02);
+    this.tools.set(
+      'spear',
+      this.toolMesh([
+        cpart(Cyl(0.024, 0.028, 2.0, 7), '#7a5232', { y: 0.2 }),
+        cpart(new THREE.ConeGeometry(0.05, 0.26, 4), steel, { y: 1.33, sz: 0.4 }),
+        cpart(Cyl(0.034, 0.03, 0.08, 8), PALETTE.iron, { y: 1.17 }),
+        cpart(Tor(0.03, 0.01, 8), '#3a5fb0', { y: 1.1, rx: Math.PI / 2 }),
+      ]),
+    );
+    // Upright carries: grounded beside the body instead of pointing forward.
+    for (const k of ['walkingstaff', 'spear'] as const) {
+      const t = this.tools.get(k)!;
+      t.position.set(0, k === 'spear' ? -0.62 : -0.4, 0);
+    }
     for (const [k, t] of this.tools) {
       t.visible = false;
-      (k === 'bow' ? this.handL : this.handR).add(t);
+      if (k === 'bow') continue;
+      this.handR.add(t);
     }
+  }
+
+  /**
+   * Bow built in "bow space": the riser/grip sits at the origin (in the palm), the limbs run along ±y,
+   * the belly faces +x (toward the target) and the string sits behind the grip at −x. The string is two
+   * segments meeting at a nock point that moves back as the bow is drawn.
+   */
+  private buildBow(wood: string) {
+    const Rb = 0.9;
+    const half = 0.66;
+    const limbs = new THREE.TorusGeometry(Rb, 0.02, 5, 18, half * 2);
+    limbs.rotateZ(-half);
+    limbs.translate(-Rb, 0, 0);
+    const tipX = Rb * Math.cos(half) - Rb;
+    const tipY = Rb * Math.sin(half);
+    this.bowTip = { x: tipX, y: tipY };
+    const bowGeo = cmerge([
+      cpart(limbs, wood, { mottle: 0.05 }),
+      cpart(Cyl(0.03, 0.03, 0.16, 8), PALETTE.leather, { mottle: 0.06 }),
+      cpart(Sph(0.028, 8, 6), PALETTE.gold, { x: tipX + 0.01, y: tipY }),
+      cpart(Sph(0.028, 8, 6), PALETTE.gold, { x: tipX + 0.01, y: -tipY }),
+      cpart(new THREE.BoxGeometry(0.03, 0.02, 0.02), PALETTE.leatherDark, { x: 0.035, y: 0.07 }),
+    ]);
+    this.geometries.push(bowGeo);
+    const bow = new THREE.Group();
+    const body = new THREE.Mesh(bowGeo, this.material);
+    body.castShadow = true;
+    bow.add(body);
+    const stringMat = new THREE.MeshBasicMaterial({ color: '#f2efe6' });
+    const strGeo = new THREE.CylinderGeometry(0.006, 0.006, 1, 4);
+    this.geometries.push(strGeo);
+    for (let i = 0; i < 2; i++) {
+      const sm = new THREE.Mesh(strGeo, stringMat);
+      sm.userData.noGhost = true;
+      this.bowString.push(sm);
+      bow.add(sm);
+    }
+    // Nocked arrow (shown while drawing): shaft along +x from the nock.
+    const arrowGeo = cmerge([
+      cpart(Cyl(0.009, 0.009, 0.72, 5), '#c9a36a', { rz: Math.PI / 2, x: 0.36 }),
+      cpart(new THREE.ConeGeometry(0.022, 0.07, 4), '#9aa0a8', { rz: -Math.PI / 2, x: 0.75 }),
+      cpart(new THREE.BoxGeometry(0.1, 0.035, 0.004), '#f2f2f2', { x: 0.06 }),
+      cpart(new THREE.BoxGeometry(0.1, 0.004, 0.035), '#e85d5d', { x: 0.06 }),
+    ]);
+    this.geometries.push(arrowGeo);
+    this.nockedArrow.add(new THREE.Mesh(arrowGeo, this.material));
+    this.nockedArrow.visible = false;
+    bow.add(this.nockedArrow);
+    this.bowMount.add(bow);
+    this.bowMount.visible = false;
+    this.handL.add(this.bowMount);
+    this.tools.set('bow', this.bowMount);
+    this.updateBowString(0);
+  }
+
+  private updateBowString(draw: number) {
+    const { x: tx, y: ty } = this.bowTip;
+    const nx = tx - draw * 0.5;
+    const up = new THREE.Vector3(0, 1, 0);
+    for (const [i, sy] of [[0, ty], [1, -ty]] as const) {
+      const a = new THREE.Vector3(tx, sy, 0);
+      const b = new THREE.Vector3(nx, 0, 0);
+      const d = b.clone().sub(a);
+      const m = this.bowString[i];
+      m.position.copy(a).addScaledVector(d, 0.5);
+      m.quaternion.setFromUnitVectors(up, d.clone().normalize());
+      m.scale.set(1, d.length(), 1);
+    }
+    this.nockedArrow.position.set(nx, 0, 0.012);
   }
 
   setTool(tool: HeldTool) {
@@ -446,91 +626,162 @@ export class HeroModel {
     this.flash = 0.18;
   }
 
+  /** Angular velocity of the root's facing (rad/s), used to lean into turns. */
+  setTurnRate(rate: number) {
+    this.turnRate = rate;
+  }
+
+  /**
+   * Combat stance inputs. `ready` raises/levels the weapon from its relaxed carry; for bows,
+   * `aim` raises the bow to shooting position and `draw` (0..1) pulls the string to the anchor.
+   */
+  setCombat(ready: number, aim: number, draw: number) {
+    this.readyIn = ready;
+    this.aimIn = aim;
+    this.drawIn = draw;
+  }
+
+  /** World position arrows leave from (the arrow rest at the bow's grip). Returns false if no bow is raised. */
+  projectileOrigin(out: THREE.Vector3): boolean {
+    if (this.held !== 'bow') return false;
+    this.root.updateWorldMatrix(true, true);
+    out.set(0.03, 0.02, 0).applyMatrix4(this.bowMount.matrixWorld);
+    return true;
+  }
+
   private set(n: JointName, x: number, y = 0, z = 0) {
     this.target.get(n)!.set(x, y, z);
+  }
+
+  private add(n: JointName, x: number, y = 0, z = 0) {
+    this.target.get(n)!.add(tmpV.set(x, y, z));
   }
 
   /** Animate one frame (same contract as the classic Humanoid). */
   update(dt: number, pose: HumanoidPose, speed: number, swingAge: number, time: number) {
     for (const n of JOINTS) this.target.get(n)!.set(0, 0, 0);
     const ht = this.hipTarget.set(0, 0, 0);
-    // Rest pose: grounded A-stance, soft knees, arms hanging clear of a broad torso.
+    const kAim = 1 - Math.exp(-dt * 9);
+    this.aim += (this.aimIn - this.aim) * kAim;
+    this.ready += (this.readyIn - this.ready) * (1 - Math.exp(-dt * 6));
+    const archer = this.held === 'bow' && this.aim > 0.02;
+    const oldK = this.old ? 1 : 0;
+
+    // Rest pose: grounded A-stance, soft knees, arms hanging clear of the torso.
     this.set('armL', 0.04, 0, 0.17);
     this.set('armR', 0.04, 0, -0.17);
     this.set('elbowL', -0.2);
     this.set('elbowR', -0.2);
-    this.set('thighL', -0.04, 0, -0.05);
-    this.set('thighR', 0.02, 0, 0.05);
-    this.set('kneeL', 0.08);
-    this.set('kneeR', 0.06);
-    this.set('spine', 0.03);
+    this.set('spine', 0.03 + oldK * 0.14);
+    this.set('head', -oldK * 0.1);
+    if (this.held === 'bow') {
+      // Carry the bow low at the side, hand relaxed.
+      this.set('armL', 0.08, 0, 0.2);
+      this.set('elbowL', -0.35);
+    }
+    if (this.held === 'walkingstaff' || this.held === 'spear') {
+      this.set('armR', -0.25, 0, -0.22);
+      this.set('elbowR', -0.75);
+    }
     let snap = 14;
-
     if (pose !== 'dead') this.deadT = 0;
-    const moving = pose === 'walk' || (pose === 'attack' && speed > 0.5);
-    if (moving) {
-      this.walkPhase += dt * (3.2 + speed * 1.55);
-      const ph = this.walkPhase;
-      const s = Math.sin(ph);
-      const amp = Math.min(1, 0.45 + speed * 0.13);
-      const c = Math.cos(ph);
-      this.set('thighL', -s * 0.55 * amp, 0, -0.03);
-      this.set('thighR', s * 0.55 * amp, 0, 0.03);
-      // Knee folds during the swing-through and stays soft at contact.
-      this.set('kneeL', Math.max(0, Math.sin(ph - 1.25)) * 0.95 * amp + 0.12);
-      this.set('kneeR', Math.max(0, Math.sin(ph + Math.PI - 1.25)) * 0.95 * amp + 0.12);
-      ht.y = -0.035 + Math.abs(c) * 0.04;
-      // Pelvis twists with the stride and drops over the swinging leg; chest counter-rotates.
-      this.set('hips', 0, s * 0.12, c * 0.035);
-      this.set('spine', 0.06 * amp, -s * 0.16, -c * 0.03);
-      this.set('head', -0.03, s * 0.06, c * 0.015);
-      if (pose === 'walk') {
-        this.set('armL', s * 0.42 * amp, 0, 0.15);
-        this.set('armR', -s * 0.42 * amp, 0, -0.15);
-        this.set('elbowL', -0.3 - Math.max(0, -s) * 0.4);
-        this.set('elbowR', -0.3 - Math.max(0, s) * 0.4);
+
+    // ---- locomotion (legs are solved by IK so planted feet stay put)
+    const moving = speed > 0.3 && (pose === 'walk' || pose === 'attack' || pose === 'talk');
+    this.loco += ((moving ? 1 : 0) - this.loco) * (1 - Math.exp(-dt * 10));
+    const g = gaitParams(Math.max(speed, 0.0) * (this.old ? 1.25 : 1));
+    if (moving) this.gaitPhase = (this.gaitPhase + g.cadence * (this.old ? 0.8 : 1) * dt) % 1;
+    const w = this.loco;
+    const restHip = RIG.hipY;
+    const baseHip = restHip - lerp(0.012, g.crouch, w);
+    const legAngles: Record<'L' | 'R', [number, number, number]> = { L: [0, 0, 0], R: [0, 0, 0] };
+    let hipH = baseHip;
+    const feet = {
+      L: footAt(this.gaitPhase, g.stance, g.stride, g.lift),
+      R: footAt(this.gaitPhase + 0.5, g.stance, g.stride, g.lift),
+    };
+    if (w > 0.001) {
+      // Lower the hips just enough that planted feet stay on the ground (natural, small bob).
+      const reach = RIG.thigh + RIG.shin - 0.015;
+      for (const side of ['L', 'R'] as const) {
+        const f = feet[side];
+        if (!f.planted) continue;
+        const need = Math.sqrt(Math.max(0.01, reach * reach - f.z * f.z)) + RIG.ankleH - RIG.hipJointY;
+        hipH = Math.min(hipH, lerp(restHip, need, w));
       }
-      snap = 18;
+      hipH += g.run * 0.022 * w * Math.max(0, Math.sin(this.gaitPhase * Math.PI * 4));
+    }
+    for (const side of ['L', 'R'] as const) {
+      const f = feet[side];
+      const zf = f.z * w + (side === 'L' ? 0.015 : -0.01) * (1 - w);
+      const dy = -(hipH + RIG.hipJointY - RIG.ankleH - f.lift * w);
+      const [th, kn] = legIK(zf, dy);
+      // Foot flat while planted; slight toe-down at lift-off, toe-up as it swings through.
+      const swingU = f.planted ? 0 : Math.sin(Math.PI * Math.min(1, (((side === 'L' ? this.gaitPhase : this.gaitPhase + 0.5) % 1) - g.stance) / (1 - g.stance)));
+      const ankle = -(th + kn) + (f.planted ? 0 : (0.35 * swingU - 0.15) * w);
+      legAngles[side] = [th, kn, ankle];
+    }
+    this.set('thighL', legAngles.L[0], 0, -0.05 * (1 - w) - 0.02 * w);
+    this.set('kneeL', legAngles.L[1]);
+    this.set('ankleL', legAngles.L[2]);
+    this.set('thighR', legAngles.R[0], 0, 0.05 * (1 - w) + 0.02 * w);
+    this.set('kneeR', legAngles.R[1]);
+    this.set('ankleR', legAngles.R[2]);
+    ht.y = hipH - RIG.hipY;
+
+    if (w > 0.001) {
+      // Counter-rotation: pelvis turns with the forward leg, shoulders the other way; relaxed arm swing.
+      const zl = feet.L.z / (g.stride / 2);
+      const zr = feet.R.z / (g.stride / 2);
+      const hipYaw = 0.11 * zl * w;
+      this.add('hips', 0, hipYaw, 0.025 * Math.cos(this.gaitPhase * Math.PI * 2) * w);
+      this.add('spine', lerp(0.03, 0.13, g.run) * w, -hipYaw * 1.6, -this.turnRate * 0.045 * w);
+      this.add('head', -lerp(0.01, 0.07, g.run) * w, hipYaw * 0.5, this.turnRate * 0.02 * w);
+      const armAmp = lerp(0.28, 0.5, g.run) * w;
+      const elbowBase = lerp(0.28, 1.15, g.run);
+      if (!(archer && this.aim > 0.5)) {
+        if (this.held !== 'bow') {
+          this.add('armL', zl * armAmp, 0, -0.02 * w);
+          this.set('elbowL', -(elbowBase + 0.3 * Math.max(0, -zl)) * w - 0.2 * (1 - w));
+        } else {
+          this.add('armL', zl * armAmp * 0.6, 0, 0);
+        }
+      }
+      if (this.held !== 'walkingstaff' && this.held !== 'spear') {
+        this.add('armR', zr * armAmp, 0, 0.02 * w);
+        this.set('elbowR', -(elbowBase + 0.3 * Math.max(0, -zr)) * w - 0.2 * (1 - w));
+      }
+      snap = 16;
     } else if (pose !== 'dead') {
       const br = Math.sin(time * 2.1);
-      ht.y = br * 0.008;
-      ht.x = Math.sin(time * 0.7) * 0.012;
-      this.set('hips', 0, 0, Math.sin(time * 0.7) * 0.03);
-      this.set('spine', br * 0.015, 0, -Math.sin(time * 0.7) * 0.03);
-      this.set('head', Math.sin(time * 0.9) * 0.04, Math.sin(time * 0.45) * 0.25, 0);
-      this.set('armL', 0.05 + br * 0.02, 0, 0.13 + br * 0.02);
-      this.set('armR', 0.05 + br * 0.02, 0, -0.13 - br * 0.02);
+      ht.x = Math.sin(time * 0.7) * 0.01;
+      ht.y += br * 0.006;
+      this.add('hips', 0, 0, Math.sin(time * 0.7) * 0.025);
+      this.add('spine', br * 0.012, 0, -Math.sin(time * 0.7) * 0.025);
+      this.add('head', Math.sin(time * 0.9) * 0.035, Math.sin(time * 0.45) * 0.22, 0);
+      this.add('armL', br * 0.02, 0, br * 0.015);
+      this.add('armR', br * 0.02, 0, -br * 0.015);
     }
 
-    if (pose === 'attack') {
+    // ---- archery (driven by aim/draw so the draw happens BEFORE the arrow is released)
+    if (archer) this.applyArchery(swingAge);
+
+    if (pose === 'attack' && !(this.held === 'bow')) {
       snap = 30;
       const t = Math.min(1, swingAge / 0.45);
       if (this.style === 'melee') {
-        // Anticipation → strike → follow-through, with a lunge and torso twist.
         const wind = t < 0.3 ? easeOut(t / 0.3) : 0;
         const strike = t >= 0.3 && t < 0.55 ? easeIn((t - 0.3) / 0.25) : t >= 0.55 ? 1 : 0;
         const rec = t >= 0.55 ? easeInOut((t - 0.55) / 0.45) : 0;
         const k = strike * (1 - rec);
         this.set('armR', -0.3 - wind * 2.3 * (1 - strike) + k * 0.25, 0, -0.35 - wind * 0.3);
         this.set('elbowR', -0.5 - wind * 0.6 + k * 0.4);
-        this.set('spine', -0.1 * wind + 0.2 * k, 0.5 * wind - 0.55 * k, 0);
+        this.add('spine', -0.1 * wind + 0.2 * k, 0.5 * wind - 0.55 * k, 0);
         this.set('armL', -0.3 * k + 0.15, 0, 0.35);
-        if (!moving) {
-          this.set('thighL', -0.55 * k);
-          this.set('kneeL', 0.45 * k);
-          this.set('thighR', 0.3 * k);
-          ht.z = 0.08 * k;
-          ht.y = -0.05 * k;
+        if (w < 0.5) {
+          ht.z = 0.06 * k;
+          ht.y -= 0.03 * k;
         }
-      } else if (this.style === 'ranged') {
-        const draw = t < 0.6 ? easeOut(t / 0.6) : 0;
-        const rel = t >= 0.6 ? 1 - (t - 0.6) / 0.4 : 0;
-        this.set('spine', 0, -0.45, 0);
-        this.set('head', 0, 0.42, 0);
-        this.set('armL', -1.5, 0.35, 0.1);
-        this.set('elbowL', -0.05);
-        this.set('armR', -1.45, 0.35 - draw * 0.2 + rel * 0.4, -0.1);
-        this.set('elbowR', -0.4 - draw * 1.7);
       } else {
         const raise = Math.sin(Math.min(1, t * 1.25) * Math.PI);
         const thrust = t > 0.3 && t < 0.6 ? Math.sin(((t - 0.3) / 0.3) * Math.PI) : 0;
@@ -538,8 +789,8 @@ export class HeroModel {
         this.set('elbowR', -0.6 + thrust * 0.5);
         this.set('armL', -0.9 - raise * 0.4, 0, 0.45);
         this.set('elbowL', -0.9);
-        this.set('spine', -0.12 * raise + 0.15 * thrust, 0, 0);
-        ht.y = raise * 0.04;
+        this.add('spine', -0.12 * raise + 0.15 * thrust, 0, 0);
+        ht.y += raise * 0.03;
       }
     } else if (pose === 'chop' || pose === 'mine') {
       snap = 24;
@@ -550,14 +801,18 @@ export class HeroModel {
       this.set('elbowR', -0.25 - up * 0.5);
       this.set('elbowL', -0.4 - up * 0.4);
       this.set('spine', 0.28 - up * 0.42, 0.1, 0);
-      this.set('thighL', -0.35);
-      this.set('kneeL', 0.35);
-      this.set('thighR', 0.22);
-      this.set('kneeR', 0.15);
-      ht.y = -0.06 + up * 0.03;
-    } else if (pose === 'talk') {
-      const g = Math.sin(time * 4.2);
-      this.set('armR', -0.75 + g * 0.18, 0, -0.35);
+      const [th1, kn1] = legIK(0.22, -(RIG.hipY - 0.06 + RIG.hipJointY - RIG.ankleH));
+      const [th2, kn2] = legIK(-0.14, -(RIG.hipY - 0.06 + RIG.hipJointY - RIG.ankleH));
+      this.set('thighL', th1, 0, -0.05);
+      this.set('kneeL', kn1);
+      this.set('ankleL', -(th1 + kn1));
+      this.set('thighR', th2, 0, 0.05);
+      this.set('kneeR', kn2);
+      this.set('ankleR', -(th2 + kn2));
+      ht.y = -0.06 + up * 0.02;
+    } else if (pose === 'talk' && w < 0.5) {
+      const gst = Math.sin(time * 4.2);
+      this.set('armR', -0.75 + gst * 0.18, 0, -0.35);
       this.set('elbowR', -0.9);
       this.set('head', 0.08 + Math.sin(time * 3) * 0.06, Math.sin(time * 0.6) * 0.2, 0);
     } else if (pose === 'dead') {
@@ -572,26 +827,35 @@ export class HeroModel {
       this.set('thighL', -e * 0.3);
       this.set('thighR', -e * 0.1);
       this.set('kneeL', e * 0.6);
+      this.set('kneeR', 0);
+      this.set('ankleL', 0);
+      this.set('ankleR', 0);
       this.set('head', e * 0.3);
     }
 
     if (this.flash > 0) {
       this.flash -= dt;
-      const sp = this.target.get('spine')!;
-      sp.x -= 0.22;
+      this.target.get('spine')!.x -= 0.22;
     }
 
-    // Critically damped blend toward the target pose for smooth transitions.
+    // Blend toward the target pose. Legs follow IK directly while moving so feet never slide.
     const k = 1 - Math.exp(-dt * snap);
+    const kLeg = lerp(k, 1, w);
     for (const n of JOINTS) {
       const tg = this.target.get(n)!;
       const r = this.joints[n].rotation;
-      r.x += (tg.x - r.x) * k;
-      r.y += (tg.y - r.y) * k;
-      r.z += (tg.z - r.z) * k;
+      const kk = LEG_JOINTS.has(n) ? kLeg : n === 'armR' || n === 'elbowR' || n === 'armL' || n === 'elbowL' ? Math.max(k, archer ? 1 - Math.exp(-dt * 22) : 0) : k;
+      r.x += (tg.x - r.x) * kk;
+      r.y += (tg.y - r.y) * kk;
+      r.z += (tg.z - r.z) * kk;
     }
-    this.hipOffset.lerp(ht, k);
-    this.joints.hips.position.set(this.hipOffset.x, 0.92 + this.hipOffset.y, this.hipOffset.z);
+    const kh = lerp(k, 1 - Math.exp(-dt * 30), w);
+    this.hipOffset.x += (ht.x - this.hipOffset.x) * k;
+    this.hipOffset.y += (ht.y - this.hipOffset.y) * kh;
+    this.hipOffset.z += (ht.z - this.hipOffset.z) * k;
+    this.joints.hips.position.set(this.hipOffset.x, RIG.hipY + this.hipOffset.y, this.hipOffset.z);
+
+    this.updateCarry(swingAge);
 
     // Blink
     this.blinkT -= dt;
@@ -602,6 +866,93 @@ export class HeroModel {
 
     const f = this.flash > 0 ? 1 : 0;
     this.material.emissive.setRGB(0.75 * f, 0.15 * f, 0.1 * f);
+  }
+
+  /** Side-on archer stance: bow arm extended at the target, draw hand pulled to the anchor by planar IK. */
+  private applyArchery(swingAge: number) {
+    const a = this.aim;
+    const released = swingAge < 0.14;
+    const draw = released ? 0 : this.drawIn;
+    const turn = 0.85;
+    this.add('spine', 0, turn * a, 0);
+    this.add('hips', 0, 0.3 * a, 0);
+    this.add('head', 0, -(turn + 0.3) * a, 0);
+    // Bow arm: horizontal, pointing at the target (spine frame direction (−cos β, 0, sin β)).
+    const beta = Math.PI / 2 - (turn + 0.3);
+    const tL = this.target.get('armL')!;
+    tL.set(lerp(tL.x, 0, a), lerp(tL.y, beta, a), lerp(tL.z, -Math.PI / 2, a));
+    const eL = this.target.get('elbowL')!;
+    eL.x = lerp(eL.x, -0.06, a);
+    // Draw hand target: along the arrow line from the bow hand back toward the chin.
+    const dir = tmpV.set(-Math.cos(beta), 0, Math.sin(beta));
+    const armLen = RIG.upperArm + 0.255;
+    const sL = tmpV2.set(-this.shoulderX, 0.355, 0);
+    const reachBack = 0.18 + draw * 0.5 + (released ? 0.08 : 0);
+    const T = { x: sL.x + dir.x * (armLen - reachBack), z: sL.z + dir.z * (armLen - reachBack) };
+    const S = { x: this.shoulderX, z: 0 };
+    const vx = T.x - S.x;
+    const vz = T.z - S.z;
+    const a1 = RIG.upperArm;
+    const a2 = RIG.forearm;
+    const d = Math.min(Math.max(Math.hypot(vx, vz), 0.05), a1 + a2 - 1e-3);
+    const base = Math.atan2(vz, vx);
+    const A = Math.acos(Math.min(1, Math.max(-1, (a1 * a1 + d * d - a2 * a2) / (2 * a1 * d))));
+    // Elbow kept out and back, away from the chest.
+    const ang = base - A;
+    const ux = Math.cos(ang);
+    const uz = Math.sin(ang);
+    const ex = S.x + ux * a1;
+    const ez = S.z + uz * a1;
+    const fx = (T.x - ex) / a2;
+    const fz = (T.z - ez) / a2;
+    // Arm Euler (0, βr, π/2): upper-arm direction (cos βr, 0, −sin βr), front (sin βr, 0, cos βr).
+    const betaR = Math.atan2(-uz, ux);
+    const zx = Math.sin(betaR);
+    const zz = Math.cos(betaR);
+    const kappa = Math.atan2(-(fx * zx + fz * zz), fx * ux + fz * uz);
+    const tR = this.target.get('armR')!;
+    tR.set(lerp(tR.x, 0, a), lerp(tR.y, betaR, a), lerp(tR.z, Math.PI / 2, a));
+    const eR = this.target.get('elbowR')!;
+    eR.x = lerp(eR.x, kappa, a);
+  }
+
+  /** Weapon carry vs. ready orientation, and the bow's world-space alignment. */
+  private updateCarry(swingAge: number) {
+    const sword = this.tools.get('sword')!;
+    sword.rotation.x = Math.PI / 2 + 0.85 * (1 - this.ready);
+    const staff = this.tools.get('staff')!;
+    staff.rotation.x = (Math.PI / 2) * this.ready + 0.06 * (1 - this.ready);
+    staff.position.y = lerp(-0.42, -0.03, this.ready);
+    if (this.held === 'walkingstaff' || this.held === 'spear') {
+      // Grounded carry: keep the shaft near-vertical in world space whatever the forearm does.
+      const t = this.tools.get(this.held)!;
+      this.root.updateWorldMatrix(true, true);
+      const rq = this.root.getWorldQuaternion(new THREE.Quaternion());
+      const hq = this.handR.getWorldQuaternion(new THREE.Quaternion());
+      const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.06, 0, -0.06));
+      t.quaternion.copy(hq.invert().multiply(rq).multiply(tilt));
+      t.position.set(0, this.held === 'spear' ? -0.62 : -0.4, 0).applyQuaternion(t.quaternion);
+      return;
+    }
+    if (this.held !== 'bow') return;
+    // Carry: limbs vertical along the leg, belly forward, in hand space.
+    const qCarry = tmpQa.setFromRotationMatrix(tmpMb.makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0)));
+    // Tilt it so the upper limb swings forward and out, clear of the arm and leg.
+    qCarry.premultiply(tmpQb.setFromEuler(new THREE.Euler(0.75, 0, 0.3)));
+    // Aim: limbs vertical (slight cant), belly toward the character's facing, converted into hand space.
+    this.root.updateWorldMatrix(true, true);
+    const rootQ = new THREE.Quaternion();
+    this.root.getWorldQuaternion(rootQ);
+    const desired = new THREE.Quaternion().setFromRotationMatrix(tmpMb.makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-1, 0, 0)));
+    desired.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -0.12));
+    const handQ = new THREE.Quaternion();
+    this.handL.getWorldQuaternion(handQ);
+    const aimLocal = tmpQb.copy(handQ).invert().multiply(rootQ).multiply(desired);
+    this.bowMount.quaternion.copy(qCarry).slerp(aimLocal, this.aim);
+    const released = swingAge < 0.14;
+    const draw = this.aim > 0.6 && !released ? this.drawIn : 0;
+    this.updateBowString(draw * this.aim);
+    this.nockedArrow.visible = this.aim > 0.6 && !released && this.drawIn > 0.02;
   }
 
   enableSilhouette(color = '#3b5bdb') {
@@ -637,6 +988,26 @@ export class HeroModel {
       n += (g.index ? g.index.count : g.getAttribute('position').count) / 3;
     });
     return n;
+  }
+
+  /** World positions of the sole centres (for tests/diagnostics). */
+  soleWorld(side: 'L' | 'R', out: THREE.Vector3): THREE.Vector3 {
+    this.root.updateWorldMatrix(true, true);
+    return out.set(0, -RIG.ankleH, 0.04).applyMatrix4(this.joints[`ankle${side}`].matrixWorld);
+  }
+
+  /** World positions of the hands and the bow parts (for tests/diagnostics). */
+  debugBow() {
+    this.root.updateWorldMatrix(true, true);
+    const grip = new THREE.Vector3().applyMatrix4(this.bowMount.matrixWorld);
+    const handL = new THREE.Vector3(0, 0, 0).applyMatrix4(this.handL.matrixWorld);
+    const handR = new THREE.Vector3(0, -0.04, 0).applyMatrix4(this.handR.matrixWorld);
+    // The two string segments meet at the nock point: midpoint = (tip + nock) / 2.
+    const nock = new THREE.Vector3(2 * this.bowString[0].position.x - this.bowTip.x, 0, 0).applyMatrix4(this.bowMount.matrixWorld);
+    const up = new THREE.Vector3(0, 1, 0).transformDirection(this.bowMount.matrixWorld);
+    const belly = new THREE.Vector3(1, 0, 0).transformDirection(this.bowMount.matrixWorld);
+    const stringLocalX = this.bowTip.x;
+    return { grip, handL, handR, nock, up, belly, stringLocalX };
   }
 
   dispose() {

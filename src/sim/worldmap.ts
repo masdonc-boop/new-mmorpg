@@ -87,7 +87,8 @@ export interface WorldMap {
   resources: { type: ResourceType; x: number; z: number }[];
   decor: Decor[];
   enemySpawns: { type: EnemyType; x: number; z: number }[];
-  npcs: { id: NpcId; x: number; z: number; facing: number }[];
+  /** `patrol`: waypoints for NPCs that walk a route (their tile is left unblocked). */
+  npcs: { id: NpcId; x: number; z: number; facing: number; patrol?: { x: number; z: number }[] }[];
   spawn: { x: number; z: number };
   regions: Region[];
   checkpoints: Checkpoint[];
@@ -420,10 +421,21 @@ export function generateWorld(seed = 1337): WorldMap {
   const npcs: WorldMap['npcs'] = [
     { id: 'elder', x: 56.5, z: 59.6, facing: 0 },
     { id: 'merchant', x: 60.2, z: 64.4, facing: -2.4 },
-    { id: 'guard', x: 70.5, z: 66.2, facing: -S / 2 },
+    {
+      id: 'guard',
+      x: 70.5,
+      z: 66.2,
+      facing: -S / 2,
+      // Walks the east road just outside the plaza.
+      patrol: [
+        { x: 70.5, z: 66.2 },
+        { x: 73.8, z: 64.4 },
+        { x: 64.8, z: 65.6 },
+      ],
+    },
     { id: 'smith', x: 62.6, z: 73.4, facing: -S / 2 },
   ];
-  for (const n of npcs) blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
+  for (const n of npcs) if (!n.patrol) blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
 
   // --- Enemy spawns ---
   const enemySpawns: WorldMap['enemySpawns'] = [];

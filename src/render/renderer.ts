@@ -1,16 +1,17 @@
 import * as THREE from 'three';
 import { lerp } from '../core/math';
-import { NPCS } from '../data/npcs';
+import { NPCS, type NpcId } from '../data/npcs';
+import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { groundHeight } from '../sim/worldmap';
-import { Enemy, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
+import { Enemy, NPC_WALK_SPEED, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool, type HumanoidLook } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, ResourceView, type StaticWorld } from './props';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
-import { HeroModel } from './hero';
+import { HeroModel, type HeroLook } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
 
@@ -34,6 +35,15 @@ interface NpcView {
 export type PickResult = { kind: 'entity'; id: number } | { kind: 'ground'; x: number; z: number } | null;
 
 const SKY = '#9fd6ef';
+
+/**
+ * Human NPCs converted to the shared hero rig (prototype set). Each keeps the same anatomy and
+ * animation as the player; variety comes from age, build, outfit, hair and accessories.
+ */
+const HERO_NPC_LOOKS: Partial<Record<NpcId, { look: Partial<HeroLook>; tool: HeldTool }>> = {
+  elder: { look: { elder: true, age: 'old', eyes: '#5b6fa8', outer: '#d9cba8', accent: '#e3b64a', build: 0.95, height: 0.97 }, tool: 'walkingstaff' },
+  guard: { look: { armor: 'guard', helmet: true, beard: true, build: 1.12, height: 1.04, eyes: '#5a3a24', outer: '#5b5f68', accent: '#c9a45c' }, tool: 'spear' },
+};
 
 export class GameRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -105,9 +115,10 @@ export class GameRenderer {
       const l = NPCS[npc.def.id].look;
       // Phase 2A prototype: Elder Maren is the showcase NPC for the new character style.
       let model: CharacterRig;
-      if (ART.v2 && npc.def.id === 'elder') {
-        const hero = new HeroModel({ ...l, elder: true, eyes: '#5b6fa8', outer: '#d9cba8', accent: '#e3b64a' });
-        hero.setTool('walkingstaff');
+      const heroLook = ART.v2 ? HERO_NPC_LOOKS[npc.def.id] : undefined;
+      if (heroLook) {
+        const hero = new HeroModel({ ...l, ...heroLook.look });
+        hero.setTool(heroLook.tool);
         model = hero;
       } else model = new Humanoid({ ...l });
       model.root.position.set(npc.x, groundHeight(map, npc.x, npc.z), npc.z);
@@ -226,6 +237,7 @@ export class GameRenderer {
     const py = groundHeight(map, px, pz);
     const pm = this.playerModel;
     pm.root.position.set(px, py, pz);
+    const prevYaw = pm.root.rotation.y;
     pm.root.rotation.y = smoothAngle(pm.root.rotation.y, p.facing, dt * 14);
     const gathering = world.isGathering;
     const node = world.gatheringNode;
@@ -238,6 +250,21 @@ export class GameRenderer {
     pm.style = p.style;
     pm.setTool(tool);
     const speed = Math.hypot(p.x - p.prevX, p.z - p.prevZ) * 30;
+    if (pm instanceof HeroModel) {
+      pm.setTurnRate(dt > 0 ? angleDelta(prevYaw, pm.root.rotation.y) / dt : 0);
+      // Weapon readiness and the bow cycle: raise, draw BEFORE the shot (from the attack timer), release.
+      const attacking = p.action?.type === 'attack' && !gathering;
+      const ready = attacking || p.swingAge < 2.5 ? 1 : 0;
+      let aim = 0;
+      let draw = 0;
+      if (tool === 'bow' && ready && !p.dead) {
+        const target = attacking && p.action?.type === 'attack' ? world.enemyById(p.action.target) : null;
+        const inRange = !!target && Math.hypot(target.x - p.x, target.z - p.z) <= STYLES.ranged.range + 0.5;
+        aim = inRange || p.swingAge < 1.2 ? 1 : 0;
+        draw = inRange ? Math.min(1, Math.max(0, 1 - (p.attackTimer - 0.05) / 0.8)) : 0;
+      }
+      pm.setCombat(ready, aim, draw);
+    }
     pm.update(dt, pose, speed, p.swingAge, t);
 
     // Enemies
@@ -263,8 +290,15 @@ export class GameRenderer {
 
     // NPCs
     for (const v of this.npcViews) {
-      v.model.root.rotation.y = v.npc.facing;
-      v.model.update(dt, v.npc.talkAge < 2.5 ? 'talk' : 'idle', 0, 99, t + v.npc.id);
+      const n = v.npc;
+      const nx = lerp(n.prevX, n.x, alpha);
+      const nz = lerp(n.prevZ, n.z, alpha);
+      v.model.root.position.set(nx, groundHeight(map, nx, nz), nz);
+      const prev = v.model.root.rotation.y;
+      v.model.root.rotation.y = smoothAngle(prev, n.facing, dt * 12);
+      if (v.model instanceof HeroModel) v.model.setTurnRate(dt > 0 ? angleDelta(prev, v.model.root.rotation.y) / dt : 0);
+      const npcPose = n.moving ? 'walk' : n.talkAge < 2.5 ? 'talk' : 'idle';
+      v.model.update(dt, npcPose, n.moving ? NPC_WALK_SPEED : 0, 99, t + n.id);
     }
 
     this.resources.update();
@@ -458,6 +492,8 @@ export class GameRenderer {
       }
       case 'projectile': {
         const from = this.playerModel.root.position.clone().add(new THREE.Vector3(Math.sin(p.facing) * 0.4, 1.2, Math.cos(p.facing) * 0.4));
+        // Arrows leave from the bow itself when the new rig is holding one.
+        if (e.style === 'ranged' && this.playerModel instanceof HeroModel) this.playerModel.projectileOrigin(from);
         const view = this.enemyViews.get(e.target);
         const getTo = () => (view ? view.root.position.clone().add(new THREE.Vector3(0, enemyHeight(view.enemy) * 0.45, 0)) : from);
         this.projectiles.spawn(e.style === 'magic' ? 'magic' : 'arrow', from, getTo, e.flight);
@@ -617,4 +653,11 @@ function smoothAngle(current: number, target: number, k: number): number {
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return current + d * Math.min(1, k);
+}
+
+function angleDelta(a: number, b: number): number {
+  let d = (b - a) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }

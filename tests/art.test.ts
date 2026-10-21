@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { ART, showcaseWeight } from '../src/render/art';
-import { HeroModel } from '../src/render/hero';
+import { HeroModel, RIG, footAt, gaitParams, legIK } from '../src/render/hero';
 import { bridgePiers } from '../src/render/bridges';
 import { buildHallV2, copperRockV2 } from '../src/render/showcase';
 import { buildWater, setWaterQuality } from '../src/render/terrain';
@@ -27,6 +27,22 @@ describe('Phase 2A character rig', () => {
     }
   });
 
+  it('builds every outfit and NPC variant on the shared rig', () => {
+    const variants = [
+      { ...look, armor: 'guard' as const, helmet: true, beard: true, build: 1.12, height: 1.04 },
+      { ...look, age: 'old' as const, robe: true, build: 0.95 },
+      { ...look, bodyType: 1 as const, build: 0.9, beard: false, cape: '#8a3d5c' },
+    ];
+    for (const v of variants) {
+      const m = new HeroModel(v);
+      m.setTool('spear');
+      for (const pose of POSES) m.update(1 / 30, pose, pose === 'walk' ? 1.5 : 0, 99, 1);
+      expect(m.meshCount()).toBeLessThanOrEqual(17);
+      expect(m.triangleCount()).toBeLessThan(10000);
+      m.dispose();
+    }
+  });
+
   it('builds the robed Elder prototype with a walking staff', () => {
     const elder = new HeroModel({ ...NPCS.elder.look, elder: true });
     elder.setTool('walkingstaff');
@@ -45,13 +61,16 @@ describe('Phase 2A character rig', () => {
         }
       }
     }
-    // Walking swings the legs; idle returns them close to rest.
+    // Walking swings the legs apart; stopping settles back to the same rest stance as a fresh rig.
     for (let i = 0; i < 10; i++) m.update(1 / 30, 'walk', 4.4, 99, i / 30);
-    const walking = Math.abs(m.joints.thighL.rotation.x) + Math.abs(m.joints.thighR.rotation.x);
+    const walking = Math.abs(m.joints.thighL.rotation.x - m.joints.thighR.rotation.x);
     for (let i = 0; i < 60; i++) m.update(1 / 30, 'idle', 0, 99, 5 + i / 30);
-    const idle = Math.abs(m.joints.thighL.rotation.x) + Math.abs(m.joints.thighR.rotation.x);
-    expect(walking).toBeGreaterThan(0.2);
-    expect(idle).toBeLessThan(0.1); // the rest stance keeps the feet slightly apart
+    const fresh = new HeroModel(look);
+    for (let i = 0; i < 60; i++) fresh.update(1 / 30, 'idle', 0, 99, 5 + i / 30);
+    expect(walking).toBeGreaterThan(0.3);
+    expect(Math.abs(m.joints.thighL.rotation.x - fresh.joints.thighL.rotation.x)).toBeLessThan(0.05);
+    expect(Math.abs(m.joints.kneeR.rotation.x - fresh.joints.kneeR.rotation.x)).toBeLessThan(0.05);
+    fresh.dispose();
     m.dispose();
   });
 
@@ -63,7 +82,7 @@ describe('Phase 2A character rig', () => {
     const without = m.meshCount();
     expect(withSword).toBe(without + 1);
     m.setTool('bow');
-    expect(m.meshCount()).toBe(without + 1);
+    expect(m.meshCount()).toBe(without + 3); // bow body + two string segments (nocked arrow hidden at rest)
     m.dispose();
   });
 });
@@ -137,5 +156,169 @@ describe('Phase 2A water', () => {
     const water = buildWater(map, { value: 0 });
     expect((water.material as THREE.ShaderMaterial).uniforms.uSunDir).toBeUndefined();
     ART.v2 = true;
+  });
+});
+
+describe('Locomotion quality', () => {
+  const look = { skin: '#e8b48f', hair: '#5a3620', hairStyle: 1, tunic: '#2f7fc1', trousers: '#4a3a2a', bodyType: 0 as const };
+
+  it('leg IK reaches the requested ankle position', () => {
+    for (const [dz, dy] of [[0, -0.75], [0.3, -0.7], [-0.25, -0.72], [0.1, -0.6]]) {
+      const [th, kn] = legIK(dz, dy);
+      // Forward kinematics with the rig convention (rotation.x: negative = forward).
+      const kx = -Math.sin(th) * RIG.thigh;
+      const ky = -Math.cos(th) * RIG.thigh;
+      const ax = kx - Math.sin(th + kn) * RIG.shin;
+      const ay = ky - Math.cos(th + kn) * RIG.shin;
+      expect(ax).toBeCloseTo(dz, 3);
+      expect(ay).toBeCloseTo(dy, 3);
+      expect(kn).toBeGreaterThanOrEqual(0); // knees never bend backwards
+    }
+  });
+
+  it('cadence matches ground speed so a planted foot moves back exactly as fast as the body moves forward', () => {
+    for (const speed of [2.2, 3.3, 4.4]) {
+      const g = gaitParams(speed);
+      const dt = 0.001;
+      const a = footAt(0.1, g.stance, g.stride, g.lift);
+      const b = footAt(0.1 + g.cadence * dt, g.stance, g.stride, g.lift);
+      expect(a.planted && b.planted).toBe(true);
+      expect((a.z - b.z) / dt).toBeCloseTo(speed, 1);
+    }
+  });
+
+  it('keeps planted feet on the ground without sliding while the character runs forward', () => {
+    const m = new HeroModel(look);
+    const scene = new THREE.Scene();
+    scene.add(m.root);
+    const speed = 4.4;
+    const dt = 1 / 60;
+    for (let i = 0; i < 60; i++) {
+      m.root.position.z += speed * dt;
+      m.update(dt, 'walk', speed, 99, i * dt);
+    }
+    const prev = { L: new THREE.Vector3(), R: new THREE.Vector3() };
+    m.soleWorld('L', prev.L);
+    m.soleWorld('R', prev.R);
+    let contactFrames = 0;
+    let slide = 0;
+    let lowest = Infinity;
+    for (let i = 0; i < 120; i++) {
+      m.root.position.z += speed * dt;
+      m.update(dt, 'walk', speed, 99, 1 + i * dt);
+      for (const side of ['L', 'R'] as const) {
+        const now = m.soleWorld(side, new THREE.Vector3());
+        lowest = Math.min(lowest, now.y);
+        if (now.y < 0.02) {
+          contactFrames++;
+          slide += Math.hypot(now.x - prev[side].x, now.z - prev[side].z) / dt;
+        }
+        prev[side].copy(now);
+      }
+    }
+    expect(contactFrames).toBeGreaterThan(60);
+    // Average speed of a foot while on the ground: far below the 4.4 u/s body speed.
+    expect(slide / contactFrames).toBeLessThan(0.6);
+    // Feet never sink noticeably into the ground.
+    expect(lowest).toBeGreaterThan(-0.04);
+    m.dispose();
+  });
+
+  it('bounces only a little while walking', () => {
+    const m = new HeroModel(look);
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 0; i < 180; i++) {
+      m.update(1 / 60, 'walk', 2.6, 99, i / 60);
+      if (i > 60) {
+        lo = Math.min(lo, m.joints.hips.position.y);
+        hi = Math.max(hi, m.joints.hips.position.y);
+      }
+    }
+    expect(hi - lo).toBeLessThan(0.07);
+    expect(hi - lo).toBeGreaterThan(0.005);
+    m.dispose();
+  });
+});
+
+describe('Bow handling', () => {
+  const look = { skin: '#e8b48f', hair: '#5a3620', hairStyle: 1, tunic: '#2f7fc1', trousers: '#4a3a2a', bodyType: 0 as const };
+  const settle = (m: HeroModel, ready: number, aim: number, draw: number, swingAge = 99) => {
+    m.setCombat(ready, aim, draw);
+    for (let i = 0; i < 90; i++) m.update(1 / 60, 'idle', 0, swingAge, i / 60);
+  };
+
+  it('grips the bow at the riser, with the string clear behind the hand', () => {
+    const m = new HeroModel(look);
+    m.setTool('bow');
+    m.style = 'ranged';
+    settle(m, 0, 0, 0);
+    const b = m.debugBow();
+    expect(b.grip.distanceTo(b.handL)).toBeLessThan(0.02); // grip is in the palm
+    expect(b.stringLocalX).toBeLessThan(-0.12); // the string sits well behind the grip
+    expect(b.up.y).toBeGreaterThan(0.6); // carried mostly upright at the side, angled forward
+    m.dispose();
+  });
+
+  it('raises the bow toward the target and draws the string to the drawing hand', () => {
+    const m = new HeroModel(look);
+    m.setTool('bow');
+    m.style = 'ranged';
+    settle(m, 1, 1, 1);
+    const b = m.debugBow();
+    expect(b.up.y).toBeGreaterThan(0.9); // limbs vertical
+    expect(b.belly.z).toBeGreaterThan(0.9); // belly faces the character's facing (+z)
+    expect(b.grip.y).toBeGreaterThan(1.2); // raised to shoulder height
+    expect(b.nock.distanceTo(b.handR)).toBeLessThan(0.2); // drawing hand holds the string
+    expect(b.nock.z).toBeLessThan(b.grip.z - 0.4); // string pulled back toward the archer
+    const origin = new THREE.Vector3();
+    expect(m.projectileOrigin(origin)).toBe(true);
+    expect(origin.distanceTo(b.grip)).toBeLessThan(0.08); // arrows leave from the bow
+    m.dispose();
+  });
+
+  it('releases: the string snaps back and the nocked arrow disappears', () => {
+    const m = new HeroModel(look);
+    m.setTool('bow');
+    m.style = 'ranged';
+    settle(m, 1, 1, 1);
+    m.setCombat(1, 1, 1);
+    m.update(1 / 60, 'attack', 0, 0.02, 2);
+    const b = m.debugBow();
+    expect(b.nock.distanceTo(b.grip)).toBeLessThan(0.25);
+    m.dispose();
+  });
+
+  it('carries the sword pointing down when relaxed and levels it when ready', () => {
+    const m = new HeroModel(look);
+    m.setTool('sword');
+    const blade = () => {
+      const sword = (m as unknown as { tools: Map<string, THREE.Object3D> }).tools.get('sword')!;
+      m.root.updateWorldMatrix(true, true);
+      return new THREE.Vector3(0, 1, 0).transformDirection(sword.matrixWorld);
+    };
+    settle(m, 0, 0, 0);
+    expect(blade().y).toBeLessThan(-0.5);
+    settle(m, 1, 0, 0);
+    expect(Math.abs(blade().y)).toBeLessThan(0.35);
+    m.dispose();
+  });
+  it('keeps a guard spear and walking staff upright in the hand while idle and walking', () => {
+    for (const tool of ['spear', 'walkingstaff'] as const) {
+      const m = new HeroModel({ ...look, armor: 'guard', helmet: true });
+      m.setTool(tool);
+      const shaft = () => {
+        const t = (m as unknown as { tools: Map<string, THREE.Object3D> }).tools.get(tool)!;
+        m.root.updateWorldMatrix(true, true);
+        return new THREE.Vector3(0, 1, 0).transformDirection(t.matrixWorld);
+      };
+      for (let i = 0; i < 60; i++) m.update(1 / 30, 'idle', 0, 99, i / 30);
+      expect(shaft().y).toBeGreaterThan(0.95);
+      for (let i = 0; i < 60; i++) {
+        m.update(1 / 30, 'walk', 1.5, 99, i / 30);
+        expect(shaft().y).toBeGreaterThan(0.9);
+      }
+      m.dispose();
+    }
   });
 });
