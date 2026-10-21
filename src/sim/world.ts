@@ -86,8 +86,59 @@ export type AnimState = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 
 
 export type PlayerAction =
   | { type: 'attack'; target: number }
+  | { type: 'pickup'; ground: number }
   | { type: 'gather'; node: number }
   | { type: 'talk'; npc: number };
+
+/** Monster drops stay visible only to the player who earned them for this long... */
+export const LOOT_PRIVATE_SECONDS = 10 * 60;
+/** ...then anyone can see and take them for this long, after which they disappear. */
+export const LOOT_PUBLIC_SECONDS = 5 * 60;
+
+/** A pile of items lying in the world (monster drops). */
+export class GroundItem {
+  age = 0;
+  constructor(
+    public readonly id: number,
+    public readonly item: ItemId,
+    public qty: number,
+    public readonly x: number,
+    public readonly z: number,
+    /** Player who earned the drop; null once it was created public. */
+    public readonly owner: number | null,
+  ) {}
+
+  /** Whether the pile is still in its owner-only period. */
+  get isPrivate(): boolean {
+    return this.owner !== null && this.age < LOOT_PRIVATE_SECONDS;
+  }
+
+  get expired(): boolean {
+    return this.age >= LOOT_PRIVATE_SECONDS + LOOT_PUBLIC_SECONDS || this.qty <= 0;
+  }
+
+  /** Who may see and pick it up: the owner first, then everyone. */
+  visibleTo(playerId: number): boolean {
+    return !this.expired && (!this.isPrivate || this.owner === playerId);
+  }
+
+  /** Seconds until it becomes public (0 if it already is) and until it disappears. */
+  get timers() {
+    return {
+      untilPublic: Math.max(0, LOOT_PRIVATE_SECONDS - this.age),
+      untilGone: Math.max(0, LOOT_PRIVATE_SECONDS + LOOT_PUBLIC_SECONDS - this.age),
+    };
+  }
+}
+
+export interface SavedGroundItem {
+  item: ItemId;
+  qty: number;
+  x: number;
+  z: number;
+  owner: number | null;
+  age: number;
+}
 
 export interface QuestProgress {
   stage: number;
@@ -233,7 +284,8 @@ interface PendingHit {
 export type Interactable =
   | { kind: 'enemy'; entity: Enemy }
   | { kind: 'node'; entity: ResourceNode }
-  | { kind: 'npc'; entity: Npc };
+  | { kind: 'npc'; entity: Npc }
+  | { kind: 'ground'; entity: GroundItem };
 
 export interface SaveData {
   version: 1;
@@ -249,6 +301,8 @@ export interface SaveData {
   overflow?: ItemStack[];
   quests: Record<string, QuestProgress>;
   checkpoints: string[];
+  /** Monster drops still on the ground (optional for older saves). */
+  ground?: SavedGroundItem[];
 }
 
 export class GameWorld {
@@ -257,11 +311,13 @@ export class GameWorld {
   readonly enemies: Enemy[] = [];
   readonly nodes: ResourceNode[] = [];
   readonly npcs: Npc[] = [];
+  groundItems: GroundItem[] = [];
+  private nextGroundId = 20000;
   readonly rng: Rng;
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null } = {}) {
     this.map = generateWorld(opts.seed ?? 1337);
@@ -286,6 +342,16 @@ export class GameWorld {
       this.enemies.push(enemy);
       this.byId.set(enemy.id, enemy);
     });
+    if (s && Array.isArray(s.ground)) {
+      for (const g of s.ground) {
+        const qty = Math.floor(Number(g?.qty));
+        const age = Number(g?.age);
+        if (!g || typeof g.item !== 'string' || !isItemId(g.item) || !(qty > 0) || !Number.isFinite(g.x) || !Number.isFinite(g.z)) continue;
+        const pile = this.spawnGroundItem(g.item, qty, g.x, g.z, typeof g.owner === 'number' ? g.owner : null);
+        pile.age = Number.isFinite(age) && age > 0 ? age : 0;
+      }
+      this.groundItems = this.groundItems.filter((g) => !g.expired);
+    }
   }
 
   private giveStarterKit() {
@@ -315,6 +381,7 @@ export class GameWorld {
       overflow: p.overflow.map((o) => ({ ...o })),
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
+      ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
     };
   }
 
@@ -360,7 +427,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | undefined {
     return this.byId.get(id);
   }
 
@@ -369,6 +436,7 @@ export class GameWorld {
     if (e instanceof Enemy) return { kind: 'enemy', entity: e };
     if (e instanceof ResourceNode) return { kind: 'node', entity: e };
     if (e instanceof Npc) return { kind: 'npc', entity: e };
+    if (e instanceof GroundItem) return e.visibleTo(this.player.id) ? { kind: 'ground', entity: e } : null;
     return null;
   }
 
@@ -447,6 +515,7 @@ export class GameWorld {
       e.prevZ = e.z;
     }
     this.updatePlayer(dt);
+    this.updateGroundItems(dt);
     for (const e of this.enemies) this.updateEnemy(e, dt);
     for (const n of this.nodes) {
       n.hitAge += dt;
@@ -539,6 +608,7 @@ export class GameWorld {
     if (action?.type === 'attack') this.updatePlayerAttack(action.target, joyMag > 0.15, dt);
     else if (action?.type === 'gather') this.updateGather(action.node, dt);
     else if (action?.type === 'talk') this.updateTalk(action.npc);
+    else if (action?.type === 'pickup') this.updatePickup(action.ground);
 
     this.updateRegion();
   }
@@ -618,6 +688,8 @@ export class GameWorld {
       if (!this.canGather(n, true)) return;
       p.action = { type: 'gather', node: id };
       p.gatherTimer = n.def.actionSeconds * 0.6;
+    } else if (it.kind === 'ground') {
+      p.action = { type: 'pickup', ground: id };
     } else {
       p.action = { type: 'talk', npc: id };
     }
@@ -703,9 +775,14 @@ export class GameWorld {
     e.deadAge = 0;
     this.emit({ type: 'death', id: e.id });
     if (p.action?.type === 'attack' && p.action.target === e.id) p.action = null;
+    // Drops land on the ground where the enemy fell, reserved for the player who earned them.
+    let k = 0;
     for (const d of e.def.drops) {
       if (this.rng() > d.chance) continue;
-      this.giveItem(d.item, randInt(this.rng, d.min, d.max), true);
+      const a = k++ * 2.4 + this.rng() * 0.6;
+      const r = k === 1 ? 0.2 : 0.65;
+      const at = this.walkableNear(e.x + Math.sin(a) * r, e.z + Math.cos(a) * r, e.x, e.z);
+      this.spawnGroundItem(d.item, randInt(this.rng, d.min, d.max), at.x, at.z, p.id);
     }
     for (const q of Object.values(QUESTS)) {
       const prog = p.quests[q.id];
@@ -725,6 +802,64 @@ export class GameWorld {
     if (added > 0 && loot) this.emit({ type: 'loot', item, qty: added });
     if (added < qty) this.message(`Your inventory is too full to hold ${name.toLowerCase()}.`, 'warn');
     return added;
+  }
+
+  spawnGroundItem(item: ItemId, qty: number, x: number, z: number, owner: number | null): GroundItem {
+    const g = new GroundItem(this.nextGroundId++, item, qty, x, z, owner);
+    this.groundItems.push(g);
+    this.byId.set(g.id, g);
+    return g;
+  }
+
+  /** Ground piles the given player can currently see. */
+  visibleGroundItems(playerId = this.player.id): GroundItem[] {
+    return this.groundItems.filter((g) => g.visibleTo(playerId));
+  }
+
+  private walkableNear(x: number, z: number, fx: number, fz: number) {
+    return isBlocked(this.map, x, z) ? { x: fx, z: fz } : { x, z };
+  }
+
+  private updateGroundItems(dt: number) {
+    let removed = false;
+    for (const g of this.groundItems) {
+      g.age += dt;
+      if (g.expired) {
+        this.byId.delete(g.id);
+        removed = true;
+      }
+    }
+    if (removed) this.groundItems = this.groundItems.filter((g) => !g.expired);
+  }
+
+  private updatePickup(id: number) {
+    const p = this.player;
+    const g = this.byId.get(id);
+    if (!(g instanceof GroundItem) || !g.visibleTo(p.id)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(g.x, g.z, 0.8, true)) return;
+    p.action = null;
+    this.pickUp(g);
+  }
+
+  /** Takes as much of a pile as fits; the rest stays on the ground. */
+  private pickUp(g: GroundItem) {
+    const p = this.player;
+    const added = p.inventory.add(g.item, g.qty);
+    if (added <= 0) {
+      this.inventoryFull();
+      return;
+    }
+    g.qty -= added;
+    this.emit({ type: 'loot', item: g.item, qty: added });
+    const name = itemDef(g.item).name;
+    this.message(`You pick up ${added > 1 ? `${added} x ` : ''}${name}.`);
+    if (g.qty <= 0) {
+      this.byId.delete(g.id);
+      this.groundItems = this.groundItems.filter((x) => x !== g);
+    } else this.inventoryFull();
   }
 
   /** Moves as many held overflow items as fit into the inventory. */

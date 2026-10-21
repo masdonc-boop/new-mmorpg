@@ -16,7 +16,7 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 - **Major story quests** plus **optional regional contracts** (repeatable, region-specific tasks).
 - **Boss-focused top-tier equipment progression** — the best gear comes from bosses, not from shops or crafting alone.
 - **Solo, group, and raid bosses** (future).
-- **Personal loot rolls for eligible participants** — no loot stealing; each eligible player rolls their own drops (Phase 1 already rolls loot per-player into the killer's inventory).
+- **Personal loot rolls for eligible participants** — no loot stealing; each eligible player rolls their own drops. Drops fall on the ground as piles owned by the player who earned them: **visible only to the owner for 10 minutes, then to everyone for 5 more minutes, then gone** (`LOOT_PRIVATE_SECONDS` / `LOOT_PUBLIC_SECONDS`). Visibility is decided by the simulation (`GroundItem.visibleTo(playerId)`), so the future server only sends each client the piles it may see. Picking up follows the inventory capacity rules; what does not fit stays on the ground.
 
 ### Economy & social (future unless noted)
 - **Player-driven economy** with direct **trading** and an **auction house**.

@@ -77,6 +77,13 @@ export class WorldOverlay {
     }
   }
 
+  removePlate(id: number) {
+    const p = this.plates.get(id);
+    if (!p) return;
+    p.el.remove();
+    this.plates.delete(id);
+  }
+
   float(text: string, cls: string, anchor: () => Anchor | null, life = 1.1, rise = 50) {
     const el = document.createElement('div');
     el.className = `floater ${cls}`;

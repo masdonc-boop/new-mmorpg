@@ -4,7 +4,9 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { groundHeight } from '../sim/worldmap';
-import { Enemy, NPC_WALK_SPEED, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
+import { Enemy, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
+import { itemDef, type ItemId } from '../data/items';
+import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool, type HumanoidLook } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
@@ -302,6 +304,7 @@ export class GameRenderer {
     }
 
     this.resources.update();
+    this.updateGroundItems(t);
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
     this.particles.update(dt);
@@ -389,7 +392,7 @@ export class GameRenderer {
   private selectedId(): number | null {
     const a = this.world.player.action;
     if (!a) return null;
-    return a.type === 'attack' ? a.target : a.type === 'gather' ? a.node : a.npc;
+    return a.type === 'attack' ? a.target : a.type === 'gather' ? a.node : a.type === 'pickup' ? a.ground : a.npc;
   }
 
   private updateTargetMarker(t: number) {
@@ -408,12 +411,59 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 1.15, t);
     } else if (ent instanceof Npc) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
+    } else if (ent instanceof GroundItem) {
+      this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.55, t);
     }
   }
 
   // ---------------------------------------------------------------- overlay
 
   private v = new THREE.Vector3();
+
+  // ---------------------------------------------------------------- ground items
+
+  private groundViews = new Map<number, { pile: GroundItem; sprite: THREE.Sprite; shadow: THREE.Mesh }>();
+  private groundMats = new Map<ItemId, THREE.SpriteMaterial>();
+  private groundShadowGeo = new THREE.CircleGeometry(0.2, 14).rotateX(-Math.PI / 2);
+  private groundShadowMat = new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.22, depthWrite: false });
+
+  private groundMaterial(item: ItemId): THREE.SpriteMaterial {
+    let m = this.groundMats.get(item);
+    if (!m) {
+      const tex = new THREE.TextureLoader().load(itemIcon(item));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      m = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.05 });
+      this.groundMats.set(item, m);
+    }
+    return m;
+  }
+
+  /** Mirrors the piles this player may see (the simulation decides visibility and timers). */
+  private updateGroundItems(t: number) {
+    const w = this.world;
+    const seen = new Set<number>();
+    for (const g of w.visibleGroundItems()) {
+      seen.add(g.id);
+      let v = this.groundViews.get(g.id);
+      if (!v) {
+        const sprite = new THREE.Sprite(this.groundMaterial(g.item));
+        sprite.scale.setScalar(0.62);
+        const shadow = new THREE.Mesh(this.groundShadowGeo, this.groundShadowMat);
+        this.scene.add(sprite, shadow);
+        v = { pile: g, sprite, shadow };
+        this.groundViews.set(g.id, v);
+      }
+      const y = groundHeight(w.map, g.x, g.z);
+      v.sprite.position.set(g.x, y + 0.36 + Math.sin(t * 2.2 + g.id) * 0.04, g.z);
+      v.shadow.position.set(g.x, y + 0.03, g.z);
+    }
+    for (const [id, v] of this.groundViews) {
+      if (seen.has(id)) continue;
+      this.scene.remove(v.sprite, v.shadow);
+      this.overlay.removePlate(id);
+      this.groundViews.delete(id);
+    }
+  }
 
   project(x: number, y: number, z: number): Anchor {
     this.v.set(x, y, z).project(this.camera);
@@ -451,6 +501,12 @@ export class GameRenderer {
       const a = e.alive && v.root.visible ? this.project(r.x, r.y + enemyHeight(e), r.z) : null;
       const near = Math.hypot(e.x - w.player.x, e.z - w.player.z) < 9;
       this.overlay.plate(e.id, a, { name: e.def.name, level: e.def.level, hp: engaged ? e.hp : null, maxHp: e.def.maxHp, kind: 'enemy', show: engaged || near || e.id === sel });
+    }
+    for (const v of this.groundViews.values()) {
+      const g = v.pile;
+      const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 5;
+      const a = near ? this.project(g.x, v.sprite.position.y + 0.45, g.z) : null;
+      this.overlay.plate(g.id, a, { name: g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name, kind: 'npc', show: near });
     }
     for (const v of this.npcViews) {
       const n = v.npc;
@@ -631,6 +687,10 @@ export class GameRenderer {
       const tree = n.def.skill === 'woodcutting';
       consider(n.id, n.x, y + (n.depleted ? 0.2 : tree ? 1.2 : 0.4), n.z, 1.1);
       if (tree && !n.depleted) consider(n.id, n.x, y + 2.2, n.z, 1.2);
+    }
+    for (const v of this.groundViews.values()) {
+      const p = v.sprite.position;
+      consider(v.pile.id, p.x, p.y, p.z, 0.85);
     }
     if (best !== null) return { kind: 'entity', id: best };
 
