@@ -49,6 +49,8 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 | Gathering | Woodcutting (trees, oaks) and Mining (copper, tin, iron + rare gems); node depletion & regrowth; auto-continue to nearby nodes |
 | Items | 28-slot inventory enforced by the simulation; only currency, ammo and runes stack (per item definition); gathered resources (logs, ores, gems, later fish) take one slot each; gathering stops with "Your inventory is full." and never rolls, grants xp or depletes a node without room; quest rewards wait until they fit; older saves migrate with any excess held, not deleted; drop with confirmation for valuable items; eat/move |
 | Bank | Bank of Brightwater on the west side of the plaza; banker Wendell Coinsworth behind an outdoor counter (tap him or the counter). 200 slots (`Bank.capacity`, expandable); every item type stacks into one bank slot; deposit 1 / 5 / X / all, deposit inventory, deposit held items; withdraw 1 / 5 / X / all, never more than the inventory can hold (non-stackables one per slot); search, categories and slot count; closes when you walk away |
+| Skills & production | RuneScape-style: every character can train every skill to 99, no professions. Added Smithing, Fletching and Cooking (older saves keep all xp; new skills start at 1). Furnace and anvil at the smithy, cooking range outside the inn, fletching anywhere. Recipes are data (`src/data/recipes.ts`) with level, xp, materials, product and optional failure (burnt food). Production is a timed action: each make re-checks level, materials, station and inventory space before consuming anything; xp only on success; moving cancels |
+| Equipment | Five worn slots (head, body, legs, weapon, shield) separate from the 28-slot inventory. Weapons boost the combat style they are made for (wielding one switches to it); without one the style's training weapon applies, so older characters fight exactly as before. Armour adds to defence. Bows are two-handed. Level requirements per item. Equip/unequip is all-or-nothing: it fails cleanly when the swapped-out items wouldn't fit. Gear is shown on the character |
 | Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining |
 | Quest | "The Elder's Request" — talk, gather 5 logs, defeat 3 slimes, rewards |
 | Persistence | Local save (localStorage) every 10s and on backgrounding |
@@ -64,6 +66,12 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 - **Atomic transfers.** Each transfer first works out how much both sides can take, then moves exactly that amount out of one container and into the other. A transfer can be smaller than asked (e.g. withdraw-all with 3 free slots) and says so, but it never duplicates or loses items.
 - **Per character now, account-wide later.** The bank is a standalone object saved under its own `bank` key. Moving to account-wide storage means keying that store by account on the server; the transfer rules stay the same.
 - **Migration.** Saves from before the bank load with an empty bank; items held after the inventory migration can be deposited straight into the bank.
+
+## Production and equipment (design notes)
+
+- **Same pattern as banking.** The client sends `craft`, `equip`, `unequip` and `openFletching` commands. The simulation validates everything (station proximity, levels, materials, space) and reports through `productionOpen`, `craft`, `equipment` and `inventoryFull` events, so these become server messages unchanged.
+- **Unlocks come from data.** `skillUnlocks(skill)` derives each skill's unlock list from resources, recipes and item requirements, and the Skills panel shows it. Adding a recipe or item updates it automatically.
+- **Next stages.** Fishing (raw fish feeding Cooking) is the obvious next gathering skill. More metals and bow tiers are just data rows. Crafting quantities are capped per command (1000) and re-checked per make.
 
 ## Architecture for multiplayer
 

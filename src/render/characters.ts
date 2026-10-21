@@ -33,9 +33,10 @@ export interface HumanoidLook {
   cape?: string;
 }
 
-export type HeldTool = 'none' | 'sword' | 'bow' | 'staff' | 'axe' | 'pickaxe' | 'spear' | 'club' | 'walkingstaff';
+export type HeldTool = 'none' | 'sword' | 'bow' | 'staff' | 'axe' | 'pickaxe' | 'spear' | 'club' | 'walkingstaff' | 'hammer' | 'knife';
 
-export type HumanoidPose = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'talk';
+/** 'smith' = hammering at an anvil; 'work' = hands-forward work (furnace, cooking, fletching). */
+export type HumanoidPose = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'talk' | 'smith' | 'work';
 
 /**
  * Chunky, readable low-poly humanoid with procedural animation.
@@ -303,7 +304,10 @@ export class Humanoid {
         this.armL.rotation.z = 0.4;
         b.position.y += raise * 0.05;
       }
-    } else if (pose === 'chop' || pose === 'mine') {
+    } else if (pose === 'work') {
+      this.armR.rotation.x = -0.9 + Math.sin(time * 3) * 0.12;
+      this.armL.rotation.x = -0.9 - Math.sin(time * 3) * 0.12;
+    } else if (pose === 'chop' || pose === 'mine' || pose === 'smith') {
       const cycle = (time * 1.25) % 1;
       const up = cycle < 0.6 ? cycle / 0.6 : 1 - (cycle - 0.6) / 0.4;
       const ease = up * up * (3 - 2 * up);

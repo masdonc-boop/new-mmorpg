@@ -20,9 +20,9 @@ export interface StyleDef {
 }
 
 export const STYLES: Record<CombatStyle, StyleDef> = {
-  melee: { id: 'melee', name: 'Melee', weapon: 'Bronze sword', range: 1.5, attackSeconds: 1.6, accuracy: 12, power: 10, xpSkills: ['attack', 'strength', 'defence'] },
-  ranged: { id: 'ranged', name: 'Ranged', weapon: 'Oak shortbow', range: 7, attackSeconds: 1.8, accuracy: 14, power: 8, ammo: 'bronze_arrow', projectileSpeed: 16, xpSkills: ['ranged'] },
-  magic: { id: 'magic', name: 'Magic', weapon: 'Apprentice staff', range: 6.5, attackSeconds: 2.2, accuracy: 18, power: 14, ammo: 'air_rune', projectileSpeed: 11, xpSkills: ['magic'] },
+  melee: { id: 'melee', name: 'Melee', weapon: 'Training sword', range: 1.5, attackSeconds: 1.6, accuracy: 12, power: 10, xpSkills: ['attack', 'strength', 'defence'] },
+  ranged: { id: 'ranged', name: 'Ranged', weapon: 'Training bow', range: 7, attackSeconds: 1.8, accuracy: 14, power: 8, ammo: 'bronze_arrow', projectileSpeed: 16, xpSkills: ['ranged'] },
+  magic: { id: 'magic', name: 'Magic', weapon: 'Apprentice wand', range: 6.5, attackSeconds: 2.2, accuracy: 18, power: 14, ammo: 'air_rune', projectileSpeed: 11, xpSkills: ['magic'] },
 };
 
 export interface AttackerStats {

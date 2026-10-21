@@ -1,13 +1,15 @@
 import { mulberry32, randInt, type Rng } from '../core/rng';
 import { angleDiff, dist } from '../core/math';
 import { ENEMIES, type EnemyDef } from '../data/enemies';
-import { isItemId, itemDef, type ItemId } from '../data/items';
+import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
+import { RECIPES, STATION_INFO, failChance, plural, type RecipeDef, type StationKind } from '../data/recipes';
 import { NPCS, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
+import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
@@ -57,6 +59,15 @@ export type Command =
   /** Bank: withdraw up to qty of an item (as many as fit). */
   | { type: 'bankWithdraw'; item: ItemId; qty: number }
   | { type: 'bankClose' }
+  /** Wear the item in an inventory slot. */
+  | { type: 'equip'; slot: number }
+  /** Take off worn gear into the inventory. */
+  | { type: 'unequip'; slot: EquipSlot }
+  /** Make `count` of a recipe (at the open station, or anywhere for fletching). */
+  | { type: 'craft'; recipe: string; count: number }
+  /** Open the fletching interface (needs no station). */
+  | { type: 'openFletching' }
+  | { type: 'closeProduction' }
   | { type: 'acceptQuest'; quest: string }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
 
@@ -95,13 +106,21 @@ export type GameEvent =
   | { type: 'bankClose' }
   /** Bank contents changed (refresh the bank interface). */
   | { type: 'bank' }
-  | { type: 'bankFull' };
+  | { type: 'bankFull' }
+  | { type: 'productionOpen'; station: StationKind }
+  | { type: 'productionClose' }
+  /** One make finished (success = the intended product, not e.g. burnt food). */
+  | { type: 'craft'; recipe: string; success: boolean; remaining: number }
+  /** Worn equipment changed. */
+  | { type: 'equipment' };
 
 export type AnimState = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'hit';
 
 export type PlayerAction =
   | { type: 'attack'; target: number }
   | { type: 'pickup'; ground: number }
+  | { type: 'station'; station: number }
+  | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
   | { type: 'talk'; npc: number };
 
@@ -191,6 +210,11 @@ export class Player implements Mover {
   bank = new Bank();
   /** Id of the banker the player is using, while the bank interface is open. */
   bankAt: number | null = null;
+  /** Worn gear (separate from the 28-slot inventory). */
+  equipment = new Equipment();
+  /** Station whose production interface is open (null for none or for fletching). */
+  stationAt: number | null = null;
+  craftTimer = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -261,6 +285,24 @@ export class Enemy implements Mover {
   }
 }
 
+/** A production station in the world (furnace, anvil, cooking range). */
+export class Station {
+  constructor(
+    public readonly id: number,
+    public readonly kind: Exclude<StationKind, 'fletching'>,
+    public readonly x: number,
+    public readonly z: number,
+  ) {}
+
+  get name(): string {
+    return STATION_INFO[this.kind].name;
+  }
+}
+
+/** How close the player must stand to use a station, and the extra distance before it closes. */
+export const STATION_REACH = 1.7;
+const STATION_LEAVE_MARGIN = 1.2;
+
 export class ResourceNode {
   depleted = false;
   respawnTimer = 0;
@@ -306,7 +348,8 @@ export type Interactable =
   | { kind: 'enemy'; entity: Enemy }
   | { kind: 'node'; entity: ResourceNode }
   | { kind: 'npc'; entity: Npc }
-  | { kind: 'ground'; entity: GroundItem };
+  | { kind: 'ground'; entity: GroundItem }
+  | { kind: 'station'; entity: Station };
 
 export interface SaveData {
   version: 1;
@@ -322,6 +365,8 @@ export interface SaveData {
   overflow?: ItemStack[];
   /** Bank contents (optional: saves from before the bank start with an empty bank). */
   bank?: ItemStack[];
+  /** Worn equipment (optional for older saves). */
+  equipment?: Partial<Record<EquipSlot, ItemId>>;
   quests: Record<string, QuestProgress>;
   checkpoints: string[];
   /** Monster drops still on the ground (optional for older saves). */
@@ -334,13 +379,14 @@ export class GameWorld {
   readonly enemies: Enemy[] = [];
   readonly nodes: ResourceNode[] = [];
   readonly npcs: Npc[] = [];
+  readonly stations: Station[] = [];
   groundItems: GroundItem[] = [];
   private nextGroundId = 20000;
   readonly rng: Rng;
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null } = {}) {
     this.map = generateWorld(opts.seed ?? 1337);
@@ -354,6 +400,11 @@ export class GameWorld {
       const npc = new Npc(100 + i, NPCS[n.id], n.x, n.z, n.facing, n.patrol ?? null);
       this.npcs.push(npc);
       this.byId.set(npc.id, npc);
+    });
+    this.map.stations.forEach((st, i) => {
+      const station = new Station(3000 + i, st.kind, st.x, st.z);
+      this.stations.push(station);
+      this.byId.set(station.id, station);
     });
     this.map.resources.forEach((r, i) => {
       const node = new ResourceNode(1000 + i, RESOURCES[r.type], r.x + 0.5, r.z + 0.5, i);
@@ -403,6 +454,7 @@ export class GameWorld {
       inventory: p.inventory.toJSON(),
       overflow: p.overflow.map((o) => ({ ...o })),
       bank: p.bank.toJSON(),
+      equipment: p.equipment.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
       ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
@@ -416,6 +468,9 @@ export class GameWorld {
     const restored = Inventory.restore(s.inventory);
     p.inventory = restored.inventory;
     p.overflow = restored.overflow;
+    const worn = Equipment.restore(s.equipment);
+    p.equipment = worn.equipment;
+    for (const d of worn.displaced) addTo(p.overflow, d.item, d.qty);
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
         const qty = Math.floor(Number(o?.qty));
@@ -452,7 +507,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | undefined {
     return this.byId.get(id);
   }
 
@@ -462,6 +517,7 @@ export class GameWorld {
     if (e instanceof ResourceNode) return { kind: 'node', entity: e };
     if (e instanceof Npc) return { kind: 'npc', entity: e };
     if (e instanceof GroundItem) return e.visibleTo(this.player.id) ? { kind: 'ground', entity: e } : null;
+    if (e instanceof Station) return { kind: 'station', entity: e };
     return null;
   }
 
@@ -495,7 +551,8 @@ export class GameWorld {
       case 'setStyle':
         if (cmd.style in STYLES && p.style !== cmd.style) {
           p.style = cmd.style;
-          this.message(`Combat style: ${STYLES[cmd.style].name} (${STYLES[cmd.style].weapon}).`);
+          const w = p.equipment.bonuses(cmd.style).weapon;
+          this.message(`Combat style: ${STYLES[cmd.style].name} (${w ? itemDef(w).name : STYLES[cmd.style].weapon}).`);
         }
         break;
       case 'useItem':
@@ -518,6 +575,22 @@ export class GameWorld {
       case 'bankDepositHeld':
       case 'bankWithdraw':
         this.bankCommand(cmd);
+        break;
+      case 'equip':
+        this.equip(cmd.slot);
+        break;
+      case 'unequip':
+        this.unequip(cmd.slot);
+        break;
+      case 'craft':
+        this.startCraft(cmd.recipe, cmd.count);
+        break;
+      case 'openFletching':
+        p.stationAt = null;
+        this.emit({ type: 'productionOpen', station: 'fletching' });
+        break;
+      case 'closeProduction':
+        p.stationAt = null;
         break;
       case 'bankClose':
         if (p.bankAt !== null) {
@@ -553,6 +626,10 @@ export class GameWorld {
     }
     this.updatePlayer(dt);
     this.updateGroundItems(dt);
+    if (p.stationAt !== null && !this.activeStation()) {
+      p.stationAt = null;
+      this.emit({ type: 'productionClose' });
+    }
     if (p.bankAt !== null && !this.activeBanker()) {
       p.bankAt = null;
       this.emit({ type: 'bankClose' });
@@ -650,6 +727,8 @@ export class GameWorld {
     else if (action?.type === 'gather') this.updateGather(action.node, dt);
     else if (action?.type === 'talk') this.updateTalk(action.npc);
     else if (action?.type === 'pickup') this.updatePickup(action.ground);
+    else if (action?.type === 'station') this.updateStationApproach(action.station);
+    else if (action?.type === 'craft') this.updateCraft(action, dt);
 
     this.updateRegion();
   }
@@ -731,6 +810,8 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'station') {
+      p.action = { type: 'station', station: id };
     } else {
       p.action = { type: 'talk', npc: id };
     }
@@ -778,9 +859,10 @@ export class GameWorld {
     p.combatTimer = 6;
     const sk = p.skills;
     const attackSkill: SkillId = p.style === 'melee' ? 'attack' : p.style;
+    const gear = this.playerBonuses();
     const result = rollHit(
       this.rng,
-      { attackLevel: sk.level(attackSkill), strengthLevel: p.style === 'melee' ? sk.level('strength') : sk.level(attackSkill), accuracyBonus: style.accuracy, powerBonus: style.power },
+      { attackLevel: sk.level(attackSkill), strengthLevel: p.style === 'melee' ? sk.level('strength') : sk.level(attackSkill), accuracyBonus: gear.accuracy, powerBonus: gear.power },
       { defenceLevel: e.def.defence, armour: 0 },
     );
     this.emit({ type: 'attack', source: p.id, target: e.id, style: p.style });
@@ -901,6 +983,170 @@ export class GameWorld {
       this.byId.delete(g.id);
       this.groundItems = this.groundItems.filter((x) => x !== g);
     } else this.inventoryFull();
+  }
+
+  // ---------------------------------------------------------------- equipment
+
+  /**
+   * Combat bonuses from worn gear. A weapon counts only with its own combat style; without one the
+   * style's training weapon (STYLES) applies, so unarmed progress from older saves is unchanged.
+   */
+  playerBonuses(): { accuracy: number; power: number; armour: number; weapon: ItemId | null } {
+    const p = this.player;
+    const b = p.equipment.bonuses(p.style);
+    const style = STYLES[p.style];
+    return { accuracy: b.weapon ? b.accuracy : style.accuracy, power: b.weapon ? b.power : style.power, armour: b.armour, weapon: b.weapon };
+  }
+
+  private equip(slot: number) {
+    const p = this.player;
+    if (!Number.isInteger(slot)) return;
+    const st = p.inventory.slots[slot];
+    if (!st) return;
+    const r = equipFromInventory(p.equipment, p.inventory, slot, (s) => p.skills.level(s));
+    const name = itemDef(st.item).name;
+    if (!r.ok) {
+      if (r.reason === 'level' && r.need) this.message(`You need ${SKILL_INFO[r.need.skill].name} level ${r.need.level} to wear the ${name.toLowerCase()}.`, 'warn');
+      else if (r.reason === 'space') this.message('Not enough inventory space to swap your gear.', 'warn');
+      else if (r.reason === 'notEquippable') this.message(`You can't wear the ${name.toLowerCase()}.`);
+      return;
+    }
+    const e = itemDef(st.item).equip!;
+    // Wielding a weapon switches to the combat style it is made for.
+    if (e.slot === 'weapon' && e.style && e.style !== p.style) {
+      p.style = e.style;
+      this.message(`Combat style: ${STYLES[e.style].name}.`);
+    }
+    this.message(`You ${e.slot === 'weapon' ? 'wield' : 'wear'} the ${name.toLowerCase()}.`);
+    this.emit({ type: 'equipment' });
+  }
+
+  private unequip(slot: EquipSlot) {
+    const p = this.player;
+    if (!EQUIP_SLOTS.includes(slot)) return;
+    const it = p.equipment.get(slot);
+    const r = unequipToInventory(p.equipment, p.inventory, slot);
+    if (!r.ok) {
+      if (r.reason === 'space') this.inventoryFull();
+      return;
+    }
+    this.message(`You take off the ${itemDef(it!).name.toLowerCase()}.`);
+    this.emit({ type: 'equipment' });
+  }
+
+  // ---------------------------------------------------------------- production
+
+  private activeStation(): Station | null {
+    const p = this.player;
+    if (p.stationAt === null || p.dead) return null;
+    const st = this.byId.get(p.stationAt);
+    if (!(st instanceof Station)) return null;
+    return dist(p.x, p.z, st.x, st.z) <= STATION_REACH + STATION_LEAVE_MARGIN ? st : null;
+  }
+
+  private updateStationApproach(id: number) {
+    const p = this.player;
+    const st = this.byId.get(id);
+    if (!(st instanceof Station)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(st.x, st.z, STATION_REACH, true)) return;
+    p.action = null;
+    p.facing = Math.atan2(st.x - p.x, st.z - p.z);
+    p.stationAt = st.id;
+    this.emit({ type: 'productionOpen', station: st.kind });
+  }
+
+  /** Why a recipe can't be made right now (null if it can). Checks level, materials, place and space. */
+  craftBlocker(id: string): string | null {
+    const p = this.player;
+    const rec = RECIPES[id];
+    if (!rec) return 'Unknown recipe.';
+    if (rec.station !== 'fletching' && this.activeStation()?.kind !== rec.station) return `You need to be at a ${STATION_INFO[rec.station].name.toLowerCase()}.`;
+    if (p.skills.level(rec.skill) < rec.level) return `You need ${SKILL_INFO[rec.skill].name} level ${rec.level}.`;
+    for (const inp of rec.inputs) {
+      if (p.inventory.count(inp.item) < inp.qty) return `You need ${inp.qty} ${itemDef(inp.item).name.toLowerCase()}.`;
+    }
+    if (!this.outputFits(rec)) return 'Your inventory is full.';
+    return null;
+  }
+
+  /** How many times the recipe could be made with the current materials (space checked per make). */
+  craftableCount(id: string): number {
+    const rec = RECIPES[id];
+    if (!rec) return 0;
+    return Math.min(...rec.inputs.map((i) => Math.floor(this.player.inventory.count(i.item) / i.qty)));
+  }
+
+  /** Whether the product (and any failure product) fits once the ingredients are used. */
+  private outputFits(rec: RecipeDef): boolean {
+    const sim = this.player.inventory.clone();
+    for (const inp of rec.inputs) sim.remove(inp.item, inp.qty);
+    if (sim.clone().add(rec.output.item, rec.output.qty) !== rec.output.qty) return false;
+    return !rec.fail || sim.add(rec.fail.output, 1) === 1;
+  }
+
+  private startCraft(id: string, count: number) {
+    const p = this.player;
+    const rec = RECIPES[id];
+    if (!rec) return;
+    const n = Math.max(1, Math.min(1000, Math.floor(Number(count)) || 1));
+    const blocked = this.craftBlocker(id);
+    if (blocked) {
+      if (blocked === 'Your inventory is full.') this.inventoryFull();
+      else this.message(blocked, 'warn');
+      return;
+    }
+    p.path = [];
+    p.action = { type: 'craft', recipe: id, remaining: n, made: 0 };
+    p.craftTimer = rec.seconds * 0.6;
+  }
+
+  /** The recipe being made right now, while the player is at work (for animation and status). */
+  get crafting(): RecipeDef | null {
+    const a = this.player.action;
+    return a?.type === 'craft' ? (RECIPES[a.recipe] ?? null) : null;
+  }
+
+  private updateCraft(a: Extract<PlayerAction, { type: 'craft' }>, dt: number) {
+    const p = this.player;
+    const rec = RECIPES[a.recipe];
+    if (!rec) {
+      p.action = null;
+      return;
+    }
+    const st = rec.station !== 'fletching' ? this.activeStation() : null;
+    if (st) p.facing = Math.atan2(st.x - p.x, st.z - p.z);
+    p.craftTimer -= dt;
+    if (p.craftTimer > 0) return;
+    p.craftTimer = rec.seconds;
+    const blocked = this.craftBlocker(a.recipe);
+    if (blocked) {
+      p.action = null;
+      if (a.made > 0) this.message(`You make ${a.made} ${plural(itemDef(rec.output.item).name.toLowerCase(), a.made)}.`, 'good');
+      if (blocked === 'Your inventory is full.') this.inventoryFull();
+      else this.message(blocked, a.made > 0 ? 'info' : 'warn');
+      return;
+    }
+    // One make, all or nothing: ingredients and space were just checked together.
+    const failed = this.rng() < failChance(rec, p.skills.level(rec.skill));
+    for (const inp of rec.inputs) p.inventory.remove(inp.item, inp.qty);
+    const outItem = failed && rec.fail ? rec.fail.output : rec.output.item;
+    const outQty = failed ? 1 : rec.output.qty;
+    if (p.inventory.add(outItem, outQty) !== outQty) throw new Error('craft invariant broken');
+    this.emit({ type: 'loot', item: outItem, qty: outQty });
+    if (failed) this.message(`You accidentally ruin it: ${itemDef(outItem).name.toLowerCase()}.`, 'warn');
+    else {
+      this.grantXp(rec.skill, rec.xp);
+      a.made++;
+    }
+    a.remaining--;
+    this.emit({ type: 'craft', recipe: rec.id, success: !failed, remaining: a.remaining });
+    if (a.remaining <= 0) {
+      p.action = null;
+      if (a.made > 1) this.message(`You make ${a.made} ${plural(itemDef(rec.output.item).name.toLowerCase(), a.made)}.`, 'good');
+    }
   }
 
   // ---------------------------------------------------------------- bank
@@ -1269,7 +1515,7 @@ export class GameWorld {
     const r = rollHit(
       this.rng,
       { attackLevel: def.attack, strengthLevel: def.strength, accuracyBonus: 0, powerBonus: 0 },
-      { defenceLevel: p.skills.level('defence'), armour: 0 },
+      { defenceLevel: p.skills.level('defence'), armour: this.playerBonuses().armour },
       def.maxHit,
     );
     const dealt = Math.min(r.damage, p.hp);
@@ -1277,7 +1523,7 @@ export class GameWorld {
     this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit: r.hit });
     // Auto-retaliate: idle or gathering players fight back (but never override manual movement or a chosen target).
     const steering = Math.hypot(p.joy.x, p.joy.z) > 0.15 || p.path.length > 0;
-    if ((!p.action || p.action.type === 'gather') && !steering && p.hp > 0) p.action = { type: 'attack', target: e.id };
+    if ((!p.action || p.action.type === 'gather' || p.action.type === 'craft') && !steering && p.hp > 0) p.action = { type: 'attack', target: e.id };
     if (p.hp <= 0) this.killPlayer();
   }
 

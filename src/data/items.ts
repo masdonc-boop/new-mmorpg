@@ -11,7 +11,38 @@ export type IconShape =
   | 'pickaxe'
   | 'fang'
   | 'gem'
-  | 'rune';
+  | 'rune'
+  | 'bar'
+  | 'dagger'
+  | 'sword'
+  | 'helm'
+  | 'shield'
+  | 'platebody'
+  | 'platelegs'
+  | 'bow'
+  | 'shafts'
+  | 'meat';
+
+export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs';
+export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'body', 'legs', 'weapon', 'shield'];
+
+/** Wearable stats. Weapons boost the combat style they are made for; armour adds to defence. */
+export interface EquipDef {
+  slot: EquipSlot;
+  /** Weapons only: the combat style the weapon is used with. */
+  style?: 'melee' | 'ranged' | 'magic';
+  /** Accuracy and power bonuses (replace the training weapon's when this weapon is used). */
+  accuracy?: number;
+  power?: number;
+  /** Armour bonus (adds to the wearer's defence roll). */
+  armour?: number;
+  /** Bows need both hands: a shield can't be worn with them. */
+  twoHanded?: boolean;
+  /** Minimum skill levels to wear it. */
+  req?: Partial<Record<'attack' | 'strength' | 'defence' | 'ranged' | 'magic', number>>;
+  /** Metal/material tint for the worn model. */
+  tint?: string;
+}
 
 export interface ItemDef {
   id: string;
@@ -23,9 +54,10 @@ export interface ItemDef {
    */
   stackable: boolean;
   maxStack: number;
-  kind: 'material' | 'tool' | 'food' | 'ammo' | 'currency' | 'trophy';
+  kind: 'material' | 'tool' | 'food' | 'ammo' | 'currency' | 'trophy' | 'weapon' | 'armour';
   value: number;
   heal?: number;
+  equip?: EquipDef;
   icon: { shape: IconShape; color: string; accent?: string };
 }
 
@@ -51,6 +83,30 @@ export const ITEMS = {
   bread: def({ id: 'bread', name: 'Bread', examine: 'Warm village bread. Heals 30 HP.', stackable: false, kind: 'food', value: 6, heal: 30, icon: { shape: 'bread', color: '#d99a4e', accent: '#f6d7a0' } }),
   bronze_axe: def({ id: 'bronze_axe', name: 'Bronze axe', examine: 'Required for woodcutting.', stackable: false, kind: 'tool', value: 16, icon: { shape: 'axe', color: '#c98a4b', accent: '#7a4f2a' } }),
   bronze_pickaxe: def({ id: 'bronze_pickaxe', name: 'Bronze pickaxe', examine: 'Required for mining.', stackable: false, kind: 'tool', value: 16, icon: { shape: 'pickaxe', color: '#c98a4b', accent: '#7a4f2a' } }),
+
+  // ---- Smithing: bars and bronze / iron equipment
+  bronze_bar: def({ id: 'bronze_bar', name: 'Bronze bar', examine: 'Copper and tin, smelted together.', stackable: false, kind: 'material', value: 14, icon: { shape: 'bar', color: '#c98a4b', accent: '#f0b47a' } }),
+  iron_bar: def({ id: 'iron_bar', name: 'Iron bar', examine: 'A bar of strong, dark iron.', stackable: false, kind: 'material', value: 40, icon: { shape: 'bar', color: '#8d949c', accent: '#d5dbe1' } }),
+  bronze_dagger: def({ id: 'bronze_dagger', name: 'Bronze dagger', examine: 'Short, sharp and light.', stackable: false, kind: 'weapon', value: 20, equip: { slot: 'weapon', style: 'melee', accuracy: 15, power: 11, tint: '#c98a4b' }, icon: { shape: 'dagger', color: '#c98a4b', accent: '#7a4f2a' } }),
+  bronze_sword: def({ id: 'bronze_sword', name: 'Bronze sword', examine: 'A dependable blade of village make.', stackable: false, kind: 'weapon', value: 32, equip: { slot: 'weapon', style: 'melee', accuracy: 18, power: 15, tint: '#c98a4b' }, icon: { shape: 'sword', color: '#c98a4b', accent: '#7a4f2a' } }),
+  iron_sword: def({ id: 'iron_sword', name: 'Iron sword', examine: 'Heavier and keener than bronze.', stackable: false, kind: 'weapon', value: 90, equip: { slot: 'weapon', style: 'melee', accuracy: 26, power: 22, req: { attack: 10 }, tint: '#a3aab3' }, icon: { shape: 'sword', color: '#a3aab3', accent: '#4e5560' } }),
+  bronze_helm: def({ id: 'bronze_helm', name: 'Bronze helm', examine: 'Keeps your head on your shoulders.', stackable: false, kind: 'armour', value: 20, equip: { slot: 'head', armour: 4, tint: '#c98a4b' }, icon: { shape: 'helm', color: '#c98a4b', accent: '#7a4f2a' } }),
+  iron_helm: def({ id: 'iron_helm', name: 'Iron helm', examine: 'A sturdy iron helm.', stackable: false, kind: 'armour', value: 60, equip: { slot: 'head', armour: 8, req: { defence: 10 }, tint: '#a3aab3' }, icon: { shape: 'helm', color: '#a3aab3', accent: '#4e5560' } }),
+  bronze_shield: def({ id: 'bronze_shield', name: 'Bronze shield', examine: 'A round shield with a bronze rim.', stackable: false, kind: 'armour', value: 34, equip: { slot: 'shield', armour: 7, tint: '#c98a4b' }, icon: { shape: 'shield', color: '#c98a4b', accent: '#6b4426' } }),
+  iron_shield: def({ id: 'iron_shield', name: 'Iron shield', examine: 'Iron-faced and battle-ready.', stackable: false, kind: 'armour', value: 100, equip: { slot: 'shield', armour: 13, req: { defence: 10 }, tint: '#a3aab3' }, icon: { shape: 'shield', color: '#a3aab3', accent: '#4e3a2a' } }),
+  bronze_platelegs: def({ id: 'bronze_platelegs', name: 'Bronze platelegs', examine: 'Bronze plates to guard your legs.', stackable: false, kind: 'armour', value: 40, equip: { slot: 'legs', armour: 8, tint: '#c98a4b' }, icon: { shape: 'platelegs', color: '#c98a4b', accent: '#7a4f2a' } }),
+  iron_platelegs: def({ id: 'iron_platelegs', name: 'Iron platelegs', examine: 'Heavy iron leg armour.', stackable: false, kind: 'armour', value: 120, equip: { slot: 'legs', armour: 14, req: { defence: 10 }, tint: '#a3aab3' }, icon: { shape: 'platelegs', color: '#a3aab3', accent: '#4e5560' } }),
+  bronze_platebody: def({ id: 'bronze_platebody', name: 'Bronze platebody', examine: 'A bronze breastplate with shoulder guards.', stackable: false, kind: 'armour', value: 60, equip: { slot: 'body', armour: 12, tint: '#c98a4b' }, icon: { shape: 'platebody', color: '#c98a4b', accent: '#7a4f2a' } }),
+  iron_platebody: def({ id: 'iron_platebody', name: 'Iron platebody', examine: 'Solid iron plate. Heavy, but worth it.', stackable: false, kind: 'armour', value: 180, equip: { slot: 'body', armour: 20, req: { defence: 10 }, tint: '#a3aab3' }, icon: { shape: 'platebody', color: '#a3aab3', accent: '#4e5560' } }),
+  // ---- Fletching
+  arrow_shafts: def({ id: 'arrow_shafts', name: 'Arrow shafts', examine: 'Straight wooden shafts, ready for arrowheads.', stackable: true, kind: 'material', value: 1, icon: { shape: 'shafts', color: '#c9a06a', accent: '#8a6238' } }),
+  shortbow: def({ id: 'shortbow', name: 'Shortbow', examine: 'A light bow carved from a single log.', stackable: false, kind: 'weapon', value: 30, equip: { slot: 'weapon', style: 'ranged', accuracy: 20, power: 12, twoHanded: true, tint: '#9b6a3a' }, icon: { shape: 'bow', color: '#9b6a3a', accent: '#efe8d6' } }),
+  oak_shortbow: def({ id: 'oak_shortbow', name: 'Oak shortbow', examine: 'A springy oak bow with a strong pull.', stackable: false, kind: 'weapon', value: 80, equip: { slot: 'weapon', style: 'ranged', accuracy: 28, power: 17, twoHanded: true, req: { ranged: 15 }, tint: '#6e472c' }, icon: { shape: 'bow', color: '#6e472c', accent: '#efe8d6' } }),
+  wooden_shield: def({ id: 'wooden_shield', name: 'Wooden shield', examine: 'Planks pinned to a round frame.', stackable: false, kind: 'armour', value: 16, equip: { slot: 'shield', armour: 4, tint: '#8a5a34' }, icon: { shape: 'shield', color: '#8a5a34', accent: '#4e321e' } }),
+  // ---- Cooking
+  raw_meat: def({ id: 'raw_meat', name: 'Raw meat', examine: 'It needs cooking before you eat it.', stackable: false, kind: 'material', value: 3, icon: { shape: 'meat', color: '#d9646a', accent: '#f4e2d2' } }),
+  cooked_meat: def({ id: 'cooked_meat', name: 'Cooked meat', examine: 'Hearty and hot. Heals 25 HP.', stackable: false, kind: 'food', value: 8, heal: 25, icon: { shape: 'meat', color: '#9a5a32', accent: '#f4e2d2' } }),
+  burnt_meat: def({ id: 'burnt_meat', name: 'Burnt meat', examine: 'Charred beyond saving.', stackable: false, kind: 'material', value: 0, icon: { shape: 'meat', color: '#2e2622', accent: '#6a5a50' } }),
 } satisfies Record<string, ItemDef>;
 
 export type ItemId = keyof typeof ITEMS;

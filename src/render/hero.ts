@@ -36,6 +36,16 @@ export interface HeroLook extends HumanoidLook {
   spectacles?: boolean;
   /** Carried prop with its own idle behaviour: a clerk's ledger (book in the left hand, quill in the right). */
   prop?: 'ledger';
+  /** Worn equipment shown on the model (tints are metal / wood colours). */
+  gear?: HeroGear;
+}
+
+export interface HeroGear {
+  weapon?: { kind: 'sword' | 'dagger' | 'bow'; tint: string };
+  head?: string;
+  body?: string;
+  legs?: string;
+  shield?: { tint: string; wooden?: boolean };
 }
 
 interface PartOpts {
@@ -318,7 +328,16 @@ export class HeroModel {
     // ---- legs: thigh, calf + boot shaft (knee), foot (ankle)
     const bootLight = shade(boots, 1.35);
     for (const side of ['L', 'R'] as const) {
-      this.addMesh(j[`thigh${side}`], [cpart(Cap(0.1 * limb, 0.2), trousers, { y: -0.2, ao: 0.15 })]);
+      const lp = look.gear?.legs;
+      this.addMesh(j[`thigh${side}`], [
+        cpart(Cap(0.1 * limb, 0.2), trousers, { y: -0.2, ao: 0.15 }),
+        ...(lp
+          ? [
+              cpart(Cyl(0.118 * limb, 0.108 * limb, 0.3, 12), lp, { y: -0.2, ao: 0.15 }),
+              cpart(Sph(1, 10, 7), shade(lp, 1.1), { y: -0.39, z: 0.05, sx: 0.07 * limb, sy: 0.06, sz: 0.05 }),
+            ]
+          : []),
+      ]);
       this.addMesh(j[`knee${side}`], [
         cpart(Cap(0.088 * limb, 0.17, 3, 8), trousers, { y: -0.12, ao: 0.1 }),
         cpart(Cyl(0.102 * limb, 0.094 * limb, 0.2, 10), boots, { y: -0.3, ao: 0.25 }),
@@ -352,6 +371,13 @@ export class HeroModel {
     }
     if (fem) torso.push(cpart(Sph(1, 10, 7), tunic, { y: 0.27, z: 0.1, sx: 0.17, sy: 0.085, sz: 0.08 }));
     if (look.cape) torso.push(cpart(lathe([[0.2, 0.42], [0.25, 0.2], [0.3, -0.25]], 10, Math.PI * 1.2), look.cape, { sz: 0.85 }));
+    if (look.gear?.body) {
+      // Breastplate shell over the jerkin, with a raised centre ridge and a lower rim.
+      const pt = look.gear.body;
+      torso.push(cpart(lathe([[0.205 * build + 0.012, 0.01], [0.214 * build + 0.014, 0.08], [cw * 0.95 + 0.032, 0.2], [cw + 0.032, 0.3], [cw * 0.96 + 0.03, 0.36], [cw * 0.78 + 0.026, 0.42], [0.15, 0.455]], 16), pt, { sz: 0.84, ao: 0.15 }));
+      torso.push(cpart(Box(0.03, 0.36, 0.03), shade(pt, 1.15), { y: 0.24, z: (cw + 0.03) * 0.84 }));
+      torso.push(cpart(Tor(0.215 * build, 0.016, 16), shade(pt, 0.7), { y: 0.02, rx: Math.PI / 2, sz: 0.84 }));
+    }
     torso.push(cpart(Cyl(0.072 * limb, 0.082 * limb, 0.1, 10), skin, { y: 0.49 }));
     this.addMesh(j.spine, torso);
 
@@ -362,9 +388,10 @@ export class HeroModel {
         cpart(Sph(1, 12, 8), sleeve, { y: -0.01, sx: 0.084 * limb, sy: 0.08, sz: 0.084 * limb, ao: 0.1 }),
         cpart(lathe([[0.066 * limb, -0.27], [0.074 * limb, -0.22], [0.082 * limb, -0.12], [0.084 * limb, -0.03], [0.07 * limb, 0.02]], 10), sleeve, { ao: 0.18, mottle: guard ? 0.14 : 0.03 }),
       ];
-      if (guard) {
-        upper.push(cpart(new THREE.SphereGeometry(0.11 * limb, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), PALETTE.iron, { y: -0.02, x: sx * 0.01, sy: 0.85 }));
-        upper.push(cpart(Tor(0.105 * limb, 0.012, 12), shade(PALETTE.iron, 0.75), { y: -0.02, rx: Math.PI / 2 }));
+      const plate = look.gear?.body ?? (guard ? PALETTE.iron : null);
+      if (plate) {
+        upper.push(cpart(new THREE.SphereGeometry(0.11 * limb, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5), plate, { y: -0.02, x: sx * 0.01, sy: 0.85 }));
+        upper.push(cpart(Tor(0.105 * limb, 0.012, 12), shade(plate, 0.75), { y: -0.02, rx: Math.PI / 2 }));
       }
       this.addMesh(j[`arm${side}`], upper);
       const cuff = robe ? tunic : PALETTE.leather;
@@ -376,6 +403,16 @@ export class HeroModel {
         cpart(Sph(1, 10, 7), skin, { y: -0.292, z: 0.016, sx: 0.058 * limb, sy: 0.04, sz: 0.05, ao: 0.15 }),
         cpart(Cap(0.022, 0.045, 2, 6), skin, { x: -sx * 0.045, y: -0.24, z: 0.035, rz: sx * 0.55, rx: -0.45 }),
       ]);
+      const sh = look.gear?.shield;
+      if (side === 'L' && sh) {
+        // Round shield strapped to the outside of the left forearm.
+        const face = sh.wooden ? '#8a5a34' : shade(sh.tint, 0.9);
+        this.addMesh(j.elbowL, [
+          cpart(Cyl(0.22, 0.22, 0.035, 16), face, { x: -0.095, y: -0.13, rz: Math.PI / 2, mottle: sh.wooden ? 0.1 : 0.04, ao: 0.1 }),
+          cpart(Tor(0.215, 0.02, 16), sh.tint, { x: -0.115, y: -0.13, ry: Math.PI / 2 }),
+          cpart(Sph(0.06, 10, 6), sh.tint, { x: -0.12, y: -0.13, sx: 0.6 }),
+        ]);
+      }
     }
 
     // ---- head
@@ -387,7 +424,14 @@ export class HeroModel {
       cpart(Sph(1, 10, 8), skin, { x: R * 0.98, y: R * 0.9, sx: 0.035, sy: 0.05, sz: 0.035 }),
       cpart(Sph(1, 10, 8), shade(skin, 0.97), { y: R * 0.8, z: R * 0.94, sx: 0.024 * (guard ? 1.2 : 1), sy: 0.026, sz: 0.026 }),
     ];
-    if (!look.helmet) this.buildHair(head, look.hair, look.hairStyle % 5, R);
+    const helm = look.gear?.head;
+    if (!look.helmet && !helm) this.buildHair(head, look.hair, look.hairStyle % 5, R);
+    if (helm) {
+      // Rounded helm with a brow band and a nose guard.
+      head.push(cpart(new THREE.SphereGeometry(R * 1.1, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), helm, { y: R * 1.05, sy: 0.95 }));
+      head.push(cpart(Tor(R * 1.08, 0.02, 16), shade(helm, 0.72), { y: R * 1.12, rx: Math.PI / 2, sz: 0.97 }));
+      head.push(cpart(Box(0.03, 0.12, 0.025), shade(helm, 0.85), { y: R * 0.93, z: R * 1.08 }));
+    }
     if (look.beard) {
       // Full beard hugging the jaw, and a moustache.
       head.push(cpart(Sph(1, 12, 9), look.hair, { y: R * 0.4, z: R * 0.42, sx: R * 0.92, sy: R * 0.62, sz: R * 0.6, mottle: 0.08 }));
@@ -551,17 +595,33 @@ export class HeroModel {
     const wood = '#8a5a34';
     const bronze = '#c98a4b';
     const steel = '#d6dbe2';
+    // Forged weapons show their metal; a dagger has a shorter blade.
+    const gw = this.look.gear?.weapon;
+    const blade = gw && gw.kind !== 'bow' ? shade(gw.tint, 1.25) : steel;
+    const bladeLen = gw?.kind === 'dagger' ? 0.32 : 0.62;
     this.tools.set(
       'sword',
       this.toolMesh([
         cpart(Cyl(0.022, 0.022, 0.17, 8), PALETTE.leatherDark, { y: 0 }),
         cpart(Sph(0.035, 8, 6), PALETTE.gold, { y: -0.1 }),
         cpart(Cap(0.025, 0.2, 3, 8), PALETTE.gold, { y: 0.1, rz: Math.PI / 2 }),
-        cpart(Cyl(0.012, 0.045, 0.62, 4), steel, { y: 0.42, sz: 0.35 }),
-        cpart(new THREE.ConeGeometry(0.012, 0.09, 4), steel, { y: 0.78, sz: 0.35, sx: 3.7 }),
+        cpart(Cyl(0.012, 0.045, bladeLen, 4), blade, { y: 0.11 + bladeLen / 2, sz: 0.35 }),
+        cpart(new THREE.ConeGeometry(0.012, 0.09, 4), blade, { y: 0.155 + bladeLen, sz: 0.35, sx: 3.7 }),
       ]),
     );
-    this.buildBow(wood);
+    this.buildBow(gw?.kind === 'bow' ? gw.tint : wood);
+    this.tools.set(
+      'hammer',
+      this.toolMesh([
+        cpart(Cyl(0.018, 0.022, 0.36, 7), wood, { y: 0.12 }),
+        cpart(Box(0.15, 0.07, 0.07), '#5b5f68', { y: 0.3 }),
+        cpart(Box(0.035, 0.08, 0.08), '#8d949c', { x: 0.08, y: 0.3 }),
+      ]),
+    );
+    this.tools.set(
+      'knife',
+      this.toolMesh([cpart(Cyl(0.016, 0.018, 0.1, 6), PALETTE.leatherDark, { y: 0.02 }), cpart(Cyl(0.004, 0.022, 0.13, 4), steel, { y: 0.135, sz: 0.3 })]),
+    );
     // Wand: forearm-length, gripped at the base, crystal at the tip.
     const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.032, 1), new THREE.MeshBasicMaterial({ color: '#b39cff' }));
     orb.position.y = 0.4;
@@ -913,6 +973,27 @@ export class HeroModel {
       this.set('kneeR', kn2);
       this.set('ankleR', -(th2 + kn2));
       ht.y = -0.06 + up * 0.02;
+    } else if (pose === 'smith') {
+      // Hammering at the anvil: right arm lifts and strikes, left hand steadies the work.
+      snap = 26;
+      const cycle = (time * 1.4) % 1;
+      const up = cycle < 0.55 ? easeOut(cycle / 0.55) : 1 - easeIn((cycle - 0.55) / 0.45);
+      this.set('armR', -0.55 - up * 1.55, 0, 0.12);
+      this.set('elbowR', -0.7 - up * 0.6);
+      this.set('armL', -0.7, 0.2, -0.05);
+      this.set('elbowL', -0.9);
+      this.set('spine', 0.18 - up * 0.08, -0.12 + up * 0.08, 0);
+      this.set('head', 0.22, 0, 0);
+      ht.y = -0.02;
+    } else if (pose === 'work') {
+      // Hands-forward work at a furnace or range, or fletching a log in hand.
+      const k = Math.sin(time * 3.2);
+      this.set('armR', -0.75 + k * 0.08, 0.25, 0.05);
+      this.set('armL', -0.75 - k * 0.08, -0.25, -0.05);
+      this.set('elbowR', -1.05);
+      this.set('elbowL', -1.05);
+      this.set('spine', 0.14, 0, 0);
+      this.set('head', 0.28, 0, 0);
     } else if (pose === 'talk' && w < 0.5) {
       const gst = Math.sin(time * 4.2);
       this.set('armR', -0.75 + gst * 0.18, 0, -0.35);

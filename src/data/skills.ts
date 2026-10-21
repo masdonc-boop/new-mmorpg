@@ -7,6 +7,9 @@ export const SKILL_IDS = [
   'magic',
   'woodcutting',
   'mining',
+  'smithing',
+  'fletching',
+  'cooking',
 ] as const;
 
 export type SkillId = (typeof SKILL_IDS)[number];
@@ -15,7 +18,7 @@ export interface SkillInfo {
   name: string;
   color: string;
   glyph: string;
-  category: 'combat' | 'gathering';
+  category: 'combat' | 'gathering' | 'production';
 }
 
 export const SKILL_INFO: Record<SkillId, SkillInfo> = {
@@ -27,6 +30,9 @@ export const SKILL_INFO: Record<SkillId, SkillInfo> = {
   magic: { name: 'Magic', color: '#8a6cf0', glyph: '✦', category: 'combat' },
   woodcutting: { name: 'Woodcutting', color: '#b07a3c', glyph: '🌲', category: 'gathering' },
   mining: { name: 'Mining', color: '#9aa3ad', glyph: '⛏', category: 'gathering' },
+  smithing: { name: 'Smithing', color: '#c98a4b', glyph: '⚒', category: 'production' },
+  fletching: { name: 'Fletching', color: '#5fae8c', glyph: '🏹', category: 'production' },
+  cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production' },
 };
 
 export const MAX_LEVEL = 99;

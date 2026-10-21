@@ -4,6 +4,7 @@ import { clamp, distToSegment, lerp } from '../core/math';
 import type { ResourceType } from '../data/resources';
 import type { EnemyType } from '../data/enemies';
 import type { NpcId } from '../data/npcs';
+import type { StationKind } from '../data/recipes';
 
 /** Terrain tile types. */
 export const T = {
@@ -42,7 +43,9 @@ export type DecorKind =
   | 'anvil'
   | 'spikes'
   | 'signpost'
-  | 'waystone';
+  | 'waystone'
+  | 'furnace'
+  | 'range';
 
 export interface Decor {
   kind: DecorKind;
@@ -93,6 +96,8 @@ export interface WorldMap {
   enemySpawns: { type: EnemyType; x: number; z: number }[];
   /** `patrol`: waypoints for NPCs that walk a route (their tile is left unblocked). */
   npcs: { id: NpcId; x: number; z: number; facing: number; patrol?: { x: number; z: number }[] }[];
+  /** Production stations players can use (furnace, anvil, cooking range). */
+  stations: { kind: Exclude<StationKind, 'fletching'>; x: number; z: number; facing: number }[];
   spawn: { x: number; z: number };
   regions: Region[];
   checkpoints: Checkpoint[];
@@ -296,6 +301,15 @@ export function generateWorld(seed = 1337): WorldMap {
   addDecor('stall', 60.5, 62.5, true, -S / 4, 1, 0);
   addDecor('stall', 52.5, 62.5, true, S / 4, 1, 1);
   addDecor('anvil', 63.5, 74.5, true, 0, 1, 0);
+  // Smithy furnace beside the door, and a cooking range outside the inn.
+  addDecor('furnace', 63.5, 72.0, true, -S / 2, 1, 0);
+  occ[idx(63, 71)] = blocked[idx(63, 71)] = 1;
+  addDecor('range', 62.5, 57.5, true, -S / 2, 1, 0);
+  const stations: WorldMap['stations'] = [
+    { kind: 'furnace', x: 63.5, z: 72.0, facing: -S / 2 },
+    { kind: 'anvil', x: 63.5, z: 74.5, facing: 0 },
+    { kind: 'range', x: 62.5, z: 57.5, facing: -S / 2 },
+  ];
   addDecor('barrel', 63.5, 70.5, true);
   addDecor('crate', 69.5, 62.5, true);
   addDecor('barrel', 62.5, 55.5, true);
@@ -483,6 +497,7 @@ export function generateWorld(seed = 1337): WorldMap {
     decor,
     enemySpawns,
     npcs,
+    stations,
     spawn: { x: 56.5, z: 63.4 },
     regions: REGIONS,
     checkpoints,

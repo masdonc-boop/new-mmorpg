@@ -91,7 +91,7 @@ describe('Bank storage', () => {
   });
 
   it('puts every item in a category', () => {
-    for (const d of Object.values(ITEMS)) expect(['materials', 'tools', 'food', 'ammo', 'other']).toContain(bankCategory(d));
+    for (const d of Object.values(ITEMS)) expect(['materials', 'equipment', 'tools', 'food', 'ammo', 'other']).toContain(bankCategory(d));
     expect(bankCategory(itemDef('logs'))).toBe('materials');
     expect(bankCategory(itemDef('bronze_axe'))).toBe('tools');
     expect(bankCategory(itemDef('air_rune'))).toBe('ammo');

@@ -6,11 +6,12 @@ export const BANK_SLOTS = 200;
 /** Per-slot ceiling. Every item stacks in the bank, so one slot holds any amount up to this. */
 export const BANK_MAX_STACK = 2_000_000_000;
 
-export type BankCategory = 'all' | 'materials' | 'tools' | 'food' | 'ammo' | 'other';
+export type BankCategory = 'all' | 'materials' | 'equipment' | 'tools' | 'food' | 'ammo' | 'other';
 
 export const BANK_CATEGORIES: { id: BankCategory; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'materials', label: 'Materials' },
+  { id: 'equipment', label: 'Equipment' },
   { id: 'tools', label: 'Tools' },
   { id: 'food', label: 'Food' },
   { id: 'ammo', label: 'Ammo & runes' },
@@ -23,6 +24,9 @@ export function bankCategory(d: ItemDef): Exclude<BankCategory, 'all'> {
       return 'materials';
     case 'tool':
       return 'tools';
+    case 'weapon':
+    case 'armour':
+      return 'equipment';
     case 'food':
       return 'food';
     case 'ammo':

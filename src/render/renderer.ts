@@ -4,16 +4,16 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
-import { Enemy, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, type GameEvent, type GameWorld } from '../sim/world';
-import { itemDef, type ItemId } from '../data/items';
+import { Enemy, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { itemIcon } from '../ui/icons';
-import { Humanoid, SlimeModel, WolfModel, type HeldTool, type HumanoidLook } from './characters';
+import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, ResourceView, type StaticWorld } from './props';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
-import { HeroModel, type HeroLook } from './hero';
+import { HeroModel, type HeroGear, type HeroLook } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
 
@@ -137,21 +137,42 @@ export class GameRenderer {
     this.setQuality('balanced');
   }
 
-  playerLook(): HumanoidLook {
+  playerLook(): HeroLook {
     const a = this.world.player.appearance;
-    return { skin: a.skin, hair: a.hair, hairStyle: a.hairStyle, tunic: a.tunic, trousers: a.trousers, bodyType: a.bodyType };
+    return { skin: a.skin, hair: a.hair, hairStyle: a.hairStyle, tunic: a.tunic, trousers: a.trousers, bodyType: a.bodyType, gear: this.playerGear() };
   }
 
-  /** Rebuild the player model after appearance changes. */
+  /** Worn equipment as model gear (tints come from the item definitions). */
+  private playerGear(): HeroGear {
+    const eq = this.world.player.equipment;
+    const tint = (slot: EquipSlot) => {
+      const it = eq.get(slot);
+      return it ? itemDef(it).equip?.tint : undefined;
+    };
+    const gear: HeroGear = { head: tint('head'), body: tint('body'), legs: tint('legs') };
+    const w = eq.get('weapon');
+    if (w) gear.weapon = { kind: itemDef(w).equip?.style === 'ranged' ? 'bow' : w.endsWith('dagger') ? 'dagger' : 'sword', tint: tint('weapon')! };
+    const sh = eq.get('shield');
+    if (sh) gear.shield = { tint: tint('shield')!, wooden: sh.startsWith('wooden') };
+    return gear;
+  }
+
+  private gearKey = '';
+
+  /** Rebuild the player model after appearance or worn gear changes. */
   refreshPlayerModel() {
-    this.scene.remove(this.playerModel.root);
+    const old = this.playerModel.root;
+    this.scene.remove(old);
     this.playerModel.dispose();
     this.playerModel = this.makePlayerModel();
+    this.playerModel.root.position.copy(old.position);
+    this.playerModel.root.rotation.y = old.rotation.y;
     this.scene.add(this.playerModel.root);
   }
 
   private makePlayerModel(): CharacterRig {
     const m = ART.v2 ? new HeroModel(this.playerLook()) : new Humanoid(this.playerLook(), true);
+    this.gearKey = JSON.stringify(this.world.player.equipment.toJSON());
     m.enableSilhouette();
     return m;
   }
@@ -251,6 +272,11 @@ export class GameRenderer {
     if (gathering && node) {
       pose = node.def.skill === 'woodcutting' ? 'chop' : 'mine';
       tool = node.def.skill === 'woodcutting' ? 'axe' : 'pickaxe';
+    }
+    const making = world.crafting;
+    if (making && p.anim !== 'walk') {
+      pose = making.station === 'anvil' ? 'smith' : 'work';
+      tool = making.station === 'anvil' ? 'hammer' : making.station === 'fletching' ? 'knife' : 'none';
     }
     pm.style = p.style;
     pm.setTool(tool);
@@ -395,7 +421,20 @@ export class GameRenderer {
   private selectedId(): number | null {
     const a = this.world.player.action;
     if (!a) return null;
-    return a.type === 'attack' ? a.target : a.type === 'gather' ? a.node : a.type === 'pickup' ? a.ground : a.npc;
+    switch (a.type) {
+      case 'attack':
+        return a.target;
+      case 'gather':
+        return a.node;
+      case 'pickup':
+        return a.ground;
+      case 'station':
+        return a.station;
+      case 'craft':
+        return this.world.player.stationAt;
+      case 'talk':
+        return a.npc;
+    }
   }
 
   private updateTargetMarker(t: number) {
@@ -414,6 +453,8 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 1.15, t);
     } else if (ent instanceof Npc) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
+    } else if (ent instanceof Station) {
+      this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.85, t);
     } else if (ent instanceof GroundItem) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.55, t);
     }
@@ -505,6 +546,11 @@ export class GameRenderer {
       const near = Math.hypot(e.x - w.player.x, e.z - w.player.z) < 9;
       this.overlay.plate(e.id, a, { name: e.def.name, level: e.def.level, hp: engaged ? e.hp : null, maxHp: e.def.maxHp, kind: 'enemy', show: engaged || near || e.id === sel });
     }
+    for (const st of w.stations) {
+      const near = Math.hypot(st.x - w.player.x, st.z - w.player.z) < 6;
+      const a = near ? this.project(st.x, groundHeight(w.map, st.x, st.z) + 1.6, st.z) : null;
+      this.overlay.plate(st.id, a, { name: st.name, kind: 'npc', show: near });
+    }
     for (const v of this.groundViews.values()) {
       const g = v.pile;
       const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 5;
@@ -526,6 +572,11 @@ export class GameRenderer {
     const w = this.world;
     const p = w.player;
     switch (e.type) {
+      case 'equipment': {
+        const key = JSON.stringify(p.equipment.toJSON());
+        if (ART.v2 && key !== this.gearKey) this.refreshPlayerModel();
+        break;
+      }
       case 'damage': {
         const isPlayer = e.target === p.id;
         const anchor = () => this.entityAnchor(e.target);
@@ -696,6 +747,10 @@ export class GameRenderer {
     for (const v of this.groundViews.values()) {
       const p = v.sprite.position;
       consider(v.pile.id, p.x, p.y, p.z, 0.85);
+    }
+    for (const st of w.stations) {
+      if (Math.abs(st.x - w.player.x) > 30 || Math.abs(st.z - w.player.z) > 30) continue;
+      consider(st.id, st.x, groundHeight(map, st.x, st.z) + 0.6, st.z, 0.95);
     }
     if (best !== null) return { kind: 'entity', id: best };
 

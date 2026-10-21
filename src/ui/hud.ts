@@ -1,4 +1,4 @@
-import { dropNeedsConfirm, itemDef, type ItemId } from '../data/items';
+import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { QUESTS } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, type CombatStyle } from '../sim/combat';
@@ -9,6 +9,9 @@ import { itemIcon } from './icons';
 import { MapViewer } from './mapview';
 import { clearKeepingScroll } from './dom';
 import { BankView } from './bankview';
+import { CraftView } from './craftview';
+import { RECIPES, STATION_INFO, type StationKind } from '../data/recipes';
+import { skillUnlocks } from '../data/unlocks';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -17,7 +20,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -57,6 +60,10 @@ export class Hud {
   private armed = { key: '', until: 0 };
   private bankView: BankView | null = null;
   private bankDirty = false;
+  private craftView: CraftView | null = null;
+  private craftStation: StationKind = 'fletching';
+  private craftDirty = false;
+  private openSkill: SkillId | null = null;
   private panel!: HTMLDivElement;
   private panelBody!: HTMLDivElement;
   private panelTitle!: HTMLDivElement;
@@ -282,6 +289,10 @@ export class Hud {
     const settled = !this.panelTouching && performance.now() - this.lastPanelScroll > 250;
     if (settled && this.openPanel === 'inventory' && this.invDirty) this.renderInventory();
     if (settled && this.openPanel === 'skills' && this.skillsDirty) this.renderSkills();
+    if (settled && this.openPanel === 'craft' && this.craftDirty && this.craftView) {
+      this.craftDirty = false;
+      this.craftView.refresh();
+    }
     if (this.openPanel === 'bank' && this.bankDirty && this.bankView && !this.bankView.touching && performance.now() - this.bankView.lastScroll > 200) {
       this.bankDirty = false;
       this.bankView.refresh();
@@ -307,7 +318,11 @@ export class Hud {
     } else if (a?.type === 'gather') {
       const n = w.gatheringNode;
       if (n) text = `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
-    } else if (a?.type === 'talk') text = '💬 Walking over…';
+    } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
+    else if (a?.type === 'craft') {
+      const r = RECIPES[a.recipe];
+      if (r) text = `${SKILL_INFO[r.skill].glyph} ${STATION_INFO[r.station].doing} ${itemDef(r.station === 'range' ? r.inputs[0].item : r.output.item).name.toLowerCase()}${a.remaining > 1 ? ` · ${a.remaining} left` : '…'}`;
+    }
     else if (w.player.path.length > 0) text = '👣 Walking';
     if (this.status.textContent !== text) this.status.textContent = text;
     this.status.classList.toggle('hidden', !text);
@@ -432,6 +447,7 @@ export class Hud {
       case 'loot':
         this.lootToast(e.item, e.qty);
         this.invDirty = true;
+        this.craftDirty = true;
         break;
       case 'region':
         this.regionEl.textContent = e.name;
@@ -458,6 +474,23 @@ export class Hud {
         break;
       case 'bankOpen':
         this.toggle('bank');
+        break;
+      case 'productionOpen':
+        this.openCraft(e.station);
+        break;
+      case 'productionClose':
+        if (this.openPanel === 'craft' && this.craftStation !== 'fletching') {
+          this.craftView = null;
+          this.toggle(null);
+        }
+        break;
+      case 'craft':
+        this.craftDirty = true;
+        this.invDirty = true;
+        this.skillsDirty = true;
+        break;
+      case 'equipment':
+        this.invDirty = true;
         break;
       case 'bankClose':
         if (this.openPanel === 'bank') {
@@ -612,6 +645,11 @@ export class Hud {
     this.mapViewer?.dispose();
     this.mapViewer = null;
     if (this.openPanel === 'bank' && id !== 'bank' && this.bankView) this.leaveBank(true);
+    if (this.openPanel === 'craft' && this.craftView) {
+      // Closed by the player (not by starting production): release the station.
+      this.craftView = null;
+      this.cb.command({ type: 'closeProduction' });
+    }
     if (id === 'bank' && this.openPanel === 'bank') return;
     if (id === null || this.openPanel === id) {
       this.openPanel = null;
@@ -624,7 +662,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -632,7 +670,34 @@ export class Hud {
     else if (id === 'quests') this.renderQuests();
     else if (id === 'map') this.renderMap();
     else if (id === 'bank') this.renderBank();
+    else if (id === 'craft') this.renderCraft();
     else this.renderSettings();
+  }
+
+  /** Open the production panel for a station (or fletching). */
+  openCraft(station: StationKind) {
+    if (this.openPanel === 'craft') {
+      this.craftView = null;
+      this.openPanel = null;
+    }
+    this.craftStation = station;
+    this.toggle('craft');
+  }
+
+  private renderCraft() {
+    clearKeepingScroll(this.panelBody);
+    this.craftView = new CraftView(
+      this.world,
+      this.craftStation,
+      (c) => this.cb.command(c),
+      () => {
+        // Production started: close the panel without releasing the station.
+        this.craftView = null;
+        this.toggle(null);
+      },
+    );
+    this.panelBody.appendChild(this.craftView.root);
+    this.craftDirty = false;
   }
 
   private renderBank() {
@@ -657,6 +722,7 @@ export class Hud {
     const inv = this.world.player.inventory;
     const body = this.panelBody;
     clearKeepingScroll(body);
+    this.renderEquipment(body);
     const used = inv.usedSlots();
     const head = el('div', `inv-head${inv.isFull() ? ' full' : ''}`, `<span>${used} / ${inv.slots.length} slots used</span>${inv.isFull() ? '<span class="inv-full">Inventory full</span>' : `<span>${inv.freeSlots()} free</span>`}`);
     body.appendChild(head);
@@ -682,6 +748,23 @@ export class Hud {
       const d = itemDef(sel.item);
       info.innerHTML = `<div class="ii-name">${d.name}${sel.qty > 1 ? ` × ${sel.qty}` : ''}</div><div class="ii-desc">${d.examine}</div>`;
       const btns = el('div', 'ii-btns');
+      if (d.equip) {
+        const req = Object.entries(d.equip.req ?? {}).map(([sk, l]) => `${SKILL_INFO[sk as SkillId].name} ${l}`).join(', ');
+        const stats = [d.equip.accuracy ? `+${d.equip.accuracy} accuracy` : '', d.equip.power ? `+${d.equip.power} power` : '', d.equip.armour ? `+${d.equip.armour} armour` : ''].filter(Boolean).join(' · ');
+        info.innerHTML += `<div class="ii-stats">${stats}${d.equip.twoHanded ? ' · two-handed' : ''}${req ? ` · needs ${req}` : ''}</div>`;
+        const wear = el('button', 'primary', d.equip.slot === 'weapon' ? 'Wield' : 'Wear');
+        wear.addEventListener('click', () => {
+          this.cb.command({ type: 'equip', slot: this.selectedSlot! });
+          if (!inv.slots[this.selectedSlot!] || inv.slots[this.selectedSlot!]!.item !== sel.item) this.selectedSlot = null;
+          this.renderInventory();
+        });
+        btns.appendChild(wear);
+      }
+      if (Object.values(RECIPES).some((r) => r.station === 'fletching' && r.inputs.some((i) => i.item === sel.item))) {
+        const fl = el('button', 'primary', 'Fletch');
+        fl.addEventListener('click', () => this.cb.command({ type: 'openFletching' }));
+        btns.appendChild(fl);
+      }
       if (d.kind === 'food') {
         const eat = el('button', 'primary', 'Eat');
         eat.addEventListener('click', () => {
@@ -706,6 +789,31 @@ export class Hud {
     }
     body.appendChild(info);
     this.renderOverflow(body);
+  }
+
+  /** Worn gear: five slots above the inventory, with the combined combat bonuses. */
+  private renderEquipment(body: HTMLElement) {
+    const w = this.world;
+    const eq = w.player.equipment;
+    const box = el('div', 'equip');
+    const labels: Record<EquipSlot, string> = { head: 'Head', body: 'Body', legs: 'Legs', weapon: 'Weapon', shield: 'Shield' };
+    const row = el('div', 'equip-row');
+    for (const slot of EQUIP_SLOTS) {
+      const it = eq.get(slot);
+      const cell = el('button', `equip-slot${it ? ' worn' : ''}`, it ? `<img src="${itemIcon(it)}" alt="${itemDef(it).name}">` : `<span>${labels[slot]}</span>`);
+      cell.setAttribute('aria-label', it ? `${labels[slot]}: ${itemDef(it).name}` : `${labels[slot]} (empty)`);
+      cell.disabled = !it;
+      cell.addEventListener('click', () => {
+        if (!it) return;
+        this.cb.command({ type: 'unequip', slot });
+        this.renderInventory();
+      });
+      row.appendChild(cell);
+    }
+    const b = w.playerBonuses();
+    const weapon = b.weapon ? itemDef(b.weapon).name : `${STYLES[w.player.style].weapon} (training)`;
+    box.append(row, el('div', 'equip-stats', `${weapon} · accuracy ${b.accuracy} · power ${b.power} · armour ${b.armour}<br><small>Tap worn gear to take it off.</small>`));
+    body.appendChild(box);
   }
 
   /** Items held after migrating an older save, until the player collects or discards them. */
@@ -756,7 +864,19 @@ export class Hud {
          <div class="sk-bar"><div style="width:${pct.toFixed(1)}%;background:${info.color}"></div></div>
          <div class="sk-xp">${Math.floor(xp).toLocaleString()} xp${lvl < MAX_LEVEL ? ` · ${Math.ceil(next - xp).toLocaleString()} to next` : ''}</div></div>`,
       );
+      card.addEventListener('click', () => {
+        this.openSkill = this.openSkill === id ? null : id;
+        this.renderSkills();
+      });
       grid.appendChild(card);
+      if (this.openSkill === id) {
+        const list = skillUnlocks(id);
+        const det = el('div', 'skill-unlocks');
+        det.innerHTML = list.length
+          ? list.map((u) => `<div class="su ${u.level <= lvl ? 'done' : ''}"><b>${u.level}</b><img src="${itemIcon(u.icon)}" alt="">${u.text}</div>`).join('')
+          : '<div class="su">Every level makes you stronger in this skill.</div>';
+        grid.appendChild(det);
+      }
     }
     body.appendChild(grid);
     body.appendChild(el('div', 'skills-total', `Total level <b>${s.totalLevel()}</b> · Combat level <b>${s.combatLevel()}</b>`));

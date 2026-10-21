@@ -51,6 +51,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     speed: 3.3, respawnSeconds: 15, model: 'wolf', scale: 1, color: '#8b8f99', accent: '#e9e6df',
     drops: [
       { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'raw_meat', min: 1, max: 1, chance: 0.7 },
       { item: 'wolf_pelt', min: 1, max: 1, chance: 0.5 },
       { item: 'wolf_fang', min: 1, max: 1, chance: 0.2 },
       { item: 'coins', min: 5, max: 15, chance: 0.5 },

@@ -295,6 +295,29 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
       ]);
     case 'anvil':
       return merge([part(Box(0.4, 0.4, 0.3), '#5b3a22', { y: 0.2 }), part(Box(0.7, 0.2, 0.3), '#4a4d55', { y: 0.5 }), part(Cone(0.12, 0.3, 4), '#4a4d55', { x: 0.45, y: 0.5, rz: Math.PI / 2 })]);
+    case 'furnace':
+      // Stone smelting furnace: square base, domed kiln, glowing mouth facing +z, brick chimney.
+      return merge([
+        part(Box(1.05, 0.85, 1.0), '#8d857a', { y: 0.42, jitter: 0.06 }),
+        part(blob(0.5, 0, 0.12, rng()), '#9a9184', { y: 0.95, sx: 1.0, sy: 0.75, jitter: 0.06 }),
+        part(Box(0.46, 0.38, 0.1), '#2a1d16', { y: 0.55, z: 0.47 }),
+        part(Box(0.36, 0.26, 0.06), '#ff8a2a', { y: 0.52, z: 0.5, jitter: 0 }),
+        part(Box(0.6, 0.08, 0.14), '#6d665c', { y: 0.78, z: 0.5 }),
+        part(Box(0.3, 0.9, 0.3), '#8a4f3a', { x: 0.25, y: 1.45, z: -0.2, jitter: 0.08 }),
+        part(Box(0.38, 0.08, 0.38), '#5c5650', { x: 0.25, y: 1.92, z: -0.2 }),
+      ]);
+    case 'range':
+      // Cooking range: brick hearth with an iron hob, a stew pot and a chimney pipe.
+      return merge([
+        part(Box(1.0, 0.8, 0.7), '#a2563e', { y: 0.4, jitter: 0.07 }),
+        part(Box(1.08, 0.07, 0.78), '#3f3a36', { y: 0.82 }),
+        part(Box(0.5, 0.3, 0.06), '#2a1d16', { y: 0.36, z: 0.34 }),
+        part(Box(0.38, 0.18, 0.04), '#ff8a2a', { y: 0.33, z: 0.37, jitter: 0 }),
+        part(Cyl(0.17, 0.14, 0.24, 9), '#2f2b28', { x: -0.22, y: 0.98 }),
+        part(Cyl(0.18, 0.18, 0.03, 9), '#58524c', { x: -0.22, y: 1.11 }),
+        part(Cyl(0.12, 0.1, 0.06, 8), '#4a4540', { x: 0.25, y: 0.89 }),
+        part(Cyl(0.07, 0.07, 1.1, 7), '#3f3a36', { x: 0.36, y: 1.35, z: -0.22 }),
+      ]);
     case 'signpost':
       return merge([
         part(Box(0.12, 1.6, 0.12), '#7a5232', { y: 0.8 }),
@@ -415,6 +438,21 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
       glows.push({ mesh: m, baseY: y + 1.78, phase: rng() * 6, kind: 'lantern' });
     } else if (d.kind === 'fountain') {
       emitters.push({ x: d.x, y: y + 2.1, z: d.z, kind: 'fountain' });
+    } else if (d.kind === 'furnace' || d.kind === 'range') {
+      // Glowing fire mouth facing the user, and smoke from the chimney.
+      const c = Math.cos(d.rot);
+      const sn = Math.sin(d.rot);
+      const front = d.kind === 'furnace' ? 0.52 : 0.38;
+      const m = new THREE.Mesh(lanternGeo, lanternMat);
+      m.scale.set(d.kind === 'furnace' ? 2 : 2.2, 1.1, 0.3);
+      m.rotation.y = d.rot;
+      const my = y + (d.kind === 'furnace' ? 0.52 : 0.33);
+      m.position.set(d.x + front * sn, my, d.z + front * c);
+      group.add(m);
+      glows.push({ mesh: m, baseY: my, phase: rng() * 6, kind: 'lantern' });
+      const cx = d.kind === 'furnace' ? 0.25 : 0.36;
+      const cz = d.kind === 'furnace' ? -0.2 : -0.22;
+      emitters.push({ x: d.x + cx * c + cz * sn, y: y + (d.kind === 'furnace' ? 2.05 : 2.0), z: d.z - cx * sn + cz * c, kind: 'chimney' });
     }
   }
 
