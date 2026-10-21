@@ -373,6 +373,10 @@ export class Hud {
     else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
     else if (a?.type === 'firemaking') text = '🔥 Lighting a fire…';
     else if (a?.type === 'pickpocket') text = '🤏 Pickpocketing…';
+    else if (a?.type === 'obstacle') {
+      const o = w.obstacles.find((x) => x.id === a.obstacle);
+      text = a.crossing && o ? `🏃 ${o.def.name}…` : '🏃 Heading to the obstacle…';
+    }
     else if (a?.type === 'craft') {
       const r = RECIPES[a.recipe];
       if (r) text = `${SKILL_INFO[r.skill].glyph} ${STATION_INFO[r.station].doing} ${itemDef(r.station === 'range' ? r.inputs[0].item : r.output.item).name.toLowerCase()}${a.remaining > 1 ? ` · ${a.remaining} left` : '…'}`;
@@ -1016,6 +1020,7 @@ export class Hud {
         if (n.def.service === 'tanner') consider(n.id, n.x, n.z, '🧵 Rook the tanner · tan pelts into leather', (n.def.reach ?? 1.9) + 1);
       }
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);
+      for (const o of w.obstacles) consider(o.id, o.def.x1, o.def.z1, `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`, 1.8);
       for (const nd of w.nodes) if (nd.def.skill === 'thieving' && !nd.depleted) consider(nd.id, nd.x, nd.z, `🤏 ${nd.def.name} · steal (Thieving ${nd.def.levelReq})`, 2.4);
       for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Flax · pick it to spin bowstrings', 2.2);
     }

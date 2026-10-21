@@ -453,6 +453,21 @@ export function generateWorld(seed = 1337): WorldMap {
     }
   }
 
+  // Clear the agility course ground east of the smithy (trees and scenery there are removed).
+  const inCourse = (x: number, z: number) => x >= 79 && x < 91 && z >= 73 && z < 81;
+  for (let i = resources.length - 1; i >= 0; i--) {
+    const r = resources[i];
+    if (!inCourse(r.x, r.z)) continue;
+    resources.splice(i, 1);
+    blocked[idx(r.x, r.z)] = occ[idx(r.x, r.z)] = 0;
+  }
+  for (let i = decor.length - 1; i >= 0; i--) {
+    const d = decor[i];
+    if (!inCourse(d.x, d.z)) continue;
+    decor.splice(i, 1);
+    blocked[idx(Math.floor(d.x), Math.floor(d.z))] = occ[idx(Math.floor(d.x), Math.floor(d.z))] = 0;
+  }
+
   // Later content is placed with its own random stream, so adding it never reshuffles the trees,
   // rocks and scenery generated above (existing players keep the world they know).
   const placeLater = (type: ResourceType, cx: number, cz: number, n: number, r: number, salt: number) => {

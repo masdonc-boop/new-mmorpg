@@ -12,6 +12,7 @@ import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { TANNING } from '../data/tanning';
+import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
 import { BONES, DRAIN_RESISTANCE, PRAYER_TICK, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
@@ -157,6 +158,8 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** An agility obstacle was crossed. */
+  | { type: 'obstacle'; obstacle: number }
   /** A pickpocket attempt on an NPC (for its reaction). */
   | { type: 'pickpocket'; npc: number }
   /** The player was stunned (failed pickpocket). */
@@ -184,6 +187,7 @@ export type PlayerAction =
   | { type: 'grave'; grave: number }
   | { type: 'firemaking'; item: ItemId }
   | { type: 'pickpocket'; npc: number }
+  | { type: 'obstacle'; obstacle: number; crossing: boolean; t: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
@@ -256,6 +260,24 @@ export class Gravestone {
 
   get count(): number {
     return this.items.reduce((a, s) => a + s.qty, 0);
+  }
+}
+
+/** An agility obstacle in the world. */
+export class Obstacle {
+  constructor(
+    public readonly id: number,
+    public readonly def: ObstacleDef,
+    /** Position in the course (laps run in order). */
+    public readonly index: number,
+  ) {}
+
+  get x(): number {
+    return (this.def.x1 + this.def.x2) / 2;
+  }
+
+  get z(): number {
+    return (this.def.z1 + this.def.z2) / 2;
   }
 }
 
@@ -338,6 +360,9 @@ export class Player implements Mover {
   /** Seconds left stunned after a failed pickpocket (no moving or acting). */
   stunTimer = 0;
   thieveTimer = 0;
+  /** Next obstacle of the course for a full lap (0 = start). */
+  lapNext = 0;
+  laps = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -489,6 +514,7 @@ export type Interactable =
   | { kind: 'npc'; entity: Npc }
   | { kind: 'ground'; entity: GroundItem }
   | { kind: 'grave'; entity: Gravestone }
+  | { kind: 'obstacle'; entity: Obstacle }
   | { kind: 'station'; entity: Station };
 
 export interface SaveData {
@@ -511,6 +537,8 @@ export interface SaveData {
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** Size of the worn ammo stack. */
   ammoQty?: number;
+  /** Agility laps completed (optional for older saves). */
+  laps?: number;
   /** Prayer points (optional for older saves: full). */
   prayerPoints?: number;
   /** Gameplay options (optional for older saves). */
@@ -534,6 +562,7 @@ export class GameWorld {
   readonly nodes: ResourceNode[] = [];
   readonly npcs: Npc[] = [];
   readonly stations: Station[] = [];
+  readonly obstacles: Obstacle[] = [];
   /** Fires lit by players (also listed in `stations` while they burn). Not saved: they burn out. */
   fires: Fire[] = [];
   groundItems: GroundItem[] = [];
@@ -543,7 +572,7 @@ export class GameWorld {
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null } = {}) {
     this.map = generateWorld(opts.seed ?? 1337);
@@ -562,6 +591,11 @@ export class GameWorld {
       const station = new Station(3000 + i, st.kind, st.x, st.z);
       this.stations.push(station);
       this.byId.set(station.id, station);
+    });
+    VILLAGE_COURSE.forEach((def, i) => {
+      const o = new Obstacle(4000 + i, def, i);
+      this.obstacles.push(o);
+      this.byId.set(o.id, o);
     });
     this.map.resources.forEach((r, i) => {
       const node = new ResourceNode(1000 + i, RESOURCES[r.type], r.x + 0.5, r.z + 0.5, i);
@@ -694,6 +728,7 @@ export class GameWorld {
       equipment: p.equipment.toJSON(),
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather },
+      laps: p.laps,
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
       grants: [...p.grants],
@@ -742,6 +777,7 @@ export class GameWorld {
       p.z = p.prevZ = s.z;
     }
     p.hp = Math.max(1, Math.min(p.maxHp, s.hp ?? p.maxHp));
+    p.laps = Number.isInteger(s.laps) && s.laps! > 0 ? s.laps! : 0;
     const pp = Number(s.prayerPoints);
     p.prayerPoints = Number.isFinite(pp) ? Math.max(0, Math.min(p.skills.level('prayer'), Math.floor(pp))) : p.skills.level('prayer');
   }
@@ -762,7 +798,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | undefined {
     return this.byId.get(id);
   }
 
@@ -773,6 +809,7 @@ export class GameWorld {
     if (e instanceof Npc) return { kind: 'npc', entity: e };
     if (e instanceof GroundItem) return e.visibleTo(this.player.id) ? { kind: 'ground', entity: e } : null;
     if (e instanceof Station) return { kind: 'station', entity: e };
+    if (e instanceof Obstacle) return { kind: 'obstacle', entity: e };
     if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
   }
@@ -780,6 +817,8 @@ export class GameWorld {
   issue(cmd: Command) {
     const p = this.player;
     if (p.dead && cmd.type !== 'respawn') return;
+    // Mid-obstacle, the player can't steer or start anything else until across.
+    if (p.action?.type === 'obstacle' && p.action.crossing && (cmd.type === 'joystick' || cmd.type === 'moveTo' || cmd.type === 'interact' || cmd.type === 'pickpocket')) return;
     switch (cmd.type) {
       case 'joystick': {
         const m = Math.hypot(cmd.dx, cmd.dz);
@@ -1063,6 +1102,11 @@ export class GameWorld {
       }
     }
 
+    if (p.action?.type === 'obstacle' && p.action.crossing) {
+      this.updateCrossing(p.action, dt);
+      this.updateRegion();
+      return;
+    }
     const joyMag = Math.hypot(p.joy.x, p.joy.z);
     if (joyMag > 0.15) {
       const speed = PLAYER_SPEED * Math.min(1, 0.35 + joyMag);
@@ -1081,6 +1125,7 @@ export class GameWorld {
     else if (action?.type === 'grave') this.updateGrave(action.grave);
     else if (action?.type === 'firemaking') this.updateFiremaking(action.item, dt);
     else if (action?.type === 'pickpocket') this.updatePickpocket(action.npc, dt);
+    else if (action?.type === 'obstacle') this.updateObstacleApproach(action);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
 
@@ -1164,6 +1209,12 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'obstacle') {
+      if (p.skills.level('agility') < it.entity.def.level) {
+        this.message(`You need Agility level ${it.entity.def.level} to attempt that.`, 'warn');
+        return;
+      }
+      p.action = { type: 'obstacle', obstacle: id, crossing: false, t: 0 };
     } else if (it.kind === 'grave') {
       p.action = { type: 'grave', grave: id };
     } else if (it.kind === 'station') {
@@ -2112,6 +2163,65 @@ export class GameWorld {
     } else {
       this.message(d.examine);
     }
+  }
+
+  // ---------------------------------------------------------------- agility
+
+  private updateObstacleApproach(a: Extract<PlayerAction, { type: 'obstacle' }>) {
+    const p = this.player;
+    const o = this.byId.get(a.obstacle);
+    if (!(o instanceof Obstacle)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(o.def.x1, o.def.z1, 0.5, true)) return;
+    a.crossing = true;
+    a.t = 0;
+    p.x = p.prevX = o.def.x1;
+    p.z = p.prevZ = o.def.z1;
+    p.facing = Math.atan2(o.def.x2 - o.def.x1, o.def.z2 - o.def.z1);
+    this.message(`You ${o.def.verb.toLowerCase()} the ${o.def.name.toLowerCase()}…`);
+  }
+
+  /** Scripted crossing: moves start to end, then xp (and the lap bonus after a full lap in order). */
+  private updateCrossing(a: Extract<PlayerAction, { type: 'obstacle' }>, dt: number) {
+    const p = this.player;
+    const o = this.byId.get(a.obstacle) as Obstacle;
+    const d = o.def;
+    const len = Math.hypot(d.x2 - d.x1, d.z2 - d.z1);
+    const dur = len / CROSS_SPEED;
+    const lvl = p.skills.level('agility');
+    // A slip happens halfway across.
+    if (a.t < dur / 2 && a.t + dt >= dur / 2 && this.rng() < slipChance(d, lvl)) {
+      p.action = null;
+      const side = this.walkableNear(p.x + (d.z2 - d.z1) / len, p.z - (d.x2 - d.x1) / len, d.x1, d.z1);
+      p.x = p.prevX = side.x;
+      p.z = p.prevZ = side.z;
+      const dealt = Math.min(SLIP_DAMAGE, p.hp);
+      p.hp -= dealt;
+      p.combatTimer = 6;
+      this.emit({ type: 'damage', target: p.id, source: p.id, amount: dealt, hit: true });
+      this.message(`You slip and fall off the ${d.name.toLowerCase()}!`, 'bad');
+      p.lapNext = 0;
+      if (p.hp <= 0) this.killPlayer();
+      return;
+    }
+    a.t += dt;
+    const k = Math.min(1, a.t / dur);
+    p.x = d.x1 + (d.x2 - d.x1) * k;
+    p.z = d.z1 + (d.z2 - d.z1) * k;
+    p.moving = true;
+    if (k < 1) return;
+    p.action = null;
+    this.grantXp('agility', d.xp);
+    this.emit({ type: 'obstacle', obstacle: o.id });
+    const last = o.index === this.obstacles.length - 1;
+    if (o.index === p.lapNext && last) {
+      p.laps++;
+      p.lapNext = 0;
+      this.grantXp('agility', LAP_BONUS);
+      this.message(`Lap complete! (${p.laps} lap${p.laps === 1 ? '' : 's'})`, 'good');
+    } else p.lapNext = o.index === p.lapNext || o.index === 0 ? o.index + 1 : 0;
   }
 
   // ---------------------------------------------------------------- thieving

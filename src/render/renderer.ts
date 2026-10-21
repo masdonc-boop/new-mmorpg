@@ -4,14 +4,15 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
-import { Enemy, Gravestone, GroundItem, NPC_WALK_SPEED, Npc, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { Enemy, Gravestone, GroundItem, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
+import { CROSS_SPEED } from '../data/agility';
 import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
-import { buildStaticWorld, campfireGeometry, ResourceView, type StaticWorld } from './props';
+import { buildStaticWorld, campfireGeometry, obstaclePrefab, ResourceView, type StaticWorld } from './props';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
 import { makeWorldMaterial, merge } from './geom';
@@ -262,7 +263,7 @@ export class GameRenderer {
     // Player
     const px = lerp(p.prevX, p.x, alpha);
     const pz = lerp(p.prevZ, p.z, alpha);
-    const py = groundHeight(map, px, pz);
+    const py = groundHeight(map, px, pz) + this.obstacleLift();
     const pm = this.playerModel;
     pm.root.position.set(px, py, pz);
     const prevYaw = pm.root.rotation.y;
@@ -338,6 +339,7 @@ export class GameRenderer {
     this.resources.update();
     this.updateGroundItems(t);
     this.updateGraves();
+    if (!this.obstaclesBuilt) this.buildObstacles();
     this.updateFires(t, dt);
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
@@ -439,6 +441,8 @@ export class GameRenderer {
         return null;
       case 'pickpocket':
         return a.npc;
+      case 'obstacle':
+        return a.obstacle;
       case 'station':
         return a.station;
       case 'craft':
@@ -466,6 +470,8 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
     } else if (ent instanceof Station) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.85, t);
+    } else if (ent instanceof Obstacle) {
+      this.markers.setTarget(new THREE.Vector3(ent.def.x1, groundHeight(map, ent.def.x1, ent.def.z1), ent.def.z1), '#5dff8a', 0.7, t);
     } else if (ent instanceof Gravestone) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.7, t);
     } else if (ent instanceof GroundItem) {
@@ -519,6 +525,39 @@ export class GameRenderer {
       this.scene.remove(v.sprite, v.shadow);
       this.overlay.removePlate(id);
       this.groundViews.delete(id);
+    }
+  }
+
+  // ---------------------------------------------------------------- agility course
+
+  private obstaclesBuilt = false;
+
+  /** How high the player is off the ground while crossing: on the log or beam, over the wall, mid-swing. */
+  private obstacleLift(): number {
+    const a = this.world.player.action;
+    if (a?.type !== 'obstacle' || !a.crossing) return 0;
+    const o = this.world.obstacles.find((x) => x.id === a.obstacle);
+    if (!o) return 0;
+    const d = o.def;
+    const k = Math.min(1, a.t / (Math.hypot(d.x2 - d.x1, d.z2 - d.z1) / CROSS_SPEED));
+    const arc = Math.sin(k * Math.PI);
+    return d.kind === 'log' ? 0.48 : d.kind === 'beam' ? 0.47 : d.kind === 'wall' ? arc * 0.95 : d.kind === 'rope' ? arc * 0.6 : 0;
+  }
+
+  private buildObstacles() {
+    this.obstaclesBuilt = true;
+    const w = this.world;
+    const mat = makeWorldMaterial();
+    for (const o of w.obstacles) {
+      const d = o.def;
+      const len = Math.hypot(d.x2 - d.x1, d.z2 - d.z1);
+      const m = new THREE.Mesh(obstaclePrefab(d.kind, len), mat);
+      m.position.set(o.x, groundHeight(w.map, o.x, o.z), o.z);
+      // The prefab runs along +x; turn it to run from start to end.
+      m.rotation.y = -Math.atan2(d.z2 - d.z1, d.x2 - d.x1);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      this.scene.add(m);
     }
   }
 
@@ -673,6 +712,11 @@ export class GameRenderer {
       const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 5;
       const a = near ? this.project(g.x, v.sprite.position.y + 0.45, g.z) : null;
       this.overlay.plate(g.id, a, { name: g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name, kind: 'npc', show: near });
+    }
+    for (const o of w.obstacles) {
+      const near = Math.hypot(o.x - w.player.x, o.z - w.player.z) < 7;
+      const a = near ? this.project(o.x, groundHeight(w.map, o.x, o.z) + 1.5, o.z) : null;
+      this.overlay.plate(o.id, a, { name: o.def.name, kind: 'npc', show: near });
     }
     for (const v of this.graveViews.values()) {
       const g = v.grave;
@@ -896,6 +940,11 @@ export class GameRenderer {
     for (const v of this.graveViews.values()) {
       const p = v.root.position;
       consider(v.grave.id, p.x, p.y + 0.4, p.z, 0.85);
+    }
+    for (const o of w.obstacles) {
+      if (Math.abs(o.x - w.player.x) > 30 || Math.abs(o.z - w.player.z) > 30) continue;
+      consider(o.id, o.x, groundHeight(map, o.x, o.z) + 0.5, o.z, 0.95);
+      consider(o.id, o.def.x1, groundHeight(map, o.def.x1, o.def.z1) + 0.3, o.def.z1, 1.05);
     }
     for (const st of w.stations) {
       if (Math.abs(st.x - w.player.x) > 30 || Math.abs(st.z - w.player.z) > 30) continue;

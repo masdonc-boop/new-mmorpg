@@ -240,3 +240,66 @@ describe('Thieving', () => {
     }
   });
 });
+
+describe('Agility', () => {
+  const cross = (w: GameWorld, i: number) => {
+    const o = w.obstacles[i];
+    w.issue({ type: 'interact', target: o.id });
+    run(w, 8);
+  };
+
+  it('every obstacle starts and ends on open ground reachable from the village', () => {
+    const w = new GameWorld();
+    expect(w.obstacles.length).toBe(5);
+    for (const o of w.obstacles) {
+      expect(isBlocked(w.map, o.def.x1, o.def.z1), `${o.def.id} start`).toBe(false);
+      expect(isBlocked(w.map, o.def.x2, o.def.z2), `${o.def.id} end`).toBe(false);
+    }
+  });
+
+  it('crossing an obstacle moves you to its end and gives xp; you can’t steer mid-crossing', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const o = w.obstacles[0];
+    stand(w, o.def.x1 - 1, o.def.z1);
+    w.issue({ type: 'interact', target: o.id });
+    run(w, 1);
+    expect(p.action?.type).toBe('obstacle');
+    w.issue({ type: 'moveTo', x: p.x, z: p.z + 5 });
+    run(w, 4);
+    expect(Math.hypot(p.x - o.def.x2, p.z - o.def.z2)).toBeLessThan(0.05);
+    expect(p.skills.xp.agility).toBe(7.5);
+  });
+
+  it('a full lap in order gives the lap bonus; skipping an obstacle does not', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.99); // never slip
+    stand(w, w.obstacles[0].def.x1, w.obstacles[0].def.z1);
+    for (let i = 0; i < 5; i++) cross(w, i);
+    expect(p.laps).toBe(1);
+    expect(p.skills.xp.agility).toBe(7.5 + 8 + 7.5 + 7.5 + 7.5 + 40);
+    // Second lap skipping the beam: no bonus.
+    for (const i of [0, 1, 2, 4]) cross(w, i);
+    expect(p.laps).toBe(1);
+    expect(reload(w).player.laps).toBe(1);
+  });
+
+  it('you can slip off the balance beam at low level (damage, no xp); never at 16+', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0);
+    const beam = w.obstacles[3];
+    stand(w, beam.def.x1, beam.def.z1);
+    w.issue({ type: 'interact', target: beam.id });
+    run(w, 3);
+    expect(p.action).toBeNull();
+    expect(p.skills.xp.agility).toBe(0);
+    expect(p.hp).toBe(p.maxHp - 10);
+    p.skills.addXp('agility', xpForLevel(16));
+    const before = p.skills.xp.agility;
+    stand(w, beam.def.x1, beam.def.z1);
+    cross(w, 3);
+    expect(p.skills.xp.agility).toBe(before + 7.5);
+  });
+});

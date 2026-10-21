@@ -408,6 +408,44 @@ export interface StaticWorld {
   emitters: { x: number; y: number; z: number; kind: 'fire' | 'fountain' | 'chimney' }[];
 }
 
+/**
+ * An agility obstacle, built along +x from -len/2 to +len/2 (the caller rotates and places it).
+ */
+export function obstaclePrefab(kind: 'log' | 'wall' | 'rope' | 'beam' | 'hedge', len: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const h = len / 2;
+  switch (kind) {
+    case 'log':
+      parts.push(part(Cyl(0.17, 0.19, len, 8), '#8a5a34', { y: 0.32, rz: Math.PI / 2 }));
+      for (const x of [-h + 0.3, h - 0.3]) parts.push(part(Box(0.2, 0.25, 0.5), '#6e4a2c', { x, y: 0.12 }));
+      parts.push(part(Box(len - 0.6, 0.04, 1.0), '#4a7a3a', { y: 0.02, jitter: 0.04 }));
+      break;
+    case 'wall':
+      parts.push(part(Box(0.45, 0.9, 1.7), '#9a9184', { y: 0.45, jitter: 0.08 }));
+      parts.push(part(Box(0.55, 0.1, 1.8), '#7d766b', { y: 0.92 }));
+      break;
+    case 'rope':
+      // A swing frame over a muddy ditch.
+      parts.push(part(Box(len - 0.6, 0.05, 1.4), '#4a3a2a', { y: 0.01 }));
+      for (const z of [-0.8, 0.8]) parts.push(part(Cyl(0.07, 0.08, 2.7, 6), '#6e4a2c', { y: 1.35, z }));
+      parts.push(part(Cyl(0.06, 0.06, 1.8, 6), '#6e4a2c', { y: 2.65, rx: Math.PI / 2 }));
+      parts.push(part(Cyl(0.025, 0.025, 2.0, 4), '#c9b48a', { y: 1.65 }));
+      break;
+    case 'beam':
+      parts.push(part(Box(len, 0.1, 0.16), '#a0703f', { y: 0.42 }));
+      for (let x = -h + 0.2; x <= h - 0.2 + 1e-6; x += (len - 0.4) / 3) parts.push(part(Cyl(0.05, 0.06, 0.42, 5), '#6e4a2c', { x, y: 0.21 }));
+      break;
+    case 'hedge':
+      for (let x = -h + 0.4; x <= h - 0.4 + 1e-6; x += 0.55) {
+        for (const z of [-0.45, 0.45]) parts.push(part(blob(0.42, 0, 0.2, x * 3 + z), '#3f7f34', { x, y: 0.55, z, sy: 1.25, jitter: 0.08 }));
+        parts.push(part(blob(0.4, 0, 0.2, x * 7), '#4a8f3a', { x, y: 1.0, sy: 0.8, jitter: 0.08 }));
+      }
+      for (const x of [-h + 0.15, h - 0.15]) parts.push(part(Box(0.1, 0.55, 0.5), '#1e2a18', { x, y: 0.3 }));
+      break;
+  }
+  return merge(parts);
+}
+
 /** The ring of stones and crossed logs of a campfire (for fires players light). */
 export function campfireGeometry(): THREE.BufferGeometry {
   return decorPrefab('campfire', 0, 1)!;
