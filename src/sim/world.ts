@@ -12,6 +12,7 @@ import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { TANNING } from '../data/tanning';
+import { BONES, DRAIN_RESISTANCE, PRAYER_TICK, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
@@ -102,6 +103,10 @@ export type Command =
   | { type: 'tan'; item: ItemId; qty: number }
   | { type: 'tannerClose' }
   | { type: 'acceptQuest'; quest: string }
+  /** Turn a prayer on or off (needs the level and prayer points). */
+  | { type: 'togglePrayer'; prayer: PrayerId }
+  /** Pray at the shrine or a waystone to recharge prayer points. */
+  | { type: 'pray' }
   /** Gameplay options that are part of the character (saved with it). */
   | { type: 'setOption'; option: 'autoGather'; on: boolean }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
@@ -148,6 +153,10 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** Prayers or prayer points changed. */
+  | { type: 'prayer' }
+  /** The player buried bones. */
+  | { type: 'bury' }
   /** A player lit a fire (a new Fire station). */
   | { type: 'fireLit'; id: number }
   /** Toolbelt contents changed. */
@@ -306,9 +315,17 @@ export class Player implements Mover {
   /** Walk on to the next node of the same kind when one runs out (a setting; off by default, as in OSRS). */
   autoGather = false;
   /** What happened to the player's items at their latest death (for the death screen). */
-  lastDeath: { kept: ItemStack[]; lost: number; grave: number | null } | null = null;
+  lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
   craftTimer = 0;
   fireTimer = 0;
+  /** Prayer points (max = Prayer level). Fractions never show; they drain a whole point at a time. */
+  prayerPoints = 1;
+  /** Active prayers. Not saved (prayers switch off when you leave, as in OSRS). */
+  prayers = new Set<PrayerId>();
+  /** OSRS drain counter: grows by the active prayers' drain each 0.6 s tick; 60 = one point. */
+  prayerDrain = 0;
+  prayerTick = 0;
+  buryTimer = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -482,6 +499,8 @@ export interface SaveData {
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** Size of the worn ammo stack. */
   ammoQty?: number;
+  /** Prayer points (optional for older saves: full). */
+  prayerPoints?: number;
   /** Gameplay options (optional for older saves). */
   options?: { autoGather?: boolean };
   /** Gravestones still standing (optional for older saves). */
@@ -663,6 +682,7 @@ export class GameWorld {
       equipment: p.equipment.toJSON(),
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather },
+      prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
       grants: [...p.grants],
       toolbelt: p.toolbelt.toJSON(),
@@ -710,6 +730,8 @@ export class GameWorld {
       p.z = p.prevZ = s.z;
     }
     p.hp = Math.max(1, Math.min(p.maxHp, s.hp ?? p.maxHp));
+    const pp = Number(s.prayerPoints);
+    p.prayerPoints = Number.isFinite(pp) ? Math.max(0, Math.min(p.skills.level('prayer'), Math.floor(pp))) : p.skills.level('prayer');
   }
 
   // ---------------------------------------------------------------- api
@@ -884,6 +906,12 @@ export class GameWorld {
       case 'acceptQuest':
         this.acceptQuest(cmd.quest);
         break;
+      case 'togglePrayer':
+        this.togglePrayer(cmd.prayer);
+        break;
+      case 'pray':
+        this.pray();
+        break;
       case 'setOption':
         if (cmd.option === 'autoGather') p.autoGather = cmd.on === true;
         break;
@@ -985,6 +1013,7 @@ export class GameWorld {
     p.eatTimer -= dt;
     p.combatTimer -= dt;
     p.repathTimer -= dt;
+    p.buryTimer -= dt;
     p.moving = false;
 
     if (p.dead) {
@@ -993,10 +1022,11 @@ export class GameWorld {
       return;
     }
 
-    // Out-of-combat regeneration.
+    this.updatePrayer(dt);
+    // Out-of-combat regeneration (Rapid Heal doubles it).
     if (p.combatTimer <= 0 && p.hp < p.maxHp) {
       p.regenTimer += dt;
-      if (p.regenTimer >= 1) {
+      if (p.regenTimer >= (p.prayers.has('rapid_heal') ? 0.5 : 1)) {
         p.regenTimer = 0;
         p.hp = Math.min(p.maxHp, p.hp + Math.max(1, Math.round(p.maxHp * 0.02)));
       }
@@ -1160,9 +1190,12 @@ export class GameWorld {
     const sk = p.skills;
     const attackSkill: SkillId = p.style === 'melee' ? 'attack' : p.style;
     const gear = this.playerBonuses();
+    // Prayers raise effective levels (OSRS): melee attack and strength separately, ranged and magic both rolls.
+    const attackLevel = sk.level(attackSkill) * this.prayerBoost(p.style === 'melee' ? 'attack' : p.style);
+    const strengthLevel = p.style === 'melee' ? sk.level('strength') * this.prayerBoost('strength') : attackLevel;
     const result = rollHit(
       this.rng,
-      { attackLevel: sk.level(attackSkill), strengthLevel: p.style === 'melee' ? sk.level('strength') : sk.level(attackSkill), accuracyBonus: gear.accuracy, powerBonus: gear.power },
+      { attackLevel, strengthLevel, accuracyBonus: gear.accuracy, powerBonus: gear.power },
       { defenceLevel: e.def.defence, armour: 0 },
     );
     this.emit({ type: 'attack', source: p.id, target: e.id, style: p.style });
@@ -1868,6 +1901,7 @@ export class GameWorld {
       this.emit({ type: 'levelUp', skill, level: r.newLevel });
       this.message(`Congratulations! Your ${SKILL_INFO[skill].name} level is now ${r.newLevel}.`, 'good');
       if (skill === 'hitpoints') this.player.hp += (r.newLevel - r.oldLevel) * 10;
+      if (skill === 'prayer') this.player.prayerPoints += r.newLevel - r.oldLevel;
     }
   }
 
@@ -2019,6 +2053,17 @@ export class GameWorld {
     const s = p.inventory.slots[slot];
     if (!s) return;
     const d = itemDef(s.item);
+    const boneXp = BONES[s.item];
+    if (boneXp) {
+      if (p.buryTimer > 0) return;
+      p.inventory.removeAt(slot, 1);
+      p.buryTimer = 1.2;
+      p.attackTimer = Math.max(p.attackTimer, 0.6);
+      this.grantXp('prayer', boneXp);
+      this.emit({ type: 'bury' });
+      this.message(`You bury the ${d.name.toLowerCase()}.`);
+      return;
+    }
     if (d.kind === 'food' && d.heal) {
       if (p.eatTimer > 0) return;
       if (p.hp >= p.maxHp) {
@@ -2035,6 +2080,85 @@ export class GameWorld {
     } else {
       this.message(d.examine);
     }
+  }
+
+  // ---------------------------------------------------------------- prayer
+
+  /** The effective-level multiplier active prayers give a roll (1 with none). */
+  prayerBoost(kind: 'attack' | 'strength' | 'defence' | 'ranged' | 'magic'): number {
+    let m = 1;
+    for (const id of this.player.prayers) {
+      const b = prayerDef(id)?.boost;
+      if (b && b.kind === kind) m = Math.max(m, b.mult);
+    }
+    return m;
+  }
+
+  private togglePrayer(id: PrayerId) {
+    const p = this.player;
+    const def = prayerDef(id);
+    if (!def) return;
+    if (p.prayers.has(id)) {
+      p.prayers.delete(id);
+      this.emit({ type: 'prayer' });
+      return;
+    }
+    if (p.skills.level('prayer') < def.level) {
+      this.message(`You need Prayer level ${def.level} for ${def.name}.`, 'warn');
+      return;
+    }
+    if (p.prayerPoints <= 0) {
+      this.message('You have run out of prayer points. Recharge them at the shrine or a waystone.', 'warn');
+      return;
+    }
+    for (const other of [...p.prayers]) if (conflicts(def, prayerDef(other)!)) p.prayers.delete(other);
+    p.prayers.add(id);
+    this.emit({ type: 'prayer' });
+  }
+
+  /** OSRS drain: each 0.6 s tick adds the active prayers' drain; every 60 drains one point. */
+  private updatePrayer(dt: number) {
+    const p = this.player;
+    if (!p.prayers.size) return;
+    p.prayerTick += dt;
+    while (p.prayerTick >= PRAYER_TICK) {
+      p.prayerTick -= PRAYER_TICK;
+      for (const id of p.prayers) p.prayerDrain += prayerDef(id)!.drain;
+      while (p.prayerDrain >= DRAIN_RESISTANCE) {
+        p.prayerDrain -= DRAIN_RESISTANCE;
+        p.prayerPoints = Math.max(0, p.prayerPoints - 1);
+      }
+      if (p.prayerPoints <= 0) {
+        p.prayers.clear();
+        p.prayerDrain = 0;
+        this.emit({ type: 'prayer' });
+        this.message('You have run out of prayer points. Recharge them at the shrine or a waystone.', 'warn');
+        return;
+      }
+    }
+  }
+
+  /** The shrine or waystone close enough to pray at (any of them is an altar), if any. */
+  nearAltar(): Checkpoint | null {
+    const p = this.player;
+    return this.map.checkpoints.find((c) => dist(p.x, p.z, c.x, c.z) < 2.6) ?? null;
+  }
+
+  private pray() {
+    const p = this.player;
+    const altar = this.nearAltar();
+    if (!altar) {
+      this.message('You need to be at the shrine or a waystone to pray.', 'warn');
+      return;
+    }
+    const max = p.skills.level('prayer');
+    if (p.prayerPoints >= max) {
+      this.message('You already have full prayer points.');
+      return;
+    }
+    p.prayerPoints = max;
+    this.emit({ type: 'prayer' });
+    this.message(`You pray at the ${altar.name}. Your prayer points are restored.`, 'good');
   }
 
   // ---------------------------------------------------------------- enemies
@@ -2154,9 +2278,11 @@ export class GameWorld {
     const r = rollHit(
       this.rng,
       { attackLevel: def.attack, strengthLevel: def.strength, accuracyBonus: 0, powerBonus: 0 },
-      { defenceLevel: p.skills.level('defence'), armour: this.playerBonuses().armour },
+      { defenceLevel: p.skills.level('defence') * this.prayerBoost('defence'), armour: this.playerBonuses().armour },
       def.maxHit,
     );
+    // Protect from Melee blocks creatures' melee hits completely (every enemy fights in melee).
+    if (p.prayers.has('protect_from_melee')) r.damage = 0;
     const dealt = Math.min(r.damage, p.hp);
     p.hp -= dealt;
     this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit: r.hit });
@@ -2176,17 +2302,19 @@ export class GameWorld {
     this.pending.length = 0;
     this.emit({ type: 'death', id: p.id });
     p.stationAt = null;
-    const { kept, lost } = takeLostOnDeath(p.inventory, p.equipment, KEEP_ON_DEATH);
+    const keep = KEEP_ON_DEATH + (p.prayers.has('protect_item') ? 1 : 0);
+    p.prayers.clear();
+    const { kept, lost } = takeLostOnDeath(p.inventory, p.equipment, keep);
     const lostCount = lost.reduce((a, s) => a + s.qty, 0);
     let grave: Gravestone | null = null;
     if (lost.length) {
       const at = this.walkableNear(p.x, p.z, this.map.spawn.x, this.map.spawn.z);
       grave = this.spawnGrave(at.x, at.z, lost);
     }
-    p.lastDeath = { kept, lost: lostCount, grave: grave?.id ?? null };
+    p.lastDeath = { kept, lost: lostCount, grave: grave?.id ?? null, keep };
     this.emit({ type: 'equipment' });
     const keptText = kept.length ? kept.map((k) => `${k.qty > 1 ? `${k.qty} x ` : ''}${itemDef(k.item).name}`).join(', ') : 'nothing';
-    this.message(`Oh dear, you have been defeated! You keep your ${KEEP_ON_DEATH} most valuable items: ${keptText}.`, 'bad');
+    this.message(`Oh dear, you have been defeated! You keep your ${keep} most valuable items: ${keptText}.`, 'bad');
     if (grave) {
       const r = regionAt(grave.x, grave.z);
       this.message(`Your other ${lostCount} item${lostCount === 1 ? ' is' : 's are'} in a gravestone where you fell${r ? ` (${r.name})` : ''}. Reach it within ${GRAVE_SECONDS / 60} minutes to take them back.`, 'warn');
@@ -2219,6 +2347,7 @@ export class GameWorld {
     const c = at === 'home' ? this.map.checkpoints[0] : this.nearestCheckpoint();
     p.dead = false;
     p.hp = p.maxHp;
+    p.prayerPoints = p.skills.level('prayer');
     p.x = p.prevX = c.respawnX;
     p.z = p.prevZ = c.respawnZ;
     p.attackTimer = 0;

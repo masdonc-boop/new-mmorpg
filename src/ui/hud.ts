@@ -18,6 +18,8 @@ import { TOOL_SLOTS } from '../data/tools';
 import { GRAVE_SECONDS, KEEP_ON_DEATH } from '../sim/death';
 import { FIRE_LOGS } from '../data/firemaking';
 import { TANNING } from '../data/tanning';
+import { BONES, PRAYERS } from '../data/prayers';
+import type { Command } from '../sim/world';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -26,7 +28,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -50,6 +52,9 @@ export class Hud {
   readonly root: HTMLDivElement;
   private hpFill!: HTMLDivElement;
   private hpText!: HTMLDivElement;
+  private prayerFill!: HTMLDivElement;
+  private prayerText!: HTMLDivElement;
+  private prayerBar!: HTMLButtonElement;
   private nameEl!: HTMLDivElement;
   private targetFrame!: HTMLDivElement;
   private targetName!: HTMLDivElement;
@@ -77,6 +82,8 @@ export class Hud {
   private usingSlot: number | null = null;
   private prompt!: HTMLButtonElement;
   private promptTarget: number | null = null;
+  /** A prompt that issues a command instead of interacting (e.g. pray at the shrine). */
+  private promptCmd: Command | null = null;
   private panel!: HTMLDivElement;
   private panelBody!: HTMLDivElement;
   private panelTitle!: HTMLDivElement;
@@ -121,7 +128,14 @@ export class Hud {
     this.hpFill = el('div', 'bar-fill');
     this.hpText = el('div', 'bar-text');
     bar.append(this.hpFill, this.hpText);
-    info.append(this.nameEl, bar);
+    // Prayer points: tap to open the prayers.
+    this.prayerBar = el('button', 'bar prayer');
+    this.prayerBar.setAttribute('aria-label', 'Prayer');
+    this.prayerFill = el('div', 'bar-fill');
+    this.prayerText = el('div', 'bar-text');
+    this.prayerBar.append(this.prayerFill, this.prayerText);
+    this.prayerBar.addEventListener('click', () => this.toggle('prayer'));
+    info.append(this.nameEl, bar, this.prayerBar);
     frame.append(portrait, info);
     this.root.appendChild(frame);
 
@@ -171,7 +185,8 @@ export class Hud {
     // Contextual prompt: what the nearby object does; tapping it interacts.
     this.prompt = el('button', 'ctx-prompt hidden');
     this.prompt.addEventListener('click', () => {
-      if (this.promptTarget !== null) this.cb.command({ type: 'interact', target: this.promptTarget });
+      if (this.promptCmd) this.cb.command(this.promptCmd);
+      else if (this.promptTarget !== null) this.cb.command({ type: 'interact', target: this.promptTarget });
     });
     this.root.appendChild(this.prompt);
     const actions = el('div', 'actions');
@@ -286,6 +301,11 @@ export class Hud {
     this.hpFill.style.width = `${hpPct}%`;
     this.hpFill.classList.toggle('low', hpPct < 30);
     this.hpText.textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
+    const maxPray = p.skills.level('prayer');
+    this.prayerFill.style.width = `${(p.prayerPoints / maxPray) * 100}%`;
+    const pt = `🙏 ${p.prayerPoints} / ${maxPray}${p.prayers.size ? ' · active' : ''}`;
+    if (this.prayerText.textContent !== pt) this.prayerText.textContent = pt;
+    this.prayerBar.classList.toggle('active', p.prayers.size > 0);
 
     const a = p.action;
     const target = a?.type === 'attack' ? w.enemyById(a.target) : null;
@@ -452,7 +472,7 @@ export class Hud {
       this.death.innerHTML = `
         <div class="death-card">
           <div class="death-title">You have fallen</div>
-          <div class="death-kept"><b>Kept (your ${KEEP_ON_DEATH} most valuable items)</b><div>${kept}</div></div>
+          <div class="death-kept"><b>Kept (your ${d?.keep ?? KEEP_ON_DEATH} most valuable items)</b><div>${kept}</div></div>
           <div class="death-sub">${lost} Your toolbelt is always kept.</div>
           <div class="death-btns">
             <button data-at="home">🏠 Respawn at Brightwater Shrine</button>
@@ -547,6 +567,12 @@ export class Hud {
         this.craftDirty = true;
         this.invDirty = true;
         this.skillsDirty = true;
+        break;
+      case 'prayer':
+        if (this.openPanel === 'prayer') this.renderPrayer();
+        break;
+      case 'bury':
+        this.invDirty = true;
         break;
       case 'equipment':
         this.invDirty = true;
@@ -730,7 +756,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: 'Tannery' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: 'Tannery', prayer: 'Prayer' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -742,6 +768,7 @@ export class Hud {
     else if (id === 'shop') this.renderShop();
     else if (id === 'toolbelt') this.renderToolbelt();
     else if (id === 'tanner') this.renderTanner();
+    else if (id === 'prayer') this.renderPrayer();
     else this.renderSettings();
   }
 
@@ -769,6 +796,27 @@ export class Hud {
     );
     this.panelBody.appendChild(this.craftView.root);
     this.craftDirty = false;
+  }
+
+  /** Prayers: tap to turn on or off. Points drain while any are on; recharge at the shrine or a waystone. */
+  private renderPrayer() {
+    const body = this.panelBody;
+    clearKeepingScroll(body);
+    const p = this.world.player;
+    const lvl = p.skills.level('prayer');
+    body.appendChild(el('div', 'ii-desc tb-intro', `Prayer level <b>${lvl}</b> · <b>${p.prayerPoints}</b> / ${lvl} points. Prayers drain points while on. Bury bones to train; pray at the shrine or a waystone to recharge.`));
+    const grid = el('div', 'pr-grid');
+    for (const pr of PRAYERS) {
+      const locked = lvl < pr.level;
+      const on = p.prayers.has(pr.id);
+      const b = el('button', `pr-card${on ? ' on' : ''}${locked ? ' locked' : ''}`, `<span class="pr-icon">${pr.icon}</span><span class="pr-name">${pr.name}</span><span class="pr-text">${locked ? `Level ${pr.level}` : pr.text}</span>`);
+      b.addEventListener('click', () => {
+        this.cb.command({ type: 'togglePrayer', prayer: pr.id });
+        this.renderPrayer();
+      });
+      grid.appendChild(b);
+    }
+    body.appendChild(grid);
   }
 
   /** Rook's tannery: hides in the bag become leather for a fee each. */
@@ -901,6 +949,15 @@ export class Hud {
         });
         btns.appendChild(use);
       }
+      if (BONES[sel.item]) {
+        const bury = el('button', 'primary', 'Bury');
+        bury.addEventListener('click', () => {
+          this.cb.command({ type: 'useItem', slot: this.selectedSlot! });
+          if (!inv.slots[this.selectedSlot!]) this.selectedSlot = null;
+          this.renderInventory();
+        });
+        btns.appendChild(bury);
+      }
       if (d.kind === 'food') {
         const eat = el('button', 'primary', 'Eat');
         eat.addEventListener('click', () => {
@@ -951,7 +1008,13 @@ export class Hud {
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);
       for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Flax · pick it to spin bowstrings', 2.2);
     }
-    const b = best as { id: number; text: string; d: number } | null;
+    let b = best as { id: number; text: string; d: number } | null;
+    this.promptCmd = null;
+    const altar = !p.dead && !this.openPanel && !p.action && !this.dialogueOpen ? w.nearAltar() : null;
+    if (altar && p.prayerPoints < p.skills.level('prayer') && (!b || Math.hypot(altar.x - p.x, altar.z - p.z) < b.d)) {
+      b = { id: -1, text: `🙏 ${altar.name} · recharge prayer`, d: 0 };
+      this.promptCmd = { type: 'pray' };
+    }
     this.promptTarget = b ? b.id : null;
     const text = b ? `${b.text}  ›` : '';
     if (this.prompt.textContent !== text) this.prompt.textContent = text;
@@ -1063,7 +1126,7 @@ export class Hud {
     const d = itemDef(st.item);
     this.selectedSlot = null;
     this.usingSlot = null;
-    if (d.kind === 'food') {
+    if (d.kind === 'food' || BONES[st.item]) {
       this.cb.command({ type: 'useItem', slot });
       this.renderInventory();
       return true;

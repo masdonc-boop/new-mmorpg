@@ -13,6 +13,7 @@ export const SKILL_IDS = [
   'cooking',
   'firemaking',
   'crafting',
+  'prayer',
 ] as const;
 
 export type SkillId = (typeof SKILL_IDS)[number];
@@ -42,6 +43,7 @@ export const SKILL_INFO: Record<SkillId, SkillInfo> = {
   fletching: { name: 'Fletching', color: '#5fae8c', glyph: '🏹', category: 'production', available: true, howTo: 'Use a knife on logs: arrow shafts, unstrung bows, shields. String bows with a bowstring.' },
   firemaking: { name: 'Firemaking', color: '#f0743a', glyph: '🔥', category: 'production', available: true, howTo: 'Needs a tinderbox. Tap logs in your bag to light a fire where you stand (oak from level 15). Cook on your fire before it burns out.' },
   crafting: { name: 'Crafting', color: '#c9a06a', glyph: '🧵', category: 'production', available: true, howTo: 'Tan wolf pelts into leather at Rook the tanner, then use a needle and thread on leather. Pick flax south-east of the village and spin it into bowstrings at the spinning wheel. Cut sapphires with a chisel.' },
+  prayer: { name: 'Prayer', color: '#e8e2a8', glyph: '🙏', category: 'combat', available: true, howTo: 'Bury bones (tap them in your bag). Turn prayers on in the Prayer tab; recharge your prayer points at the shrine or a waystone.' },
   cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production', available: true, howTo: 'Cook raw fish or meat at the range outside the inn or the campfire by the river.' },
 };
 

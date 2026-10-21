@@ -37,7 +37,7 @@ export class Skills {
 
   /** Combat level derived from combat skills (simplified classic formula). */
   combatLevel(): number {
-    const base = 0.25 * (this.level('defence') + this.level('hitpoints'));
+    const base = 0.25 * (this.level('defence') + this.level('hitpoints') + Math.floor(this.level('prayer') / 2));
     const melee = 0.325 * (this.level('attack') + this.level('strength'));
     const ranged = 0.325 * Math.floor(this.level('ranged') * 1.5);
     const magic = 0.325 * Math.floor(this.level('magic') * 1.5);

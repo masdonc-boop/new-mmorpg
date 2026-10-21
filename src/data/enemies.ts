@@ -74,7 +74,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     attackSeconds: 2.6, attackRange: 1.8, aggressive: true, aggroRange: 6, leashRange: 10, wanderRadius: 2,
     speed: 2.6, respawnSeconds: 60, model: 'goblin', scale: 1.45, color: '#4f7d2e', accent: '#b8322b',
     drops: [
-      { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'big_bones', min: 1, max: 1, chance: 1 },
       { item: 'coins', min: 150, max: 400, chance: 1 },
       { item: 'sapphire', min: 1, max: 2, chance: 0.5 },
       { item: 'bronze_arrow', min: 30, max: 60, chance: 0.6 },
