@@ -919,6 +919,24 @@ export function itemIcon(id: string): string {
       g.globalAlpha = 1;
       break;
     }
+    case 'seed': {
+      for (const [x, y, r] of [[24, 30, 0.4], [36, 26, -0.3], [32, 40, 0.1], [42, 38, 0.6], [22, 42, -0.5]] as const) {
+        g.save();
+        g.translate(x, y);
+        g.rotate(r);
+        g.fillStyle = color;
+        g.beginPath();
+        g.ellipse(0, 0, 6, 4, 0, 0, Math.PI * 2);
+        g.fill();
+        outline(2);
+        g.fillStyle = accent;
+        g.beginPath();
+        g.ellipse(-1.5, -1, 2, 1.2, 0, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

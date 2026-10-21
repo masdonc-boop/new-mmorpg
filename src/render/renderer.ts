@@ -273,8 +273,8 @@ export class GameRenderer {
     let tool: HeldTool = p.style === 'melee' ? 'sword' : p.style === 'ranged' ? 'bow' : 'staff';
     if (gathering && node) {
       const sk = node.def.skill;
-      pose = sk === 'woodcutting' ? 'chop' : sk === 'fishing' || sk === 'crafting' ? 'work' : 'mine';
-      tool = sk === 'woodcutting' ? 'axe' : sk === 'fishing' ? 'net' : sk === 'crafting' ? 'none' : 'pickaxe';
+      pose = sk === 'woodcutting' ? 'chop' : sk === 'fishing' || sk === 'crafting' || sk === 'thieving' ? 'work' : 'mine';
+      tool = sk === 'woodcutting' ? 'axe' : sk === 'fishing' ? 'net' : sk === 'crafting' || sk === 'thieving' ? 'none' : 'pickaxe';
     }
     const making = world.crafting;
     if (making && p.anim !== 'walk') {
@@ -437,6 +437,8 @@ export class GameRenderer {
         return a.grave;
       case 'firemaking':
         return null;
+      case 'pickpocket':
+        return a.npc;
       case 'station':
         return a.station;
       case 'craft':
@@ -707,6 +709,12 @@ export class GameRenderer {
         else if (kind === 'furnace') this.particles.emit({ x: at.x, y: y + 0.6, z: at.z, count: 14, color: ['#ff8a2a', '#ffd27a', '#ff5a2a'], speed: 1.2, up: 1.8, gravity: -0.5, life: 0.7, size: 0.09 });
         else if (kind === 'range' || kind === 'fire') this.particles.emit({ x: at.x, y: y + 1.0, z: at.z, count: 10, color: ['#ffffff', '#e8eef2'], speed: 0.4, up: 1.0, gravity: -0.4, life: 1.1, size: 0.12 });
         else this.particles.emit({ x: at.x, y: y + 1.0, z: at.z, count: 10, color: ['#c9a06a', '#8a6238', '#e6c48f'], speed: 1.2, up: 1.2, life: 0.6, size: 0.05 });
+        break;
+      }
+      case 'stunned': {
+        // Little stars circling the head.
+        const y = groundHeight(w.map, p.x, p.z) + 2.1;
+        this.particles.emit({ x: p.x, y, z: p.z, count: 14, color: ['#ffe14d', '#fff6b0', '#ffffff'], speed: 1.1, up: 0.4, gravity: 0.2, life: 1.6, size: 0.09, spread: 0.5 });
         break;
       }
       case 'equipment': {

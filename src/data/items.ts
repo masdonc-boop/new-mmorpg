@@ -42,7 +42,8 @@ export type IconShape =
   | 'flax'
   | 'cutgem'
   | 'cowl'
-  | 'vambraces';
+  | 'vambraces'
+  | 'seed';
 
 export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo' | 'cape' | 'neck' | 'hands' | 'feet' | 'ring';
 /** Display order (two rows of the equipment box). */
@@ -111,6 +112,9 @@ export const ITEMS = {
   wolf_fang: def({ id: 'wolf_fang', name: 'Wolf fang', examine: 'Sharp as a dagger.', stackable: true, kind: 'trophy', value: 8, icon: { shape: 'fang', color: '#f1ecd9', accent: '#b8ad8a' } }),
   bones: def({ id: 'bones', name: 'Bones', examine: 'Remains of a fallen foe. Bury them for Prayer experience.', stackable: false, kind: 'material', value: 2, icon: { shape: 'bone', color: '#efe8d6', accent: '#b9ad90' } }),
   big_bones: def({ id: 'big_bones', name: 'Big bones', examine: 'Huge bones. Burying them pleases the gods greatly.', stackable: false, kind: 'material', value: 12, icon: { shape: 'bone', color: '#f6f0de', accent: '#a99c7c' } }),
+  potato_seed: def({ id: 'potato_seed', name: 'Potato seed', examine: 'Plant in an allotment (Farming 1).', stackable: true, kind: 'material', value: 2, icon: { shape: 'seed', color: '#c9a06a', accent: '#7a5a34' } }),
+  onion_seed: def({ id: 'onion_seed', name: 'Onion seed', examine: 'Plant in an allotment (Farming 5).', stackable: true, kind: 'material', value: 3, icon: { shape: 'seed', color: '#e8d6a0', accent: '#a07a3a' } }),
+  cabbage_seed: def({ id: 'cabbage_seed', name: 'Cabbage seed', examine: 'Plant in an allotment (Farming 7).', stackable: true, kind: 'material', value: 4, icon: { shape: 'seed', color: '#9ec46a', accent: '#5a7a34' } }),
   bread: def({ id: 'bread', name: 'Bread', examine: 'Warm village bread. Heals 30 HP.', stackable: false, kind: 'food', value: 6, heal: 30, icon: { shape: 'bread', color: '#d99a4e', accent: '#f6d7a0' } }),
   bronze_axe: def({ id: 'bronze_axe', name: 'Bronze axe', examine: 'Required for woodcutting.', stackable: false, kind: 'tool', tool: { category: 'axe', tier: 1 }, value: 16, icon: { shape: 'axe', color: '#c98a4b', accent: '#7a4f2a' } }),
   bronze_pickaxe: def({ id: 'bronze_pickaxe', name: 'Bronze pickaxe', examine: 'Required for mining.', stackable: false, kind: 'tool', tool: { category: 'pickaxe', tier: 1 }, value: 16, icon: { shape: 'pickaxe', color: '#c98a4b', accent: '#7a4f2a' } }),

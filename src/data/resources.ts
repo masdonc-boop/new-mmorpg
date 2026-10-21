@@ -2,12 +2,12 @@ import type { ItemId } from './items';
 import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
-export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'net_spot' | 'flax';
+export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall';
 
 export interface ResourceDef {
   id: ResourceType;
   name: string;
-  skill: Extract<SkillId, 'woodcutting' | 'mining' | 'fishing' | 'crafting'>;
+  skill: Extract<SkillId, 'woodcutting' | 'mining' | 'fishing' | 'crafting' | 'thieving'>;
   levelReq: number;
   xp: number;
   item: ItemId;
@@ -32,6 +32,9 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   coal_rock: { id: 'coal_rock', name: 'Coal rock', skill: 'mining', levelReq: 30, xp: 50, item: 'coal_ore', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
   // Picking flax needs no tool and gives no experience (as in OSRS); Crafting turns it into bowstrings.
   flax: { id: 'flax', name: 'Flax', skill: 'crafting', levelReq: 1, xp: 0, item: 'flax', baseChance: 1, depleteChance: 0.17, respawnSeconds: 6, actionSeconds: 1.2 },
+  // Market stalls (Thieving): taking from one always works and empties it until it restocks.
+  bakery_stall: { id: 'bakery_stall', name: 'Bakery stall', skill: 'thieving', levelReq: 5, xp: 16, item: 'bread', baseChance: 1, depleteChance: 1, respawnSeconds: 2.5, actionSeconds: 1.2 },
+  seed_stall: { id: 'seed_stall', name: 'Seed stall', skill: 'thieving', levelReq: 27, xp: 10, item: 'potato_seed', baseChance: 1, depleteChance: 1, respawnSeconds: 6, actionSeconds: 1.2, catches: [{ item: 'onion_seed', level: 27, xp: 10, chance: 0.35 }, { item: 'cabbage_seed', level: 27, xp: 10, chance: 0.25 }] },
   net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 10, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, catches: [{ item: 'raw_anchovies', level: 15, xp: 40, chance: 0.45 }] },
   iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 15, xp: 35, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
 };

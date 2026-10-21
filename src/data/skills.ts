@@ -14,6 +14,7 @@ export const SKILL_IDS = [
   'firemaking',
   'crafting',
   'prayer',
+  'thieving',
 ] as const;
 
 export type SkillId = (typeof SKILL_IDS)[number];
@@ -44,6 +45,7 @@ export const SKILL_INFO: Record<SkillId, SkillInfo> = {
   firemaking: { name: 'Firemaking', color: '#f0743a', glyph: '🔥', category: 'production', available: true, howTo: 'Needs a tinderbox. Tap logs in your bag to light a fire where you stand (oak from level 15). Cook on your fire before it burns out.' },
   crafting: { name: 'Crafting', color: '#c9a06a', glyph: '🧵', category: 'production', available: true, howTo: 'Tan wolf pelts into leather at Rook the tanner, then use a needle and thread on leather. Pick flax south-east of the village and spin it into bowstrings at the spinning wheel. Cut sapphires with a chisel.' },
   prayer: { name: 'Prayer', color: '#e8e2a8', glyph: '🙏', category: 'combat', available: true, howTo: 'Bury bones (tap them in your bag). Turn prayers on in the Prayer tab; recharge your prayer points at the shrine or a waystone.' },
+  thieving: { name: 'Thieving', color: '#8a6cb0', glyph: '🤏', category: 'gathering', available: true, howTo: 'Pickpocket townsfolk in the plaza (Farmer Wren from 10, Captain Bram from 40), or steal from the bakery stall (5) and the seed stall by the fields (27). A failed pickpocket stuns you.' },
   cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production', available: true, howTo: 'Cook raw fish or meat at the range outside the inn or the campfire by the river.' },
 };
 

@@ -4,7 +4,7 @@ import { ENEMIES, type EnemyDef } from '../data/enemies';
 import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES, STATION_INFO, failChance, isAnywhere, plural, recipeAt, type AnywhereKind, type RecipeDef, type StationKind } from '../data/recipes';
 import { SHOPS, sellPrice, shopFor, type ShopDef } from '../data/shops';
-import { NPCS, type NpcDef, type NpcId } from '../data/npcs';
+import { NPCS, pickpocketChance, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, type SkillId } from '../data/skills';
@@ -103,6 +103,8 @@ export type Command =
   | { type: 'tan'; item: ItemId; qty: number }
   | { type: 'tannerClose' }
   | { type: 'acceptQuest'; quest: string }
+  /** Thieving: try to pick an NPC's pocket (walks over first). */
+  | { type: 'pickpocket'; target: number }
   /** Turn a prayer on or off (needs the level and prayer points). */
   | { type: 'togglePrayer'; prayer: PrayerId }
   /** Pray at the shrine or a waystone to recharge prayer points. */
@@ -118,6 +120,8 @@ export interface Dialogue {
   lines: string[];
   offer?: { quest: string; label: string };
   rewards?: string[];
+  /** Offer to pickpocket this NPC (its entity id). */
+  pickpocket?: number;
 }
 
 export type MessageTone = 'info' | 'good' | 'warn' | 'bad';
@@ -153,6 +157,10 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** A pickpocket attempt on an NPC (for its reaction). */
+  | { type: 'pickpocket'; npc: number }
+  /** The player was stunned (failed pickpocket). */
+  | { type: 'stunned' }
   /** Prayers or prayer points changed. */
   | { type: 'prayer' }
   /** The player buried bones. */
@@ -175,6 +183,7 @@ export type PlayerAction =
   | { type: 'pickup'; ground: number }
   | { type: 'grave'; grave: number }
   | { type: 'firemaking'; item: ItemId }
+  | { type: 'pickpocket'; npc: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
@@ -326,6 +335,9 @@ export class Player implements Mover {
   prayerDrain = 0;
   prayerTick = 0;
   buryTimer = 0;
+  /** Seconds left stunned after a failed pickpocket (no moving or acting). */
+  stunTimer = 0;
+  thieveTimer = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -906,6 +918,18 @@ export class GameWorld {
       case 'acceptQuest':
         this.acceptQuest(cmd.quest);
         break;
+      case 'pickpocket': {
+        const n = this.byId.get(cmd.target);
+        if (!(n instanceof Npc) || !n.def.thieving) break;
+        if (p.stunTimer > 0) {
+          this.message("You're stunned!", 'warn');
+          break;
+        }
+        p.path = [];
+        p.action = { type: 'pickpocket', npc: n.id };
+        p.thieveTimer = 0.6;
+        break;
+      }
       case 'togglePrayer':
         this.togglePrayer(cmd.prayer);
         break;
@@ -1021,6 +1045,13 @@ export class GameWorld {
       if (p.deathTimer <= 0) this.respawnPlayer('home');
       return;
     }
+    if (p.stunTimer > 0) {
+      // Stunned: no moving or acting until it wears off (combat against the player continues).
+      p.stunTimer -= dt;
+      p.path = [];
+      this.updatePrayer(dt);
+      return;
+    }
 
     this.updatePrayer(dt);
     // Out-of-combat regeneration (Rapid Heal doubles it).
@@ -1049,6 +1080,7 @@ export class GameWorld {
     else if (action?.type === 'pickup') this.updatePickup(action.ground);
     else if (action?.type === 'grave') this.updateGrave(action.grave);
     else if (action?.type === 'firemaking') this.updateFiremaking(action.item, dt);
+    else if (action?.type === 'pickpocket') this.updatePickpocket(action.npc, dt);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
 
@@ -1124,7 +1156,7 @@ export class GameWorld {
     } else if (it.kind === 'node') {
       const n = it.entity;
       if (n.depleted) {
-        this.message(n.def.skill === 'woodcutting' ? 'This tree has been cut down. It will regrow soon.' : n.def.skill === 'crafting' ? 'This flax has been picked. It will grow back soon.' : 'This rock is depleted. It will replenish soon.');
+        this.message(n.def.skill === 'woodcutting' ? 'This tree has been cut down. It will regrow soon.' : n.def.skill === 'crafting' ? 'This flax has been picked. It will grow back soon.' : n.def.skill === 'thieving' ? 'The stall is empty. It will be restocked soon.' : 'This rock is depleted. It will replenish soon.');
         return;
       }
       if (!this.canGather(n, true)) return;
@@ -1909,7 +1941,7 @@ export class GameWorld {
     const p = this.player;
     const lvl = p.skills.level(n.def.skill);
     if (lvl < n.def.levelReq) {
-      if (verbose) this.message(`You need ${SKILL_INFO[n.def.skill].name} level ${n.def.levelReq} to gather from this ${n.def.name.toLowerCase()}.`, 'warn');
+      if (verbose) this.message(`You need ${SKILL_INFO[n.def.skill].name} level ${n.def.levelReq} to ${n.def.skill === 'thieving' ? 'steal from' : 'gather from'} this ${n.def.name.toLowerCase()}.`, 'warn');
       return false;
     }
     const tool = n.def.tool ? this.toolFor(n.def.tool) : null;
@@ -2080,6 +2112,54 @@ export class GameWorld {
     } else {
       this.message(d.examine);
     }
+  }
+
+  // ---------------------------------------------------------------- thieving
+
+  private updatePickpocket(id: number, dt: number) {
+    const p = this.player;
+    const n = this.byId.get(id);
+    if (!(n instanceof Npc) || !n.def.thieving) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(n.x, n.z, 1.3, true)) return;
+    p.facing = Math.atan2(n.x - p.x, n.z - p.z);
+    p.thieveTimer -= dt;
+    if (p.thieveTimer > 0) return;
+    p.action = null;
+    const t = n.def.thieving;
+    const lvl = p.skills.level('thieving');
+    if (lvl < t.level) {
+      this.message(`You need Thieving level ${t.level} to pickpocket ${n.def.name}.`, 'warn');
+      return;
+    }
+    if (p.inventory.freeSlots() === 0 && !t.loot.every((l) => p.inventory.capacityFor(l.item) >= l.max)) {
+      this.inventoryFull();
+      return;
+    }
+    this.emit({ type: 'pickpocket', npc: n.id });
+    if (this.rng() < pickpocketChance(lvl, t.level)) {
+      let r = this.rng() * t.loot.reduce((a, l) => a + l.weight, 0);
+      const loot = t.loot.find((l) => (r -= l.weight) < 0) ?? t.loot[0];
+      const qty = randInt(this.rng, loot.min, loot.max);
+      const got = p.inventory.add(loot.item, qty);
+      if (got > 0) this.emit({ type: 'loot', item: loot.item, qty: got });
+      this.grantXp('thieving', t.xp);
+      this.message(`You pick ${n.def.name}'s pocket.`, 'good');
+      return;
+    }
+    // Caught: a clip round the ear and a few seconds stunned.
+    n.talkAge = 0;
+    p.stunTimer = 5;
+    p.path = [];
+    const dealt = Math.min(t.stunDamage, p.hp);
+    p.hp -= dealt;
+    p.combatTimer = 6;
+    this.emit({ type: 'damage', target: p.id, source: n.id, amount: dealt, hit: true });
+    this.emit({ type: 'stunned' });
+    this.message(`You fail to pick ${n.def.name}'s pocket. ${n.def.name}: "What do you think you're doing?"`, 'bad');
+    if (p.hp <= 0) this.killPlayer();
   }
 
   // ---------------------------------------------------------------- prayer
@@ -2460,7 +2540,7 @@ export class GameWorld {
     }
     const line = n.def.idleLines[n.idleLine % n.def.idleLines.length];
     n.idleLine++;
-    return { ...base, lines: [line] };
+    return { ...base, lines: [line], pickpocket: n.def.thieving ? n.id : undefined };
   }
 
   private acceptQuest(id: string) {

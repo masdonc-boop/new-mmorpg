@@ -663,6 +663,8 @@ export class ResourceView {
         this.addFishingSpots(list);
         continue;
       }
+      // Market stalls are scenery already; the resource only makes them interactive.
+      if (type === 'bakery_stall' || type === 'seed_stall') continue;
       if (ART.v2 && type === 'copper_rock') {
         this.addCopperV2(list, material);
         continue;

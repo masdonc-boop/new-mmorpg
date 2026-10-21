@@ -367,15 +367,18 @@ export class Hud {
     } else if (a?.type === 'gather') {
       const n = w.gatheringNode;
       if (n && n.def.skill === 'crafting') text = `🌿 Picking flax${w.isGathering ? '…' : ''}`;
+      else if (n && n.def.skill === 'thieving') text = `🤏 Stealing from the ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
       else if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
     } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
     else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
     else if (a?.type === 'firemaking') text = '🔥 Lighting a fire…';
+    else if (a?.type === 'pickpocket') text = '🤏 Pickpocketing…';
     else if (a?.type === 'craft') {
       const r = RECIPES[a.recipe];
       if (r) text = `${SKILL_INFO[r.skill].glyph} ${STATION_INFO[r.station].doing} ${itemDef(r.station === 'range' ? r.inputs[0].item : r.output.item).name.toLowerCase()}${a.remaining > 1 ? ` · ${a.remaining} left` : '…'}`;
     }
     else if (w.player.path.length > 0) text = '👣 Walking';
+    if (w.player.stunTimer > 0) text = `💫 Stunned (${Math.ceil(w.player.stunTimer)}s)`;
     if (this.status.textContent !== text) this.status.textContent = text;
     this.status.classList.toggle('hidden', !text);
   }
@@ -711,6 +714,7 @@ export class Hud {
     this.dialogue.classList.remove('hidden');
     let buttons = '';
     if (last && s.d.offer) buttons = `<button class="dlg-accept">✔ ${s.d.offer.label}</button><button class="dlg-decline">Not now</button>`;
+    else if (last && s.d.pickpocket !== undefined) buttons = `<button class="dlg-pick">🤏 Pickpocket</button><button class="dlg-close">Farewell</button>`;
     else if (last) buttons = `<button class="dlg-close">Farewell</button>`;
     else buttons = `<button class="dlg-next">Continue ▸</button>`;
     const rewards = last && s.d.rewards ? `<div class="dlg-rewards"><b>Rewards:</b> ${s.d.rewards.join(' · ')}</div>` : '';
@@ -721,6 +725,10 @@ export class Hud {
       <div class="dlg-btns">${buttons}</div>`;
     this.dialogue.querySelector('.dlg-next')?.addEventListener('click', () => this.advanceDialogue());
     this.dialogue.querySelector('.dlg-close')?.addEventListener('click', () => this.closeDialogue());
+    this.dialogue.querySelector('.dlg-pick')?.addEventListener('click', () => {
+      this.cb.command({ type: 'pickpocket', target: s.d.pickpocket! });
+      this.closeDialogue();
+    });
     this.dialogue.querySelector('.dlg-decline')?.addEventListener('click', () => this.closeDialogue());
     this.dialogue.querySelector('.dlg-accept')?.addEventListener('click', () => {
       this.cb.command({ type: 'acceptQuest', quest: s.d.offer!.quest });
@@ -993,27 +1001,30 @@ export class Hud {
   private updatePrompt() {
     const w = this.world;
     const p = w.player;
-    let best: { id: number; text: string; d: number } | null = null;
-    const consider = (id: number, x: number, z: number, text: string, range: number) => {
+    type Hint = { id: number; text: string; d: number; cmd?: Command };
+    let best: Hint | null = null;
+    const consider = (id: number, x: number, z: number, text: string, range: number, cmd?: Command) => {
       const d = Math.hypot(x - p.x, z - p.z);
-      if (d <= range && (!best || d < best.d)) best = { id, text, d };
+      if (d <= range && (!best || d < best.d)) best = { id, text, d, cmd };
     };
-    if (!p.dead && !this.openPanel && !p.action && !this.dialogueOpen) {
+    if (!p.dead && p.stunTimer <= 0 && !this.openPanel && !p.action && !this.dialogueOpen) {
       for (const st of w.stations) consider(st.id, st.x, st.z, `${SKILL_INFO[STATION_INFO[st.kind].skill].glyph} ${st.name} · ${STATION_INFO[st.kind].prompt}`, 3);
       for (const n of w.npcs) {
         if (n.def.service === 'bank') consider(n.id, n.x, n.z, '🏦 Bank · open your bank', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
+        if (n.def.thieving && !n.def.service) consider(n.id, n.x, n.z, `🤏 ${n.def.name} · pickpocket (Thieving ${n.def.thieving.level})`, 2.4, { type: 'pickpocket', target: n.id });
         if (n.def.service === 'tanner') consider(n.id, n.x, n.z, '🧵 Rook the tanner · tan pelts into leather', (n.def.reach ?? 1.9) + 1);
       }
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);
+      for (const nd of w.nodes) if (nd.def.skill === 'thieving' && !nd.depleted) consider(nd.id, nd.x, nd.z, `🤏 ${nd.def.name} · steal (Thieving ${nd.def.levelReq})`, 2.4);
       for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Flax · pick it to spin bowstrings', 2.2);
     }
-    let b = best as { id: number; text: string; d: number } | null;
-    this.promptCmd = null;
+    let b = best as Hint | null;
+    this.promptCmd = b?.cmd ?? null;
     const altar = !p.dead && !this.openPanel && !p.action && !this.dialogueOpen ? w.nearAltar() : null;
     if (altar && p.prayerPoints < p.skills.level('prayer') && (!b || Math.hypot(altar.x - p.x, altar.z - p.z) < b.d)) {
-      b = { id: -1, text: `🙏 ${altar.name} · recharge prayer`, d: 0 };
-      this.promptCmd = { type: 'pray' };
+      b = { id: -1, text: `🙏 ${altar.name} · recharge prayer`, d: 0, cmd: { type: 'pray' } };
+      this.promptCmd = b.cmd!;
     }
     this.promptTarget = b ? b.id : null;
     const text = b ? `${b.text}  ›` : '';

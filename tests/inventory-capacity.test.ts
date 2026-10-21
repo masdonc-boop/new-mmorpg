@@ -47,6 +47,8 @@ const fullMessages = (events: GameEvent[]) => events.filter((e) => e.type === 'm
 describe('Item definitions', () => {
   it('makes primary gathered resources non-stackable and keeps ammo, runes and coins stackable', () => {
     for (const r of Object.values(RESOURCES)) {
+      // Stall loot isn't a gathered resource (seeds stack, as in OSRS).
+      if (r.skill === 'thieving') continue;
       expect(itemDef(r.item).stackable).toBe(false);
       if (r.rareDrop) expect(itemDef(r.rareDrop.item).stackable).toBe(false);
     }

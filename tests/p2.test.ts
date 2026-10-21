@@ -152,3 +152,91 @@ describe('Prayer', () => {
     expect(PRAYERS.every((pr) => pr.drain > 0 && pr.level >= 1)).toBe(true);
   });
 });
+
+describe('Thieving', () => {
+  const npc = (w: GameWorld, id: string) => w.npcs.find((n) => n.def.id === id)!;
+  const pick = (w: GameWorld, id: string) => {
+    const n = npc(w, id);
+    stand(w, n.x + 0.8, n.z);
+    w.issue({ type: 'pickpocket', target: n.id });
+    run(w, 1);
+  };
+
+  it('pickpockets townsfolk for coins and xp', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const coins = p.inventory.count('coins');
+    setRng(w, 0.1);
+    pick(w, 'townsman');
+    expect(p.inventory.count('coins')).toBe(coins + 3);
+    expect(p.skills.xp.thieving).toBe(8);
+  });
+
+  it('getting caught hurts and stuns you for 5 seconds: you cannot move', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.99);
+    pick(w, 'townswoman');
+    expect(p.stunTimer).toBeGreaterThan(4);
+    expect(p.hp).toBe(p.maxHp - 10);
+    const at = { x: p.x, z: p.z };
+    w.issue({ type: 'moveTo', x: p.x + 4, z: p.z });
+    run(w, 2);
+    expect(Math.hypot(p.x - at.x, p.z - at.z)).toBeLessThan(0.01);
+    w.drainEvents();
+    w.issue({ type: 'pickpocket', target: npc(w, 'townsman').id });
+    expect(lastMessage(w)).toBe("You're stunned!");
+    run(w, 3.5);
+    expect(p.stunTimer).toBeLessThanOrEqual(0);
+  });
+
+  it('Farmer Wren needs Thieving 10 and sometimes has potato seeds; the guard needs 40', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    setRng(w, 0.1);
+    w.drainEvents();
+    pick(w, 'farmer');
+    expect(lastMessage(w)).toContain('Thieving level 10');
+    pick(w, 'guard');
+    expect(lastMessage(w)).toContain('Thieving level 40');
+    p.skills.addXp('thieving', xpForLevel(10));
+    // Rolls: success (0.1), then the loot pick lands on the seed (0.9 of the weight), then quantity.
+    const seq = [0.1, 0.9, 0.5];
+    let i = 0;
+    (w as unknown as { rng: () => number }).rng = () => seq[i++ % seq.length];
+    pick(w, 'farmer');
+    expect(p.inventory.count('potato_seed')).toBe(1);
+  });
+
+  it('steals from the bakery stall (Thieving 5); it empties and restocks', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const stall = w.nodes.find((n) => n.def.id === 'bakery_stall')!;
+    expect(stall).toBeTruthy();
+    stand(w, stall.x, stall.z + 1.2);
+    w.drainEvents();
+    w.issue({ type: 'interact', target: stall.id });
+    expect(lastMessage(w)).toContain('Thieving level 5 to steal from this bakery stall');
+    p.skills.addXp('thieving', xpForLevel(5));
+    const bread = p.inventory.count('bread');
+    w.issue({ type: 'interact', target: stall.id });
+    run(w, 1.5);
+    expect(p.inventory.count('bread')).toBe(bread + 1);
+    expect(stall.depleted).toBe(true);
+    run(w, 3);
+    expect(stall.depleted).toBe(false);
+  });
+
+  it('the seed stall (27) gives seeds; townsfolk patrol without walking through the fountain', () => {
+    const w = new GameWorld();
+    const stall = w.nodes.find((n) => n.def.id === 'seed_stall')!;
+    expect(stall.def.levelReq).toBe(27);
+    for (const id of ['townsman', 'townswoman', 'farmer']) {
+      const n = npc(w, id);
+      for (let t = 0; t < 30 * 60; t++) {
+        w.tick();
+        expect(isBlocked(w.map, n.x, n.z), `${id} at ${n.x.toFixed(1)},${n.z.toFixed(1)}`).toBe(false);
+      }
+    }
+  });
+});

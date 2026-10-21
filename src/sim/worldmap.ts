@@ -476,6 +476,10 @@ export function generateWorld(seed = 1337): WorldMap {
   // The crafting corner beside the smithy: a spinning wheel (the tanner stands just south).
   addDecor('spinning_wheel', 70.5, 73.5, true, -S / 2, 1, 0);
   stations.push({ kind: 'spinning_wheel', x: 70.5, z: 73.5, facing: -S / 2 });
+  // Thieving: the west plaza stall is the bakery stall; a seed stall stands by the fields.
+  resources.push({ type: 'bakery_stall', x: 52, z: 62 });
+  addDecor('stall', 66.5, 80.5, true, 0, 1, 2);
+  resources.push({ type: 'seed_stall', x: 66, z: 80 });
 
   // --- NPCs ---
   const npcs: WorldMap['npcs'] = [
@@ -496,6 +500,10 @@ export function generateWorld(seed = 1337): WorldMap {
     { id: 'smith', x: 62.6, z: 73.4, facing: -S / 2 },
     { id: 'banker', x: BANKER.x, z: BANKER.z, facing: S / 2 },
     { id: 'tanner', x: 70.5, z: 76.2, facing: S },
+    // Townsfolk strolling round the plaza, and the farmer by the fields.
+    { id: 'townsman', x: 54.5, z: 70.0, facing: 0, patrol: [{ x: 54.5, z: 70.0 }, { x: 59.5, z: 70.0 }, { x: 60.5, z: 67.5 }] },
+    { id: 'townswoman', x: 52.5, z: 64.0, facing: 0, patrol: [{ x: 52.5, z: 64.0 }, { x: 58.0, z: 63.6 }] },
+    { id: 'farmer', x: 56.5, z: 81.0, facing: 0, patrol: [{ x: 56.5, z: 81.0 }, { x: 60.5, z: 81.0 }] },
   ];
   for (const n of npcs) if (!n.patrol) blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
 
