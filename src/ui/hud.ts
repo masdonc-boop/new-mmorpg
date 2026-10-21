@@ -16,6 +16,7 @@ import { RECIPES, STATION_INFO, useCombo, usable, type StationKind } from '../da
 import { skillUnlocks } from '../data/unlocks';
 import { TOOL_SLOTS } from '../data/tools';
 import { GRAVE_SECONDS, KEEP_ON_DEATH } from '../sim/death';
+import { FIRE_LOGS } from '../data/firemaking';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -343,6 +344,7 @@ export class Hud {
       if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
     } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
     else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
+    else if (a?.type === 'firemaking') text = '🔥 Lighting a fire…';
     else if (a?.type === 'craft') {
       const r = RECIPES[a.recipe];
       if (r) text = `${SKILL_INFO[r.skill].glyph} ${STATION_INFO[r.station].doing} ${itemDef(r.station === 'range' ? r.inputs[0].item : r.output.item).name.toLowerCase()}${a.remaining > 1 ? ` · ${a.remaining} left` : '…'}`;
@@ -833,8 +835,17 @@ export class Hud {
         });
         btns.appendChild(wear);
       }
+      if (FIRE_LOGS[sel.item]) {
+        const light = el('button', 'primary', '🔥 Light');
+        light.addEventListener('click', () => {
+          this.cb.command({ type: 'lightFire', slot: this.selectedSlot! });
+          this.selectedSlot = null;
+          this.toggle(null);
+        });
+        btns.appendChild(light);
+      }
       if (usable(sel.item)) {
-        const use = el('button', 'primary', 'Use');
+        const use = el('button', 'primary', FIRE_LOGS[sel.item] ? '🔪 Fletch' : 'Use');
         use.addEventListener('click', () => {
           this.usingSlot = this.selectedSlot;
           this.renderInventory();
@@ -861,9 +872,11 @@ export class Hud {
       btns.appendChild(drop);
       info.appendChild(btns);
     } else {
-      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br><b>Tap</b> an item to use it: eat food, wield or wear gear, fletch logs (with a knife), put tools on your toolbelt. <b>Press and hold</b> for options such as drop or move. Logs, ores and gems take one slot each.</div>`;
+      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br><b>Tap</b> an item to use it: eat food, wield or wear gear, light logs (with a tinderbox) or fletch them (with a knife), put tools on your toolbelt. <b>Press and hold</b> for options such as drop or move. Logs, ores and gems take one slot each.</div>`;
     }
     body.appendChild(info);
+    // Keep an item's options (Light / Fletch, Drop…) on screen below the 28 slots.
+    if (sel || using) requestAnimationFrame(() => info.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     this.renderOverflow(body);
   }
 
@@ -1008,17 +1021,27 @@ export class Hud {
       this.renderInventory();
       return true;
     }
-    if (usable(st.item)) {
-      const belt = Object.values(this.world.player.toolbelt.slots);
-      const partner = inv.slots.some((o, j) => o && j !== slot && useCombo(st.item, o.item)) || belt.some((b) => b && useCombo(st.item, b));
-      if (partner) {
-        this.cb.command({ type: 'openFletching' });
-        return true;
-      }
-      if (st.item === 'logs' || st.item === 'oak_logs') {
-        this.addLog('You need a knife (in your bag or toolbelt) to fletch logs. Tilly sells them.', 'warn');
-        return false;
-      }
+    const belt = Object.values(this.world.player.toolbelt.slots);
+    const partner = usable(st.item) && (inv.slots.some((o, j) => o && j !== slot && useCombo(st.item, o.item)) || belt.some((b) => b && useCombo(st.item, b)));
+    const canLight = !!FIRE_LOGS[st.item] && !!this.world.toolFor('tinderbox').tool;
+    if (partner && canLight) {
+      // Logs with both a knife and a tinderbox: let the player choose (Light or Fletch).
+      this.selectedSlot = slot;
+      this.renderInventory();
+      return true;
+    }
+    if (canLight) {
+      this.cb.command({ type: 'lightFire', slot });
+      this.toggle(null);
+      return true;
+    }
+    if (partner) {
+      this.cb.command({ type: 'openFletching' });
+      return true;
+    }
+    if (FIRE_LOGS[st.item]) {
+      this.addLog('You need a tinderbox to light logs, or a knife to fletch them (in your bag or toolbelt). Tilly sells both.', 'warn');
+      return false;
     }
     if (d.tool) {
       // Tools go on the toolbelt (swapping out the one already there).

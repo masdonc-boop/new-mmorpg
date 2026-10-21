@@ -668,6 +668,42 @@ export function itemIcon(id: string): string {
       g.fill();
       break;
     }
+    case 'tinderbox': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(14, 26, 36, 22, 4);
+      g.fill();
+      outline();
+      g.fillStyle = 'rgba(0,0,0,0.22)';
+      g.fillRect(16, 26, 32, 5);
+      // Flint and striker resting on the lid.
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(20, 14, 22, 8, 3);
+      g.fill();
+      outline(2.5);
+      g.fillStyle = '#ffb340';
+      g.beginPath();
+      g.arc(46, 15, 3, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'ashes': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.ellipse(32, 44, 20, 9, 0, Math.PI, 0);
+      g.quadraticCurveTo(44, 26, 32, 24);
+      g.quadraticCurveTo(20, 26, 12, 44);
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      for (const [x, y] of [[26, 36], [36, 33], [31, 41]]) {
+        g.beginPath();
+        g.arc(x, y, 2.5, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

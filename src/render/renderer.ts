@@ -11,10 +11,10 @@ import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
-import { buildStaticWorld, ResourceView, type StaticWorld } from './props';
+import { buildStaticWorld, campfireGeometry, ResourceView, type StaticWorld } from './props';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
-import { merge } from './geom';
+import { makeWorldMaterial, merge } from './geom';
 import { HeroModel, type HeroGear, type HeroLook } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
@@ -338,6 +338,7 @@ export class GameRenderer {
     this.resources.update();
     this.updateGroundItems(t);
     this.updateGraves();
+    this.updateFires(t, dt);
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
     this.particles.update(dt);
@@ -434,6 +435,8 @@ export class GameRenderer {
         return a.ground;
       case 'grave':
         return a.grave;
+      case 'firemaking':
+        return null;
       case 'station':
         return a.station;
       case 'craft':
@@ -514,6 +517,63 @@ export class GameRenderer {
       this.scene.remove(v.sprite, v.shadow);
       this.overlay.removePlate(id);
       this.groundViews.delete(id);
+    }
+  }
+
+  // ---------------------------------------------------------------- player-lit fires
+
+  private fireViews = new Map<number, { root: THREE.Group; flame: THREE.Group; x: number; y: number; z: number }>();
+  private fireGeo: THREE.BufferGeometry | null = null;
+  private fireMat: THREE.Material | null = null;
+  private fireFlameGeo = new THREE.ConeGeometry(0.26, 0.75, 6);
+  private fireFlameMat = new THREE.MeshBasicMaterial({ color: '#ffb340' });
+  private fireCoreMat = new THREE.MeshBasicMaterial({ color: '#fff2a8' });
+  private fireEmit = 0;
+
+  /** Mirrors the fires players have lit: logs and stones, a flickering flame and sparks. */
+  private updateFires(t: number, dt: number) {
+    const w = this.world;
+    const seen = new Set<number>();
+    for (const f of w.fires) {
+      if (f.expired) continue;
+      seen.add(f.id);
+      let v = this.fireViews.get(f.id);
+      if (!v) {
+        this.fireGeo ??= campfireGeometry();
+        this.fireMat ??= makeWorldMaterial();
+        const root = new THREE.Group();
+        const logs = new THREE.Mesh(this.fireGeo, this.fireMat);
+        logs.scale.setScalar(0.7);
+        const flame = new THREE.Group();
+        const inner = new THREE.Mesh(this.fireFlameGeo, this.fireCoreMat);
+        inner.scale.setScalar(0.55);
+        inner.position.y = -0.08;
+        flame.add(new THREE.Mesh(this.fireFlameGeo, this.fireFlameMat), inner);
+        flame.position.y = 0.42;
+        root.add(logs, flame);
+        const y = groundHeight(w.map, f.x, f.z);
+        root.position.set(f.x, y, f.z);
+        this.scene.add(root);
+        v = { root, flame, x: f.x, y, z: f.z };
+        this.fireViews.set(f.id, v);
+      }
+      // The flame sinks as the fire burns down.
+      const left = Math.max(0.35, 1 - f.age / f.life);
+      const s = 1 + Math.sin(t * 17 + f.id) * 0.08 + Math.sin(t * 23) * 0.06;
+      v.flame.scale.set(left / s, left * s, left / s);
+      v.flame.rotation.y = t * 2;
+    }
+    this.fireEmit += dt;
+    if (this.fireEmit >= 0.08) {
+      this.fireEmit = 0;
+      for (const v of this.fireViews.values()) this.particles.emit({ x: v.x, y: v.y + 0.6, z: v.z, count: 2, color: ['#ffb340', '#ff7a1a', '#fff2a8'], speed: 0.3, up: 1.4, gravity: -0.5, life: 0.8, size: 0.06, spread: 0.3 });
+    }
+    for (const [id, v] of this.fireViews) {
+      if (seen.has(id)) continue;
+      this.scene.remove(v.root);
+      this.overlay.removePlate(id);
+      this.particles.emit({ x: v.x, y: v.y + 0.3, z: v.z, count: 12, color: ['#8c8a86', '#cfccc6'], speed: 0.4, up: 0.8, gravity: -0.2, life: 1.4, size: 0.14 });
+      this.fireViews.delete(id);
     }
   }
 

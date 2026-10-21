@@ -98,3 +98,121 @@ describe('Steel tier', () => {
     expect(itemDef('steel_sword').equip!.power!).toBeGreaterThan(itemDef('iron_sword').equip!.power!);
   });
 });
+
+describe('Firemaking', () => {
+  /** An open grassy spot clear of stations, west of the village (meadow). */
+  function clearing(w: GameWorld) {
+    const meadow = w.map.checkpoints.find((c) => c.id === 'meadow')!;
+    stand(w, Math.floor(meadow.respawnX) + 0.5, Math.floor(meadow.respawnZ) + 2.5);
+  }
+  const light = (w: GameWorld, item: ItemId = 'logs') => w.issue({ type: 'lightFire', slot: slotOf(w.player.inventory, item) });
+
+  it('new characters carry a tinderbox on the toolbelt; older saves get one once', () => {
+    const w = new GameWorld();
+    expect(w.player.toolbelt.get('tinderbox')).toBe('tinderbox');
+    const save = w.save();
+    delete save.toolbelt!.tinderbox;
+    save.grants = save.grants!.filter((g) => g !== 'firemaking-v1');
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.toolbelt.get('tinderbox')).toBe('tinderbox');
+    expect(w2.drainEvents().some((e) => e.type === 'message' && e.text.startsWith('New skill: Firemaking'))).toBe(true);
+    // Once only: dropping it and reloading doesn't hand out another.
+    w2.issue({ type: 'beltRemove', category: 'tinderbox' });
+    w2.issue({ type: 'dropItem', slot: slotOf(w2.player.inventory, 'tinderbox') });
+    const w3 = new GameWorld({ save: JSON.parse(JSON.stringify(w2.save())) });
+    expect(w3.player.toolbelt.get('tinderbox')).toBeNull();
+    expect(w3.player.inventory.count('tinderbox')).toBe(0);
+  });
+
+  it('lights logs where you stand, gives xp, and you step off the fire', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    clearing(w);
+    p.inventory.add('logs', 2);
+    setRng(w, 0);
+    const at = { x: Math.floor(p.x) + 0.5, z: Math.floor(p.z) + 0.5 };
+    light(w);
+    run(w, 1.5);
+    expect(w.fires.length).toBe(1);
+    expect(w.fires[0]).toMatchObject(at);
+    expect(w.stations).toContain(w.fires[0]);
+    expect(p.inventory.count('logs')).toBe(1);
+    expect(p.skills.xp.firemaking).toBe(40);
+    run(w, 1);
+    expect(Math.hypot(p.x - at.x, p.z - at.z)).toBeGreaterThan(0.8);
+  });
+
+  it('keeps trying until the fire catches', () => {
+    const w = new GameWorld();
+    clearing(w);
+    w.player.inventory.add('logs', 1);
+    setRng(w, 0.99);
+    light(w);
+    run(w, 4);
+    expect(w.fires.length).toBe(0);
+    expect(w.player.action?.type).toBe('firemaking');
+    setRng(w, 0);
+    run(w, 1.3);
+    expect(w.fires.length).toBe(1);
+  });
+
+  it('needs a tinderbox and the level for the logs, and a clear spot', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    clearing(w);
+    p.inventory.add('oak_logs', 1);
+    p.inventory.add('logs', 2);
+    w.drainEvents();
+    light(w, 'oak_logs');
+    expect(lastMessage(w)).toContain('Firemaking level 15');
+    w.issue({ type: 'beltRemove', category: 'tinderbox' });
+    w.issue({ type: 'dropItem', slot: slotOf(p.inventory, 'tinderbox') });
+    light(w);
+    expect(lastMessage(w)).toContain('tinderbox');
+    p.toolbelt.slots.tinderbox = 'tinderbox';
+    setRng(w, 0);
+    light(w);
+    run(w, 1.3);
+    // Back onto the fire: can't light another on top of it.
+    stand(w, w.fires[0].x, w.fires[0].z);
+    w.drainEvents();
+    light(w);
+    expect(lastMessage(w)).toBe("You can't light a fire here.");
+  });
+
+  it('walking away stops the attempt', () => {
+    const w = new GameWorld();
+    clearing(w);
+    w.player.inventory.add('logs', 1);
+    setRng(w, 0.99);
+    light(w);
+    w.issue({ type: 'joystick', dx: 1, dz: 0 });
+    run(w, 0.5);
+    expect(w.player.action).toBeNull();
+  });
+
+  it('you can cook on your own fire, and it burns out into ashes', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    clearing(w);
+    p.inventory.add('logs', 1);
+    p.inventory.add('raw_shrimps', 1);
+    setRng(w, 0);
+    light(w);
+    run(w, 2.5);
+    const fire = w.fires[0];
+    w.issue({ type: 'interact', target: fire.id });
+    run(w, 1);
+    expect(w.drainEvents().some((e) => e.type === 'productionOpen' && e.station === 'fire')).toBe(true);
+    setRng(w, 0.99);
+    w.issue({ type: 'craft', recipe: 'shrimps', count: 1 });
+    run(w, 2.5);
+    expect(p.inventory.count('shrimps')).toBe(1);
+    fire.age = fire.life;
+    w.tick();
+    expect(w.fires.length).toBe(0);
+    expect(w.stations).not.toContain(fire);
+    expect(w.interactable(fire.id)).toBeNull();
+    expect(w.groundItems.some((g) => g.item === 'ashes' && g.x === fire.x && g.z === fire.z)).toBe(true);
+  });
+});

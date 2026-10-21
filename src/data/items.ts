@@ -28,7 +28,9 @@ export type IconShape =
   | 'net'
   | 'string'
   | 'unbow'
-  | 'fish';
+  | 'fish'
+  | 'tinderbox'
+  | 'ashes';
 
 export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo';
 export const EQUIP_SLOTS: readonly EquipSlot[] = ['head', 'body', 'legs', 'weapon', 'shield', 'ammo'];
@@ -133,6 +135,8 @@ export const ITEMS = {
   steel_pickaxe: def({ id: 'steel_pickaxe', name: 'Steel pickaxe', examine: 'Steel bites into rock faster than iron.', stackable: false, kind: 'tool', tool: { category: 'pickaxe', tier: 3, req: { skill: 'mining', level: 6 } }, value: 150, icon: { shape: 'pickaxe', color: '#d3d9df', accent: '#7a4f2a' } }),
   hammer: def({ id: 'hammer', name: 'Hammer', examine: 'Needed to forge metal at an anvil.', stackable: false, kind: 'tool', tool: { category: 'hammer', tier: 1 }, value: 6, icon: { shape: 'hammer', color: '#8d949c', accent: '#8a5a34' } }),
   knife: def({ id: 'knife', name: 'Knife', examine: 'Use it on logs to fletch shafts and bows.', stackable: false, kind: 'tool', tool: { category: 'knife', tier: 1 }, value: 6, icon: { shape: 'knife', color: '#d6dbe2', accent: '#4e321e' } }),
+  tinderbox: def({ id: 'tinderbox', name: 'Tinderbox', examine: 'Flint and steel. Use it on logs to light a fire.', stackable: false, kind: 'tool', tool: { category: 'tinderbox', tier: 1 }, value: 4, icon: { shape: 'tinderbox', color: '#8a5a34', accent: '#d6dbe2' } }),
+  ashes: def({ id: 'ashes', name: 'Ashes', examine: 'All that is left of a fire.', stackable: false, kind: 'material', value: 1, icon: { shape: 'ashes', color: '#8c8a86', accent: '#cfccc6' } }),
   small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),

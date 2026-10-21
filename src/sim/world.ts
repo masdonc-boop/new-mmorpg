@@ -11,6 +11,7 @@ import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
+import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
 import { toolLabel, type ToolCategory } from '../data/tools';
@@ -75,6 +76,8 @@ export type Command =
   | { type: 'beltRemove'; category: ToolCategory }
   /** Move every tool in the inventory whose belt slot is empty onto the toolbelt. */
   | { type: 'beltAddAll' }
+  /** Light the logs in an inventory slot where the player stands (needs a tinderbox). */
+  | { type: 'lightFire'; slot: number }
   /** Open the fletching interface (needs no station). */
   | { type: 'openFletching' }
   | { type: 'closeProduction' }
@@ -130,6 +133,8 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** A player lit a fire (a new Fire station). */
+  | { type: 'fireLit'; id: number }
   /** Toolbelt contents changed. */
   | { type: 'toolbelt' }
   | { type: 'shopOpen'; shop: string }
@@ -143,6 +148,7 @@ export type PlayerAction =
   | { type: 'attack'; target: number }
   | { type: 'pickup'; ground: number }
   | { type: 'grave'; grave: number }
+  | { type: 'firemaking'; item: ItemId }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
@@ -283,6 +289,7 @@ export class Player implements Mover {
   /** What happened to the player's items at their latest death (for the death screen). */
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null } | null = null;
   craftTimer = 0;
+  fireTimer = 0;
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -364,6 +371,22 @@ export class Station {
 
   get name(): string {
     return STATION_INFO[this.kind].name;
+  }
+}
+
+/** A fire a player lit: cooks like the campfire, then burns out and leaves ashes. */
+export class Fire extends Station {
+  age = 0;
+  constructor(id: number, x: number, z: number, public readonly life: number) {
+    super(id, 'fire', x, z);
+  }
+
+  override get name(): string {
+    return 'Fire';
+  }
+
+  get expired(): boolean {
+    return this.age >= this.life;
   }
 }
 
@@ -459,6 +482,8 @@ export class GameWorld {
   readonly nodes: ResourceNode[] = [];
   readonly npcs: Npc[] = [];
   readonly stations: Station[] = [];
+  /** Fires lit by players (also listed in `stations` while they burn). Not saved: they burn out. */
+  fires: Fire[] = [];
   groundItems: GroundItem[] = [];
   graves: Gravestone[] = [];
   private nextGroundId = 20000;
@@ -524,7 +549,7 @@ export class GameWorld {
   /** Tools every character should own once (older saves receive them after the production update). */
   static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
   /** Everything a new character starts with on the toolbelt. */
-  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net'];
+  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox'];
 
   /** Once, when the toolbelt arrives: move the tools already in the bag onto it (frees their slots). */
   private introduceToolbelt() {
@@ -553,6 +578,18 @@ export class GameWorld {
     }
   }
 
+  /** Once, when Firemaking arrives: a tinderbox for characters who don't own one (on the belt if free). */
+  private grantTinderbox() {
+    const p = this.player;
+    if (p.grants.has('firemaking-v1')) return;
+    p.grants.add('firemaking-v1');
+    const t: ItemId = 'tinderbox';
+    if (p.inventory.count(t) > 0 || p.bank.count(t) > 0 || p.toolbelt.count(t) > 0 || p.overflow.some((o) => o.item === t)) return;
+    if (!p.toolbelt.get('tinderbox')) p.toolbelt.slots.tinderbox = t;
+    else if (p.inventory.add(t, 1) !== 1) addTo(p.overflow, t, 1);
+    this.message('New skill: Firemaking! Tilly put a tinderbox on your toolbelt. Tap logs in your bag to light a fire.', 'good');
+  }
+
   private grantProductionTools() {
     const p = this.player;
     if (p.grants.has('tools-v1')) return;
@@ -571,6 +608,7 @@ export class GameWorld {
     this.player.grants.add('tools-v1');
     this.player.grants.add('toolbelt-v1');
     this.player.grants.add('ammo-v1');
+    this.player.grants.add('firemaking-v1');
     for (const t of GameWorld.STARTER_BELT) this.player.toolbelt.slots[itemDef(t).tool!.category] = t;
     inv.add('bread', 2);
     this.player.equipment.slots.ammo = 'bronze_arrow';
@@ -624,6 +662,7 @@ export class GameWorld {
     this.grantProductionTools();
     this.introduceToolbelt();
     this.introduceAmmoSlot();
+    this.grantTinderbox();
     p.autoGather = s.options?.autoGather === true;
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
@@ -763,6 +802,9 @@ export class GameWorld {
         else this.message('No tools in your bag need moving (each belt slot holds one tool).');
         break;
       }
+      case 'lightFire':
+        this.startFire(cmd.slot);
+        break;
       case 'openFletching':
         p.stationAt = null;
         this.emit({ type: 'productionOpen', station: 'fletching' });
@@ -820,6 +862,7 @@ export class GameWorld {
     this.updatePlayer(dt);
     this.updateGroundItems(dt);
     this.updateGraves(dt);
+    this.updateFires(dt);
     if (p.shopAt !== null && !this.activeShop()) {
       p.shopAt = null;
       this.emit({ type: 'shopClose' });
@@ -926,6 +969,7 @@ export class GameWorld {
     else if (action?.type === 'talk') this.updateTalk(action.npc);
     else if (action?.type === 'pickup') this.updatePickup(action.ground);
     else if (action?.type === 'grave') this.updateGrave(action.grave);
+    else if (action?.type === 'firemaking') this.updateFiremaking(action.item, dt);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
 
@@ -1424,6 +1468,86 @@ export class GameWorld {
       p.action = null;
       if (a.made > 1) this.message(`You make ${a.made} ${plural(itemDef(rec.output.item).name.toLowerCase(), a.made)}.`, 'good');
     }
+  }
+
+  // ---------------------------------------------------------------- firemaking
+
+  /** Why logs can't be lit here and now (null if they can). */
+  fireBlocker(item: ItemId): string | null {
+    const p = this.player;
+    const fl = FIRE_LOGS[item];
+    if (!fl) return "You can't light that.";
+    if (p.skills.level('firemaking') < fl.level) return `You need Firemaking level ${fl.level} to light ${itemDef(item).name.toLowerCase()}.`;
+    const t = this.toolFor('tinderbox');
+    if (!t.tool) return t.why;
+    if (p.inventory.count(item) <= 0) return `You have no ${itemDef(item).name.toLowerCase()} left.`;
+    if (this.stations.some((s) => dist(s.x, s.z, p.x, p.z) < 1.1)) return "You can't light a fire here.";
+    return null;
+  }
+
+  private startFire(slot: number) {
+    const p = this.player;
+    const st = Number.isInteger(slot) ? p.inventory.slots[slot] : null;
+    if (!st) return;
+    const why = this.fireBlocker(st.item);
+    if (why) {
+      this.message(why, 'warn');
+      return;
+    }
+    p.path = [];
+    p.joy.x = p.joy.z = 0;
+    p.action = { type: 'firemaking', item: st.item };
+    p.fireTimer = LIGHT_SECONDS;
+    this.message('You attempt to light the logs.');
+  }
+
+  private updateFiremaking(item: ItemId, dt: number) {
+    const p = this.player;
+    if (p.moving) {
+      p.action = null;
+      return;
+    }
+    p.fireTimer -= dt;
+    if (p.fireTimer > 0) return;
+    p.fireTimer = LIGHT_SECONDS;
+    const why = this.fireBlocker(item);
+    if (why) {
+      p.action = null;
+      this.message(why, 'warn');
+      return;
+    }
+    const fl = FIRE_LOGS[item]!;
+    if (this.rng() >= lightChance(p.skills.level('firemaking'), fl.level)) return;
+    p.action = null;
+    p.inventory.remove(item, 1);
+    const fire = new Fire(this.nextGroundId++, Math.floor(p.x) + 0.5, Math.floor(p.z) + 0.5, FIRE_LIFE.min + this.rng() * (FIRE_LIFE.max - FIRE_LIFE.min));
+    this.fires.push(fire);
+    this.stations.push(fire);
+    this.byId.set(fire.id, fire);
+    this.grantXp('firemaking', fl.xp);
+    this.emit({ type: 'fireLit', id: fire.id });
+    this.message('The fire catches and the logs begin to burn.', 'good');
+    // Step off the fire, west first as is tradition, then any free side.
+    for (const [dx, dz] of [[-1, 0], [1, 0], [0, 1], [0, -1]]) {
+      const x = fire.x + dx;
+      const z = fire.z + dz;
+      if (this.blockedAt(x, z) || this.stations.some((s) => dist(s.x, s.z, x, z) < 0.6)) continue;
+      p.path = [{ x, z }];
+      break;
+    }
+  }
+
+  private updateFires(dt: number) {
+    let removed = false;
+    for (const f of this.fires) {
+      f.age += dt;
+      if (!f.expired) continue;
+      removed = true;
+      this.byId.delete(f.id);
+      this.stations.splice(this.stations.indexOf(f), 1);
+      this.spawnGroundItem('ashes', 1, f.x, f.z, null);
+    }
+    if (removed) this.fires = this.fires.filter((f) => !f.expired);
   }
 
   // ---------------------------------------------------------------- toolbelt

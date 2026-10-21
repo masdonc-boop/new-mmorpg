@@ -369,6 +369,11 @@ export interface StaticWorld {
   emitters: { x: number; y: number; z: number; kind: 'fire' | 'fountain' | 'chimney' }[];
 }
 
+/** The ring of stones and crossed logs of a campfire (for fires players light). */
+export function campfireGeometry(): THREE.BufferGeometry {
+  return decorPrefab('campfire', 0, 1)!;
+}
+
 export function buildStaticWorld(map: WorldMap, time: { value: number }): StaticWorld {
   const rng = mulberry32(map.seed + 11);
   const solid = new ChunkBatcher();
