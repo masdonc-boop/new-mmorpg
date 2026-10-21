@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GameWorld } from '../src/sim/world';
 import { Inventory } from '../src/sim/inventory';
 import { RECIPES } from '../src/data/recipes';
+import { Bank, BANK_TABS, withdrawItem, depositItem } from '../src/sim/bank';
 import { RESOURCES, gatherChance } from '../src/data/resources';
 import { itemDef, type ItemId } from '../src/data/items';
 import { xpForLevel } from '../src/data/skills';
@@ -354,5 +355,91 @@ describe('Crafting', () => {
     w.issue({ type: 'craft', recipe: 'bowstring', count: 1 });
     run(w, 2.5);
     expect(p.inventory.count('bowstring')).toBe(before + 1);
+  });
+});
+
+describe('Bank tabs and placeholders', () => {
+  it('new items go to the tab being viewed; tabs can be added up to 9 and close up when emptied', () => {
+    const b = new Bank();
+    b.add('logs', 5);
+    b.add('copper_ore', 3, 1); // a new tab 1
+    b.add('tin_ore', 2, 7); // tab 7 doesn't exist yet: main tab
+    expect(b.tabs()).toEqual([1]);
+    expect(b.slots.find((s) => s.item === 'tin_ore')!.tab).toBe(0);
+    expect(b.setTab('tin_ore', 2)).toBe(true);
+    expect(b.tabs()).toEqual([1, 2]);
+    expect(b.setTab('logs', 4)).toBe(false); // only one past the last tab
+    // Emptying tab 1 renumbers tab 2 to 1.
+    b.remove('copper_ore', 3);
+    expect(b.tabs()).toEqual([1]);
+    expect(b.slots.find((s) => s.item === 'tin_ore')!.tab).toBe(1);
+    expect(b.ordered().map((s) => s.item)).toEqual(['logs', 'tin_ore']);
+    // Fill up to the limit: tabs 2..9 can be made, a tenth can't.
+    const more: ItemId[] = ['bread', 'coins', 'bones', 'iron_ore', 'coal_ore', 'flax', 'thread', 'leather', 'ashes'];
+    more.forEach((it, i) => b.add(it, 1, i + 2));
+    expect(b.slots.find((s) => s.item === 'ashes')!.tab).toBe(0);
+    expect(b.tabs().length).toBe(BANK_TABS);
+  });
+
+  it('with placeholders on, withdrawing the last keeps the spot (and tab) for the next deposit', () => {
+    const b = new Bank();
+    const inv = new Inventory();
+    b.placeholders = true;
+    b.add('logs', 1);
+    b.add('copper_ore', 2, 1);
+    withdrawItem(b, inv, 'copper_ore', 2);
+    expect(b.count('copper_ore')).toBe(0);
+    expect(b.slots.find((s) => s.item === 'copper_ore')).toEqual({ item: 'copper_ore', qty: 0, tab: 1 });
+    expect(b.usedSlots()).toBe(2);
+    expect(b.tabs()).toEqual([1]);
+    // Nothing to withdraw from a placeholder.
+    expect(withdrawItem(b, inv, 'copper_ore', 1).moved).toBe(0);
+    // Depositing fills it in place, ignoring the tab being viewed.
+    depositItem(b, inv, 'copper_ore', 1, 0);
+    expect(b.slots.find((s) => s.item === 'copper_ore')).toEqual({ item: 'copper_ore', qty: 1, tab: 1 });
+    b.remove('copper_ore', 1);
+    expect(b.releasePlaceholders('copper_ore')).toBe(1);
+    expect(b.tabs()).toEqual([]);
+    // With placeholders off, the slot frees.
+    b.placeholders = false;
+    b.remove('logs', 1);
+    expect(b.usedSlots()).toBe(0);
+  });
+
+  it('tabs, placeholders and the setting survive save and load; junk tabs fall back to main', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.bank.placeholders = true;
+    p.bank.add('logs', 4, 1);
+    p.bank.add('bread', 1);
+    p.bank.remove('bread', 1);
+    const save = JSON.parse(JSON.stringify(w.save()));
+    const w2 = new GameWorld({ save });
+    expect(w2.player.bank.placeholders).toBe(true);
+    expect(w2.player.bank.toJSON()).toEqual(p.bank.toJSON());
+    const odd = Bank.restore([{ item: 'logs', qty: 2, tab: 42 }, { item: 'bread', qty: -3 }]);
+    expect(odd.toJSON()).toEqual([{ item: 'logs', qty: 2, tab: 0 }]);
+  });
+
+  it('bank commands work only at the bank and deposit into the chosen tab', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('logs', 3);
+    w.issue({ type: 'bankDeposit', slot: slotOf(p.inventory, 'logs'), qty: 3, tab: 1 });
+    expect(p.bank.count('logs')).toBe(0);
+    const banker = w.npcs.find((n) => n.def.service === 'bank')!;
+    stand(w, banker.x, banker.z + 1.6);
+    w.issue({ type: 'interact', target: banker.id });
+    run(w, 1);
+    expect(w.bankOpen).toBe(true);
+    w.issue({ type: 'bankDeposit', slot: slotOf(p.inventory, 'logs'), qty: 3, tab: 1 });
+    expect(p.bank.slots.find((s) => s.item === 'logs')).toEqual({ item: 'logs', qty: 3, tab: 1 });
+    w.issue({ type: 'bankSetPlaceholders', on: true });
+    w.issue({ type: 'bankWithdraw', item: 'logs', qty: 3 });
+    expect(p.bank.slots.find((s) => s.item === 'logs')?.qty).toBe(0);
+    w.issue({ type: 'bankSetTab', item: 'logs', tab: 0 });
+    expect(p.bank.tabs()).toEqual([]);
+    w.issue({ type: 'bankReleasePlaceholders' });
+    expect(p.bank.usedSlots()).toBe(0);
   });
 });

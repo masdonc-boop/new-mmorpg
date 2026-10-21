@@ -56,10 +56,19 @@ export type Command =
   | { type: 'claimOverflow' }
   /** Permanently discard all held overflow items (the client confirms first). */
   | { type: 'discardOverflow' }
-  /** Bank: deposit up to qty of the item in an inventory slot (all of that item type, across slots). */
-  | { type: 'bankDeposit'; slot: number; qty: number }
+  /**
+   * Bank: deposit up to qty of the item in an inventory slot (all of that item type, across slots).
+   * A new item goes into `tab` (the tab being viewed); items already banked keep their place.
+   */
+  | { type: 'bankDeposit'; slot: number; qty: number; tab?: number }
   /** Bank: deposit the whole inventory. */
-  | { type: 'bankDepositAll' }
+  | { type: 'bankDepositAll'; tab?: number }
+  /** Bank: move an item (or its placeholder) to a tab (0 main; one past the last makes a new tab). */
+  | { type: 'bankSetTab'; item: ItemId; tab: number }
+  /** Bank: release one item's placeholder, or all placeholders. */
+  | { type: 'bankReleasePlaceholders'; item?: ItemId }
+  /** Bank: leave placeholders when withdrawing the last of an item. */
+  | { type: 'bankSetPlaceholders'; on: boolean }
   /** Bank: move held overflow items into the bank. */
   | { type: 'bankDepositHeld' }
   /** Bank: withdraw up to qty of an item (as many as fit). */
@@ -465,8 +474,10 @@ export interface SaveData {
   inventory: (ItemStack | null)[];
   /** Held items that did not fit in the inventory (see Player.overflow). Optional for older saves. */
   overflow?: ItemStack[];
-  /** Bank contents (optional: saves from before the bank start with an empty bank). */
+  /** Bank contents with tabs and placeholders (optional: saves from before the bank start empty). */
   bank?: ItemStack[];
+  /** Bank settings (optional for older saves). */
+  bankOptions?: { placeholders?: boolean };
   /** Worn equipment (optional for older saves). */
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** Size of the worn ammo stack. */
@@ -648,6 +659,7 @@ export class GameWorld {
       inventory: p.inventory.toJSON(),
       overflow: p.overflow.map((o) => ({ ...o })),
       bank: p.bank.toJSON(),
+      bankOptions: { placeholders: p.bank.placeholders },
       equipment: p.equipment.toJSON(),
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather },
@@ -663,7 +675,7 @@ export class GameWorld {
   private loadPlayer(s: SaveData) {
     const p = this.player;
     p.skills = new Skills(s.xp);
-    p.bank = Bank.restore(s.bank);
+    p.bank = Bank.restore(s.bank, undefined, s.bankOptions);
     const restored = Inventory.restore(s.inventory);
     p.inventory = restored.inventory;
     p.overflow = restored.overflow;
@@ -784,6 +796,9 @@ export class GameWorld {
       case 'bankDepositAll':
       case 'bankDepositHeld':
       case 'bankWithdraw':
+      case 'bankSetTab':
+      case 'bankReleasePlaceholders':
+      case 'bankSetPlaceholders':
         this.bankCommand(cmd);
         break;
       case 'equip':
@@ -1754,7 +1769,7 @@ export class GameWorld {
   }
 
   /** Validates and applies one bank command. Every transfer is all-or-nothing per item type. */
-  private bankCommand(cmd: Extract<Command, { type: 'bankDeposit' | 'bankDepositAll' | 'bankDepositHeld' | 'bankWithdraw' }>) {
+  private bankCommand(cmd: Extract<Command, { type: 'bankDeposit' | 'bankDepositAll' | 'bankDepositHeld' | 'bankWithdraw' | 'bankSetTab' | 'bankReleasePlaceholders' | 'bankSetPlaceholders' }>) {
     const p = this.player;
     if (!this.activeBanker()) {
       this.message('You need to be at the bank to do that.', 'warn');
@@ -1778,7 +1793,7 @@ export class GameWorld {
       case 'bankDeposit': {
         const s = Number.isInteger(cmd.slot) ? inv.slots[cmd.slot] : null;
         if (!s) return;
-        report(depositItem(bank, inv, s.item, cmd.qty), 'You deposit');
+        report(depositItem(bank, inv, s.item, cmd.qty, cmd.tab ?? 0), 'You deposit');
         break;
       }
       case 'bankWithdraw': {
@@ -1787,7 +1802,7 @@ export class GameWorld {
         break;
       }
       case 'bankDepositAll': {
-        const results = depositInventory(bank, inv);
+        const results = depositInventory(bank, inv, cmd.tab ?? 0);
         const moved = results.reduce((a, r) => a + r.moved, 0);
         const blocked = results.filter((r) => r.limit === 'bankFull');
         if (moved > 0) this.message(`You deposit ${moved} item${moved === 1 ? '' : 's'}.`);
@@ -1797,6 +1812,18 @@ export class GameWorld {
         }
         break;
       }
+      case 'bankSetTab':
+        if (isItemId(cmd.item)) bank.setTab(cmd.item, cmd.tab);
+        break;
+      case 'bankReleasePlaceholders': {
+        const n = bank.releasePlaceholders(cmd.item !== undefined && isItemId(cmd.item) ? cmd.item : undefined);
+        if (n > 0 && cmd.item === undefined) this.message(`Released ${n} placeholder${n === 1 ? '' : 's'}.`);
+        break;
+      }
+      case 'bankSetPlaceholders':
+        bank.placeholders = cmd.on === true;
+        this.message(bank.placeholders ? 'Placeholders on: withdrawing the last of an item keeps its place.' : 'Placeholders off.');
+        break;
       case 'bankDepositHeld': {
         if (!p.overflow.length) return;
         const r = depositStacks(bank, p.overflow);

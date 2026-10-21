@@ -26,13 +26,15 @@
 | System | Brightwater today | OSRS reference | Gap |
 |---|---|---|---|
 | XP curve | 1–99, classic exponential table (`data/skills.ts`) | Same curve | None |
-| Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking (12) | 23 skills | Missing: Prayer, Firemaking, Crafting, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction |
+| Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking, Firemaking, Crafting (14) | 23 skills | Missing: Prayer, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction |
 | Inventory | 28 slots; resources one per slot; coins, ammo and runes stack | Same | Noted (inventory item) and drag-to-reorder missing; we use press-and-hold then tap to move |
-| Bank | 200 slots, all items stack, search, categories, deposit and withdraw 1/5/X/all | 800 slots (fewer on free worlds), tabs, placeholders, noted withdrawal, deposit worn items | Tabs, placeholders, withdraw-as-note, deposit-equipment button |
-| Equipment | 6 slots: head, body, legs, weapon, shield, ammo (arrows worn as a stack; bows fire from it) | 11 slots: head, cape, neck, ammo, weapon, body, shield, legs, hands, feet, ring | Cape, neck, hands, feet, ring slots |
-| Gathering | Trees, rocks, net fishing; tool tiers (bronze, iron); depletion and respawn; rare gems | Same pattern | More tiers (steel and above), more resources, rod and bait fishing, harpoon |
-| Smithing | Furnace (bronze, iron), anvil (weapons, armour, axes, pickaxes) with hammer | Same pattern | Steel and above; more items (arrowtips, nails, bolts) |
-| Fletching | Knife on logs: shafts, unstrung bows; bowstring stringing; arrows | Same pattern | Feathers and headless arrows, longbows, more log tiers; bowstrings from Crafting (flax) |
+| Bank | 200 slots, all items stack, search, categories, up to 9 tabs plus main, placeholders (setting), deposit and withdraw 1/5/X/all | 800 slots (fewer on free worlds), tabs, placeholders, noted withdrawal, deposit worn items | Withdraw-as-note, deposit-equipment button, tab reordering by drag |
+| Equipment | All 11 slots: head, cape, neck, ammo, weapon, shield, body, legs, hands, feet, ring (arrows worn as a stack; amulets add accuracy and power to every style) | Same 11 slots | No rings yet (they need gold and jewellery) |
+| Gathering | Trees, rocks (copper, tin, iron, coal), net fishing, flax; tool tiers (bronze, iron, steel); depletion and respawn; rare gems | Same pattern | Mithril and above, rod and bait fishing, harpoon |
+| Smithing | Furnace (bronze, iron, steel), anvil (weapons, armour, axes, pickaxes) with hammer | Same pattern | Mithril and above; more items (arrowtips, nails, bolts) |
+| Fletching | Knife on logs: shafts, unstrung bows; bowstring stringing; arrows | Same pattern | Feathers and headless arrows, longbows, more log tiers |
+| Firemaking | Tinderbox on logs (normal 1, oak 15), lights where you stand and steps you aside; fires cook and leave ashes | Same | Willow and above; fires are not saved (they burn out) |
+| Crafting | Tanner (2 coins a pelt), needle and thread on leather (gloves to chaps), fang amulet, chisel on sapphires, flax spun into bowstrings | Same pattern (cowhide, thread used 1 per 5 items) | Pottery, glass, jewellery; thread is used one per item (simplification) |
 | Cooking | Range and fire; burn chance falls with level; food heals | Same | More foods, multi-step food (bread, pies), stop-burn by level per food |
 | Shops | Fixed price, unlimited stock, buy and sell | Stock levels that restock; price changes with stock | Stock and restock, dynamic pricing |
 | Ground items | Drops on the ground, owner-only then public, then despawn | Same structure (shorter timers) | Timers differ (approved, 4.2) |
@@ -44,9 +46,9 @@
 
 ## 3. Missing OSRS-style features (not yet scheduled)
 
-- **Skills:** Firemaking, Crafting, Prayer, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction.
-- **Equipment:** remaining slots and equipment stat tables (stab, slash and crush style bonuses, adapted to custom combat).
-- **Banking:** tabs, placeholders, noting, deposit worn items.
+- **Skills:** Prayer, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction.
+- **Equipment:** rings (jewellery) and equipment stat tables (stab, slash and crush style bonuses, adapted to custom combat).
+- **Banking:** noting, deposit worn items.
 - **Economy:** shop stock and restock, player trading, an exchange.
 - **Quests:** a quest point system and more quests with original stories.
 - **Misc:** run energy, item notes, drag-reorder in the bag, "examine" text on everything, world map icons for services.
@@ -89,12 +91,17 @@ Each step is a separate development pass with its own tests and an Android check
 2. **Auto-continue gathering (4.5):** a setting, off by default.
 3. **Ammo slot:** arrows are worn as a stack and bows fire from it; runes stay in the bag, as in OSRS.
 
-**P1: complete existing loops the OSRS way**
-4. **Firemaking:** logs and tinderbox (a new toolbelt slot), lighting fires anywhere. Gives Cooking OSRS's fire loop.
-5. **Crafting:** leather from wolf pelts, flax into bowstrings, gem cutting (sapphires already drop). Makes bowstrings a skill product, not shop-only.
-6. **Equipment slots:** hands, feet, cape, neck, ring. Armour from Smithing and Crafting.
-7. **Steel tier:** coal and steel bars, steel tools (with their tool-tier requirements), steel gear.
-8. **Bank tabs and placeholders.**
+**P1: complete existing loops the OSRS way (done)**
+4. **Firemaking:** tinderbox (new toolbelt slot) on logs, fires anywhere that cook and leave ashes.
+5. **Crafting:** Rook the tanner, leather armour, fang amulet, gem cutting, flax spun into bowstrings at the spinning wheel. Needle and chisel are new toolbelt slots.
+6. **Equipment slots:** all 11. Ring slot is empty until jewellery arrives.
+7. **Steel tier:** coal rocks (Mining 30), steel bars (Smithing 30), steel tools (tier 3, need level 6 to use) and gear (level 20).
+8. **Bank tabs and placeholders:** up to 9 tabs plus main; placeholders as a bank setting (off by default).
+
+Owner notes on P1 choices:
+- New characters start with tinderbox, needle and chisel on the toolbelt, like the other skill tools; existing saves receive them once.
+- Thread is used one per item (OSRS: one per five). Tanning costs 2 coins per pelt.
+- Wolf pelts no longer stack (like OSRS hides); older saves split their stacks into slots.
 
 **P2: new OSRS skills, one at a time**
 9. **Prayer:** bury bones (already dropped); prayers adapted to custom combat.

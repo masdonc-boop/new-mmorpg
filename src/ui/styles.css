@@ -1415,7 +1415,7 @@ button.danger {
 .bank {
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-areas: 'top' 'chips' 'grid' 'side';
+  grid-template-areas: 'top' 'tabs' 'chips' 'grid' 'side';
   gap: 8px;
 }
 .bank-side {
@@ -1472,6 +1472,78 @@ button.danger {
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
+}
+.bank-tabs {
+  grid-area: tabs;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  touch-action: pan-x pan-y;
+}
+.bank-tab {
+  flex: none;
+  min-width: 44px;
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px 10px 4px 4px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  font-weight: 900;
+  display: grid;
+  place-items: center;
+}
+.bank-tab img {
+  width: 28px;
+  height: 28px;
+}
+.bank-tab.active {
+  border-color: var(--gold);
+  background: rgba(255, 216, 77, 0.16);
+  color: var(--gold);
+}
+.bank-tab.new:disabled {
+  opacity: 0.4;
+}
+.bank-ph {
+  flex: none;
+  margin-left: auto;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.bank-ph.on {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.bank-tabsep {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 2px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.bank-slot.placeholder img {
+  opacity: 0.32;
+  filter: grayscale(0.6);
+}
+.bank-tabrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
 }
 .bank-chip.active {
   border-color: var(--gold);
@@ -1626,8 +1698,8 @@ button.danger {
     flex: 1;
     min-height: 0;
     grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
-    grid-template-areas: 'top side' 'chips side' 'grid side';
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: 'top side' 'tabs side' 'chips side' 'grid side';
     column-gap: 12px;
   }
   .bank-grid-wrap {

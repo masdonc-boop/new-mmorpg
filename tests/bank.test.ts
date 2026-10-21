@@ -82,9 +82,10 @@ describe('Bank storage', () => {
       null,
       { item: 'bread', qty: 2.9 },
     ]);
+    // Older saves have no tabs: everything lands in the main tab (0).
     expect(b.toJSON()).toEqual([
-      { item: 'logs', qty: 15 },
-      { item: 'bread', qty: 2 },
+      { item: 'logs', qty: 15, tab: 0 },
+      { item: 'bread', qty: 2, tab: 0 },
     ]);
     expect(Bank.restore(undefined).usedSlots()).toBe(0);
     expect(Bank.restore('nonsense').usedSlots()).toBe(0);
