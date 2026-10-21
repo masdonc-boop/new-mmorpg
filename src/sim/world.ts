@@ -1,13 +1,13 @@
 import { mulberry32, randInt, type Rng } from '../core/rng';
 import { angleDiff, dist } from '../core/math';
 import { ENEMIES, type EnemyDef } from '../data/enemies';
-import { itemDef, type ItemId } from '../data/items';
+import { isItemId, itemDef, type ItemId } from '../data/items';
 import { NPCS, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
-import { Inventory, type ItemStack } from './inventory';
+import { Inventory, addTo, type ItemStack } from './inventory';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
 import { generateWorld, isBlocked, regionAt, type Checkpoint, type WorldMap } from './worldmap';
@@ -43,6 +43,10 @@ export type Command =
   | { type: 'useItem'; slot: number }
   | { type: 'dropItem'; slot: number }
   | { type: 'swapItems'; a: number; b: number }
+  /** Move held overflow items into free inventory slots. */
+  | { type: 'claimOverflow' }
+  /** Permanently discard all held overflow items (the client confirms first). */
+  | { type: 'discardOverflow' }
   | { type: 'acceptQuest'; quest: string }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
 
@@ -75,7 +79,8 @@ export type GameEvent =
   | { type: 'dialogue'; dialogue: Dialogue }
   | { type: 'quest'; quest: string; stage: number; complete: boolean }
   | { type: 'checkpoint'; id: string; name: string }
-  | { type: 'region'; name: string; levels: string };
+  | { type: 'region'; name: string; levels: string }
+  | { type: 'inventoryFull' };
 
 export type AnimState = 'idle' | 'walk' | 'attack' | 'chop' | 'mine' | 'dead' | 'hit';
 
@@ -109,6 +114,11 @@ export class Player implements Mover {
   hp: number;
   skills: Skills;
   inventory: Inventory;
+  /**
+   * Items that could not fit when an older save was migrated to the current inventory rules.
+   * They are kept (and saved) until the player claims them into free slots or discards them.
+   */
+  overflow: ItemStack[] = [];
   style: CombatStyle = 'melee';
   action: PlayerAction | null = null;
   path: PathPoint[] = [];
@@ -235,6 +245,8 @@ export interface SaveData {
   style: CombatStyle;
   xp: Partial<Record<SkillId, number>>;
   inventory: (ItemStack | null)[];
+  /** Held items that did not fit in the inventory (see Player.overflow). Optional for older saves. */
+  overflow?: ItemStack[];
   quests: Record<string, QuestProgress>;
   checkpoints: string[];
 }
@@ -300,6 +312,7 @@ export class GameWorld {
       style: p.style,
       xp: { ...p.skills.xp },
       inventory: p.inventory.toJSON(),
+      overflow: p.overflow.map((o) => ({ ...o })),
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
     };
@@ -308,7 +321,19 @@ export class GameWorld {
   private loadPlayer(s: SaveData) {
     const p = this.player;
     p.skills = new Skills(s.xp);
-    p.inventory = Inventory.fromJSON(s.inventory);
+    const restored = Inventory.restore(s.inventory);
+    p.inventory = restored.inventory;
+    p.overflow = restored.overflow;
+    if (Array.isArray(s.overflow)) {
+      for (const o of s.overflow) {
+        const qty = Math.floor(Number(o?.qty));
+        if (o && typeof o.item === 'string' && isItemId(o.item) && qty > 0) addTo(p.overflow, o.item, qty);
+      }
+    }
+    if (p.overflow.length) {
+      const n = p.overflow.reduce((a, o) => a + o.qty, 0);
+      this.message(`Logs, ores and gems now take one slot each. ${n} item${n === 1 ? '' : 's'} that didn't fit are being held for you: open your bag to collect them.`, 'warn');
+    }
     p.quests = s.quests ?? {};
     p.checkpoints = new Set(['home', ...(s.checkpoints ?? [])]);
     if (s.style in STYLES) p.style = s.style;
@@ -384,12 +409,22 @@ export class GameWorld {
         this.useItem(cmd.slot);
         break;
       case 'dropItem': {
+        if (!Number.isInteger(cmd.slot)) break;
         const s = p.inventory.removeAt(cmd.slot);
         if (s) this.message(`You drop ${s.qty > 1 ? s.qty + ' x ' : ''}${itemDef(s.item).name}.`);
         break;
       }
       case 'swapItems':
         p.inventory.swap(cmd.a, cmd.b);
+        break;
+      case 'claimOverflow':
+        this.claimOverflow();
+        break;
+      case 'discardOverflow':
+        if (p.overflow.length) {
+          p.overflow = [];
+          this.message('You discard the held items.');
+        }
         break;
       case 'acceptQuest':
         this.acceptQuest(cmd.quest);
@@ -692,6 +727,28 @@ export class GameWorld {
     return added;
   }
 
+  /** Moves as many held overflow items as fit into the inventory. */
+  claimOverflow() {
+    const p = this.player;
+    if (!p.overflow.length) return;
+    let moved = 0;
+    for (const o of p.overflow) {
+      const added = p.inventory.add(o.item, o.qty);
+      o.qty -= added;
+      moved += added;
+    }
+    p.overflow = p.overflow.filter((o) => o.qty > 0);
+    const left = p.overflow.reduce((a, o) => a + o.qty, 0);
+    if (moved === 0) this.inventoryFull();
+    else this.message(`You collect ${moved} held item${moved === 1 ? '' : 's'}.${left ? ` ${left} still waiting.` : ''}`, 'good');
+  }
+
+  /** The standard full-inventory feedback (message plus a brief on-screen notice). */
+  private inventoryFull() {
+    this.message('Your inventory is full.', 'warn');
+    this.emit({ type: 'inventoryFull' });
+  }
+
   grantXp(skill: SkillId, amount: number) {
     const r = this.player.skills.addXp(skill, amount);
     this.emit({ type: 'xp', skill, amount });
@@ -714,7 +771,7 @@ export class GameWorld {
       return false;
     }
     if (p.inventory.capacityFor(n.def.item) <= 0) {
-      if (verbose) this.message('Your inventory is full.', 'warn');
+      if (verbose) this.inventoryFull();
       return false;
     }
     return true;
@@ -746,31 +803,45 @@ export class GameWorld {
     p.gatherTimer -= dt;
     if (p.gatherTimer > 0) return;
     p.gatherTimer = n.def.actionSeconds;
-    n.hitAge = 0;
+    // Capacity is checked before the swing: a full inventory never rolls, awards xp or depletes the node.
     if (!this.canGather(n, true)) {
       p.action = null;
       return;
     }
+    n.hitAge = 0;
     const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill));
     this.emit({ type: 'gather', node: n.id, success });
     if (!success) return;
-    this.giveItem(n.def.item, 1, true);
+    if (p.inventory.add(n.def.item, 1) !== 1) {
+      // Defensive: nothing was awarded, so no xp and no depletion.
+      p.action = null;
+      this.inventoryFull();
+      return;
+    }
+    this.emit({ type: 'loot', item: n.def.item, qty: 1 });
     this.grantXp(n.def.skill, n.def.xp);
-    if (n.def.rareDrop && this.rng() < n.def.rareDrop.chance) {
-      this.giveItem(n.def.rareDrop.item, 1, true);
+    // A rare find only happens when there is room for it.
+    if (n.def.rareDrop && this.rng() < n.def.rareDrop.chance && p.inventory.add(n.def.rareDrop.item, 1) === 1) {
+      this.emit({ type: 'loot', item: n.def.rareDrop.item, qty: 1 });
       this.message(`You found an ${itemDef(n.def.rareDrop.item).name.toLowerCase()}!`, 'good');
     }
+    const full = p.inventory.capacityFor(n.def.item) <= 0;
     if (this.rng() < n.def.depleteChance) {
       n.depleted = true;
       n.respawnTimer = n.def.respawnSeconds;
       this.emit({ type: 'nodeDepleted', node: n.id });
       p.action = null;
       // Automatically continue on a nearby node of the same type, like an attentive auto-gatherer.
-      const next = this.nearestNode(n.def.id, p.x, p.z, 6);
+      const next = full ? null : this.nearestNode(n.def.id, p.x, p.z, 6);
       if (next && this.canGather(next, false)) {
         p.action = { type: 'gather', node: next.id };
         p.gatherTimer = next.def.actionSeconds * 0.8;
       }
+    }
+    if (full) {
+      // That was the last free slot: stop now rather than swinging once more for nothing.
+      p.action = null;
+      this.inventoryFull();
     }
   }
 
@@ -1076,6 +1147,16 @@ export class GameWorld {
       const obj = stage?.objective;
       if (!obj || obj.type === 'talk' || obj.returnTo !== n.def.id) continue;
       if (!this.objectiveMet(q, prog)) return { ...base, lines: stage.pendingLines };
+      const finalStage = prog.stage + 1 >= q.stages.length;
+      if (finalStage && q.rewards.items.length) {
+        // Rewards must fit (after any hand-in is taken) or the turn-in waits: no reward is ever lost.
+        const after = p.inventory.clone();
+        if (obj.type === 'collect' && obj.consume) after.remove(obj.item, obj.count);
+        if (!after.canAddAll(q.rewards.items)) {
+          this.inventoryFull();
+          return { ...base, lines: ['Your pack is too full to carry your reward. Make some room and come back to me.'] };
+        }
+      }
       if (obj.type === 'collect' && obj.consume) p.inventory.remove(obj.item, obj.count);
       const lines = stage.completeLines;
       prog.stage++;

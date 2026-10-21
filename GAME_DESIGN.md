@@ -47,7 +47,7 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 | Enemies | Meadow Slime (passive), Timber Wolf (aggressive), Goblin Raider (aggressive), Grukk the Warlord (mini-boss); wander, aggro, chase, leash, respawn |
 | Survival | HP from Hitpoints level, out-of-combat regen, food, death, respawn choice |
 | Gathering | Woodcutting (trees, oaks) and Mining (copper, tin, iron + rare gems); node depletion & regrowth; auto-continue to nearby nodes |
-| Items | 28-slot inventory; stackable materials, currency and ammo; non-stackable tools/food; drops; eat/drop/move |
+| Items | 28-slot inventory enforced by the simulation; only currency, ammo and runes stack (per item definition); gathered resources (logs, ores, gems, later fish) take one slot each; gathering stops with "Your inventory is full." and never rolls, grants xp or depletes a node without room; quest rewards wait until they fit; older saves migrate with any excess held, not deleted; drop with confirmation for valuable items; eat/move |
 | Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining |
 | Quest | "The Elder's Request" — talk, gather 5 logs, defeat 3 slimes, rewards |
 | Persistence | Local save (localStorage) every 10s and on backgrounding |

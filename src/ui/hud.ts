@@ -1,4 +1,4 @@
-import { itemDef, type ItemId } from '../data/items';
+import { dropNeedsConfirm, itemDef, type ItemId } from '../data/items';
 import { QUESTS } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, type CombatStyle } from '../sim/combat';
@@ -49,6 +49,11 @@ export class Hud {
   private log!: HTMLDivElement;
   private xpDrops!: HTMLDivElement;
   private banner!: HTMLDivElement;
+  private notice!: HTMLDivElement;
+  private noticeTimer = 0;
+  private bagBadge!: HTMLSpanElement;
+  /** Two-tap confirmation that survives panel re-renders (live loot updates rebuild the buttons). */
+  private armed = { key: '', until: 0 };
   private panel!: HTMLDivElement;
   private panelBody!: HTMLDivElement;
   private panelTitle!: HTMLDivElement;
@@ -126,6 +131,9 @@ export class Hud {
     this.root.appendChild(this.xpDrops);
     this.banner = el('div', 'region-banner');
     this.root.appendChild(this.banner);
+    this.notice = el('div', 'hud-notice');
+    this.notice.setAttribute('role', 'status');
+    this.root.appendChild(this.notice);
     this.fpsEl = el('div', 'fps hidden');
     this.root.appendChild(this.fpsEl);
   }
@@ -149,8 +157,11 @@ export class Hud {
       b.dataset.panel = id;
       b.addEventListener('click', () => this.toggle(id));
       menu.appendChild(b);
+      return b;
     };
-    mk('🎒', 'Bag', 'inventory');
+    const bag = mk('🎒', 'Bag', 'inventory');
+    this.bagBadge = el('span', 'bag-badge hidden');
+    bag.appendChild(this.bagBadge);
     mk('📊', 'Skills', 'skills');
     mk('📜', 'Quests', 'quests');
     mk('🗺️', 'Map', 'map');
@@ -261,6 +272,7 @@ export class Hud {
     this.styleBtn.dataset.style = p.style;
 
     this.updateStatus();
+    this.updateBagBadge();
     this.drawMinimap();
     this.updateQuestTracker();
     // Live updates (loot, xp) wait until the player is not touching or flinging the panel.
@@ -431,6 +443,10 @@ export class Hud {
       case 'checkpoint':
         this.flashBanner(`🗿 ${e.name} attuned`, 'region');
         break;
+      case 'inventoryFull':
+        this.flashNotice('Your inventory is full.');
+        this.invDirty = true;
+        break;
     }
     if (e.type === 'attack' || e.type === 'damage') this.invDirty = true;
   }
@@ -459,6 +475,51 @@ export class Hud {
     const d = el('div', 'loot-toast', `<img src="${itemIcon(item)}" alt=""> +${qty} ${itemDef(item).name}`);
     this.xpDrops.appendChild(d);
     setTimeout(() => d.remove(), 2000);
+  }
+
+  /** Returns true on the second tap of the same action within 3 s, even if the panel re-rendered. */
+  private confirmTap(key: string, btn: HTMLButtonElement, prompt: string): boolean {
+    const now = performance.now();
+    if (this.armed.key === key && now < this.armed.until) {
+      this.armed.key = '';
+      return true;
+    }
+    this.armed = { key, until: now + 3000 };
+    // Put the button back to normal once the window passes.
+    window.setTimeout(() => {
+      if (this.armed.key === key) this.armed.key = '';
+      this.invDirty = true;
+    }, 3050);
+    btn.textContent = prompt;
+    btn.classList.add('armed');
+    return false;
+  }
+
+  private restoreArmed(key: string, btn: HTMLButtonElement, prompt: string) {
+    if (this.armed.key === key && performance.now() < this.armed.until) {
+      btn.textContent = prompt;
+      btn.classList.add('armed');
+    }
+  }
+
+  /** Brief centred notice (e.g. a full inventory); repeated notices just extend it. */
+  private flashNotice(text: string) {
+    this.notice.textContent = text;
+    this.notice.classList.add('show');
+    window.clearTimeout(this.noticeTimer);
+    this.noticeTimer = window.setTimeout(() => this.notice.classList.remove('show'), 1800);
+  }
+
+  /** Used-slot count on the Bag button once the bag is getting full (red when full). */
+  private updateBagBadge() {
+    const inv = this.world.player.inventory;
+    const used = inv.usedSlots();
+    const held = this.world.player.overflow.length > 0;
+    const show = used >= inv.slots.length - 6 || held;
+    const text = used >= inv.slots.length ? 'FULL' : `${used}/${inv.slots.length}`;
+    if (this.bagBadge.textContent !== text) this.bagBadge.textContent = text;
+    this.bagBadge.classList.toggle('hidden', !show);
+    this.bagBadge.classList.toggle('full', used >= inv.slots.length);
   }
 
   private bannerTimer = 0;
@@ -553,6 +614,9 @@ export class Hud {
     const inv = this.world.player.inventory;
     const body = this.panelBody;
     clearKeepingScroll(body);
+    const used = inv.usedSlots();
+    const head = el('div', `inv-head${inv.isFull() ? ' full' : ''}`, `<span>${used} / ${inv.slots.length} slots used</span>${inv.isFull() ? '<span class="inv-full">Inventory full</span>' : `<span>${inv.freeSlots()} free</span>`}`);
+    body.appendChild(head);
     const grid = el('div', 'inv-grid');
     inv.slots.forEach((s, i) => {
       const cell = el('button', `inv-slot${this.selectedSlot === i ? ' selected' : ''}`);
@@ -586,17 +650,46 @@ export class Hud {
       }
       const drop = el('button', 'danger', 'Drop');
       drop.addEventListener('click', () => {
-        if (d.kind === 'tool' && !armConfirm(drop, 'Tap again to drop')) return;
+        if (dropNeedsConfirm(sel.item, sel.qty) && !this.confirmTap(`drop:${this.selectedSlot}:${sel.item}`, drop, 'Tap again to drop')) return;
         this.cb.command({ type: 'dropItem', slot: this.selectedSlot! });
         this.selectedSlot = null;
         this.renderInventory();
       });
+      this.restoreArmed(`drop:${this.selectedSlot}:${sel.item}`, drop, 'Tap again to drop');
       btns.appendChild(drop);
       info.appendChild(btns);
     } else {
-      info.innerHTML = `<div class="ii-desc">${inv.freeSlots()} of ${inv.slots.length} slots free · Coins: ${inv.count('coins')}<br>Tap an item to inspect, eat or drop it. Tap an empty slot to move a selected item.</div>`;
+      info.innerHTML = `<div class="ii-desc">Coins: ${inv.count('coins')}<br>Tap an item to inspect, eat or drop it. Tap an empty slot to move a selected item. Logs, ores and gems take one slot each.</div>`;
     }
     body.appendChild(info);
+    this.renderOverflow(body);
+  }
+
+  /** Items held after migrating an older save, until the player collects or discards them. */
+  private renderOverflow(body: HTMLElement) {
+    const held = this.world.player.overflow;
+    if (!held.length) return;
+    const box = el('div', 'inv-info inv-held');
+    const total = held.reduce((a, o) => a + o.qty, 0);
+    const list = held.map((o) => `${o.qty} × ${itemDef(o.item).name}`).join(', ');
+    box.innerHTML = `<div class="ii-name">Held for you (${total})</div><div class="ii-desc">${list}. These didn't fit when logs, ores and gems became one per slot. Free up space, then collect them.</div>`;
+    const btns = el('div', 'ii-btns');
+    const take = el('button', 'primary', 'Collect what fits');
+    take.disabled = this.world.player.inventory.isFull();
+    take.addEventListener('click', () => {
+      this.cb.command({ type: 'claimOverflow' });
+      this.renderInventory();
+    });
+    const discard = el('button', 'danger', 'Discard');
+    discard.addEventListener('click', () => {
+      if (!this.confirmTap('discard-held', discard, 'Tap again: discard all held')) return;
+      this.cb.command({ type: 'discardOverflow' });
+      this.renderInventory();
+    });
+    this.restoreArmed('discard-held', discard, 'Tap again: discard all held');
+    btns.append(take, discard);
+    box.appendChild(btns);
+    body.appendChild(box);
   }
 
   private renderSkills() {

@@ -1,4 +1,4 @@
-import { itemDef, type ItemId } from '../data/items';
+import { isItemId, itemDef, type ItemId } from '../data/items';
 
 export interface ItemStack {
   item: ItemId;
@@ -29,6 +29,26 @@ export class Inventory {
     return this.slots.filter((s) => s === null).length;
   }
 
+  usedSlots(): number {
+    return this.slots.length - this.freeSlots();
+  }
+
+  isFull(): boolean {
+    return this.freeSlots() === 0;
+  }
+
+  clone(): Inventory {
+    const c = new Inventory(this.slots.length);
+    this.slots.forEach((s, i) => (c.slots[i] = s ? { ...s } : null));
+    return c;
+  }
+
+  /** Whether every stack in `items` would fit at once (checked on a copy; nothing changes). */
+  canAddAll(items: readonly ItemStack[]): boolean {
+    const c = this.clone();
+    return items.every((it) => c.add(it.item, it.qty) === it.qty);
+  }
+
   /** How many of `item` could be added right now. */
   capacityFor(item: ItemId): number {
     const d = itemDef(item);
@@ -42,7 +62,8 @@ export class Inventory {
 
   /** Adds as many as fit; returns the quantity actually added. */
   add(item: ItemId, qty = 1): number {
-    if (qty <= 0) return 0;
+    qty = Math.floor(qty);
+    if (!(qty > 0)) return 0;
     const d = itemDef(item);
     if (d.stackable) {
       let slot = this.slots.find((s) => s?.item === item) ?? null;
@@ -68,6 +89,7 @@ export class Inventory {
 
   /** Removes up to qty; returns the quantity actually removed. */
   remove(item: ItemId, qty = 1): number {
+    qty = Math.floor(qty);
     let removed = 0;
     for (let i = this.slots.length - 1; i >= 0 && removed < qty; i--) {
       const s = this.slots[i];
@@ -99,18 +121,41 @@ export class Inventory {
   }
 
   static fromJSON(data: (ItemStack | null)[] | undefined): Inventory {
-    const inv = new Inventory();
-    if (!Array.isArray(data)) return inv;
-    data.slice(0, INVENTORY_SLOTS).forEach((s, i) => {
-      if (s && typeof s.item === 'string' && s.qty > 0) {
-        try {
-          itemDef(s.item);
-          inv.slots[i] = { item: s.item, qty: Math.floor(s.qty) };
-        } catch {
-          /* unknown item from older save: drop it */
-        }
-      }
-    });
-    return inv;
+    return Inventory.restore(data).inventory;
   }
+
+  /**
+   * Rebuilds an inventory from saved slots, normalising it to the current item rules.
+   * Saves from before resources became non-stackable may hold e.g. 40 logs in one slot: each
+   * non-stackable item is split into its own slot where there is room, and whatever cannot fit is
+   * returned as `overflow` rather than deleted. Unknown item ids (removed content) are dropped.
+   */
+  static restore(data: (ItemStack | null)[] | undefined, size = INVENTORY_SLOTS): { inventory: Inventory; overflow: ItemStack[] } {
+    const inv = new Inventory(size);
+    const overflow: ItemStack[] = [];
+    if (!Array.isArray(data)) return { inventory: inv, overflow };
+    const extra: ItemStack[] = [];
+    data.forEach((s, i) => {
+      if (!s || typeof s.item !== 'string' || !isItemId(s.item)) return;
+      const qty = Math.floor(Number(s.qty));
+      if (!(qty > 0)) return;
+      const d = itemDef(s.item);
+      // Keep each saved slot where it was (up to one item / one full stack); the rest is re-added below.
+      const keep = i < size ? Math.min(qty, d.stackable ? d.maxStack : 1) : 0;
+      if (keep > 0) inv.slots[i] = { item: s.item, qty: keep };
+      if (qty > keep) extra.push({ item: s.item, qty: qty - keep });
+    });
+    for (const e of extra) {
+      const added = inv.add(e.item, e.qty);
+      if (added < e.qty) addTo(overflow, e.item, e.qty - added);
+    }
+    return { inventory: inv, overflow };
+  }
+}
+
+/** Adds to a loose list of stacks, merging by item. */
+export function addTo(list: ItemStack[], item: ItemId, qty: number) {
+  const s = list.find((x) => x.item === item);
+  if (s) s.qty += qty;
+  else list.push({ item, qty });
 }

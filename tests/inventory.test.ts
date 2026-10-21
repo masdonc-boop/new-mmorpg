@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { Inventory, INVENTORY_SLOTS } from '../src/sim/inventory';
 
 describe('Inventory', () => {
-  it('stacks stackable materials into a single slot', () => {
+  it('stacks stackable items (ammo, runes, coins) into a single slot', () => {
     const inv = new Inventory();
-    inv.add('logs', 3);
-    inv.add('logs', 4);
-    expect(inv.count('logs')).toBe(7);
+    inv.add('bronze_arrow', 3);
+    inv.add('bronze_arrow', 4);
+    expect(inv.count('bronze_arrow')).toBe(7);
     expect(inv.freeSlots()).toBe(INVENTORY_SLOTS - 1);
   });
 
@@ -37,12 +37,15 @@ describe('Inventory', () => {
   it('round-trips through JSON and drops unknown items', () => {
     const inv = new Inventory();
     inv.add('copper_ore', 12);
+    inv.add('coins', 300);
     inv.add('bronze_axe');
     const json = inv.toJSON();
-    (json as unknown[])[5] = { item: 'not_real', qty: 3 };
+    (json as unknown[])[20] = { item: 'not_real', qty: 3 };
     const copy = Inventory.fromJSON(json);
     expect(copy.count('copper_ore')).toBe(12);
+    expect(copy.count('coins')).toBe(300);
+    expect(copy.toJSON()).toEqual(json.map((x, i) => (i === 20 ? null : x)));
     expect(copy.has('bronze_axe')).toBe(true);
-    expect(copy.slots[5]).toBeNull();
+    expect(copy.slots[20]).toBeNull();
   });
 });

@@ -196,6 +196,7 @@ button {
 .hud .world-overlay,
 .xp-drops,
 .region-banner,
+.hud-notice,
 .msg-log,
 .fps {
   pointer-events: none !important;
@@ -1323,4 +1324,69 @@ button.danger {
     bottom: calc(96px + var(--safe-bottom));
     left: 46%;
   }
+}
+
+/* Inventory capacity */
+.hud-notice {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, 6px);
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  padding: 7px 16px;
+  border-radius: 12px;
+  background: rgba(28, 24, 38, 0.86);
+  border: 1px solid var(--warn);
+  color: #ffe9a8;
+  font-weight: 900;
+  font-size: 15px;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+.hud-notice.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.menu-btn {
+  position: relative;
+}
+.bag-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: #3b2f4d;
+  border: 1px solid var(--edge);
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--text);
+  pointer-events: none;
+}
+.bag-badge.full {
+  background: #a3333f;
+  border-color: #ff9a9a;
+}
+.bag-badge.hidden {
+  display: none;
+}
+.inv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.inv-full {
+  color: var(--bad);
+}
+.inv-held .ii-name {
+  color: var(--warn);
+}
+.ii-btns button:disabled {
+  opacity: 0.45;
 }
