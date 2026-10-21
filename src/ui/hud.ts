@@ -564,7 +564,7 @@ export class Hud {
       }
       const drop = el('button', 'danger', 'Drop');
       drop.addEventListener('click', () => {
-        if (d.kind === 'tool' && !confirm(`Drop your ${d.name}? You will need it to gather.`)) return;
+        if (d.kind === 'tool' && !armConfirm(drop, 'Tap again to drop')) return;
         this.cb.command({ type: 'dropItem', slot: this.selectedSlot! });
         this.selectedSlot = null;
         this.renderInventory();
@@ -724,7 +724,7 @@ export class Hud {
     row('Show FPS', fps);
     const fresh = el('button', 'danger', 'New character');
     fresh.addEventListener('click', () => {
-      if (confirm('Delete this character and start over? Progress will be lost.')) this.cb.newCharacter();
+      if (armConfirm(fresh, 'Tap again: progress will be lost')) this.cb.newCharacter();
     });
     row('Character', fresh, 'One character per account');
     body.appendChild(
@@ -735,6 +735,22 @@ export class Hud {
         • Pinch or use +/− to zoom. Progress saves automatically on this device.`),
     );
   }
+}
+
+/**
+ * Two-tap confirmation built into the button itself (browser confirm() dialogs are
+ * unreliable in embedded mobile views). Returns true on the second tap within 3 seconds.
+ */
+function armConfirm(btn: HTMLButtonElement, prompt: string): boolean {
+  if (btn.dataset.armed === '1') return true;
+  const original = btn.textContent;
+  btn.dataset.armed = '1';
+  btn.textContent = prompt;
+  setTimeout(() => {
+    btn.dataset.armed = '';
+    btn.textContent = original;
+  }, 3000);
+  return false;
 }
 
 function formatQty(n: number): string {
