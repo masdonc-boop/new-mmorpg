@@ -100,7 +100,7 @@ describe('3A.8 zones', () => {
     expect(hollow.enemies.length).toBeGreaterThan(0);
     expect(hollow.enemies.every((e) => inHollow(e.x, e.z))).toBe(true);
     expect(hollow.npcs.length).toBe(0);
-    expect([...server.zones.keys()].sort()).toEqual([BRIGHTWATER, HOLLOW_ZONE]);
+    expect([...server.zones.keys()].sort()).toEqual([BRIGHTWATER, HOLLOW_ZONE, 'old_watchtower', 'sunken_shrine']);
   }, 10_000);
 
   it('a house is a personal instance: opened on the way in, closed on the way out, private to its owner', async () => {
@@ -128,7 +128,7 @@ describe('3A.8 zones', () => {
     put(a.s, DOORSTEP.x, DOORSTEP.z);
     put(b.s, DOORSTEP.x + 1, DOORSTEP.z);
     await pump([a.c, b.c], 400);
-    expect([...server.zones.keys()].sort()).toEqual([BRIGHTWATER, HOLLOW_ZONE]);
+    expect([...server.zones.keys()].sort()).toEqual([BRIGHTWATER, HOLLOW_ZONE, 'old_watchtower', 'sunken_shrine']);
     expect(a.c.world!.players.has(b.s.playerId)).toBe(true);
     expect(a.c.zone).toBe(BRIGHTWATER);
     checkZones(server);

@@ -5,6 +5,7 @@ import { QUESTS, requirementList } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, type CombatStyle } from '../sim/combat';
 import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type WorldMap } from '../sim/worldmap';
+import { DUNGEON_AREAS, dungeonAt } from '../sim/dungeonmap';
 import type { Dialogue, GameEvent, GameWorld } from '../sim/world';
 import { TILE_COLORS } from '../render/terrain';
 import { itemIcon } from './icons';
@@ -322,8 +323,8 @@ export class Hud {
       for (let x = 0; x < map.width; x++) {
         const t = map.tiles[z * map.width + x];
         let rgb: number[];
-        // Glimmer Hollow lies beyond the southern sea: it is drawn only on its own cave map.
-        if (t === T.Water || inHollow(x, z)) rgb = water;
+        // Glimmer Hollow and the dungeons lie beyond the sea: they are drawn only on the underground map.
+        if (t === T.Water || inHollow(x, z) || dungeonAt(x, z)) rgb = water;
         else {
           const hex = TILE_COLORS[t] ?? '#7ccf55';
           rgb = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -365,6 +366,16 @@ export class Hud {
         cg.fillRect(HOLLOW.x + dx, HOLLOW.z + dz, 1, 1);
       }
     });
+    // The dungeons (Phase 4C): their own floor colours, braziers and pools lit, the chest in gold.
+    for (const d of Object.values(DUNGEON_AREAS)) {
+      d.layout.forEach((row, dz) => {
+        for (let dx = 0; dx < row.length; dx++) {
+          const ch = row[dx];
+          cg.fillStyle = ch === '#' ? '#3a3632' : ch === 'E' || /[1-4]/.test(ch) ? '#fff4c8' : ch === 'C' ? '#f5c542' : ch === '~' ? '#5fe8d0' : ch === 'b' ? '#ffb340' : d.floor === 'shrine' ? '#5f7a72' : '#8a857a';
+          cg.fillRect(d.x + dx, d.z + dz, 1, 1);
+        }
+      });
+    }
     this.caveBase = cc;
   }
 
@@ -491,7 +502,7 @@ export class Hud {
     g.beginPath();
     g.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2);
     g.clip();
-    const underground = inHollow(p.x, p.z);
+    const underground = inHollow(p.x, p.z) || !!dungeonAt(p.x, p.z);
     g.fillStyle = underground ? '#07080a' : '#4aa0d2';
     g.fillRect(0, 0, S, S);
     g.translate(S / 2, S / 2);
@@ -507,7 +518,7 @@ export class Hud {
       g.arc(x, z, r, 0, Math.PI * 2);
       g.fill();
     };
-    for (const e of this.world.enemies) if (e.alive && inHollow(e.x, e.z) === underground && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.boss ? '#ff2d2d' : '#ff7043', e.def.boss ? 1.4 : 0.8);
+    for (const e of this.world.enemies) if (e.alive && (inHollow(e.x, e.z) || !!dungeonAt(e.x, e.z)) === underground && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.boss ? '#ff2d2d' : '#ff7043', e.def.boss ? 1.4 : 0.8);
     for (const n of this.world.npcs) {
       const m = this.world.npcMarker(n.def.id);
       if (n.def.service === 'bank') dot(n.x, n.z, '#f5c542', 1.3);
@@ -1633,7 +1644,9 @@ export class Hud {
     g.imageSmoothingEnabled = false;
     g.drawImage(this.minimapBase, 0, 0, c.width, c.height);
     const dangerCol = ['#5dff8a', '#ffd84d', '#ff9f43', '#ff4d4d'];
-    for (const r of map.regions) {
+    // Dungeon interiors are reached through their doors (labelled on the map), not shown in the sea.
+    const shown = map.regions.filter((r) => !dungeonAt(r.x, r.z));
+    for (const r of shown) {
       g.strokeStyle = dangerCol[r.danger];
       g.globalAlpha = 0.7;
       g.lineWidth = 4;
@@ -1666,7 +1679,7 @@ export class Hud {
     const stage = el('div', 'map-stage');
     stage.appendChild(c);
     const labels: HTMLElement[] = [];
-    for (const r of map.regions) {
+    for (const r of shown) {
       const lbl = el('div', `map-label d${r.danger}`, `<b>${r.name}</b><span>${r.levels}</span>`);
       lbl.style.left = `${(r.x / map.width) * 100}%`;
       lbl.style.top = `${(r.z / map.height) * 100}%`;

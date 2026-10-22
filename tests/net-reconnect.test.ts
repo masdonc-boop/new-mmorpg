@@ -149,7 +149,7 @@ describe('3B.4 reconnecting', () => {
     again.close();
     await sleep(700);
     expect(server.sessions.size).toBe(0);
-    expect([...server.zones.keys()].sort()).toEqual(['brightwater', 'hollow']);
+    expect([...server.zones.keys()].sort()).toEqual(['brightwater', 'hollow', 'old_watchtower', 'sunken_shrine']);
     // Signing in later puts them back in their (re-opened) house.
     const later = client(url, { kind: 'token', token });
     await later.connect();

@@ -4,6 +4,7 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, EXCHANGE, groundHeight, inHollow } from '../sim/worldmap';
+import { dungeonAt } from '../sim/dungeonmap';
 import { Doorway, Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type Appearance, type GameEvent, type GameWorld, type Player } from '../sim/world';
 import type { Equipment } from '../sim/equipment';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
@@ -521,11 +522,14 @@ export class GameRenderer {
    * still find the way out).
    */
   private updateDarkness(dt: number, px: number, py: number, pz: number, d: number) {
-    const target = inHollow(px, pz) ? 1 : 0;
+    // Dungeons (Phase 4C) are dim rather than black: braziers and pools give some light, and a
+    // torch-coloured light follows the player (no lantern needed).
+    const dungeon = dungeonAt(px, pz);
+    const target = inHollow(px, pz) ? 1 : dungeon ? 0.85 : 0;
     this.darkK += (target - this.darkK) * Math.min(1, dt * 3);
     if (Math.abs(this.darkK - target) < 0.002) this.darkK = target;
     const k = this.darkK;
-    const lit = this.world.isLit();
+    const lit = this.world.isLit() || !!dungeon;
     this.hemi.intensity = 1.35 * (1 - 0.95 * k);
     this.sun.intensity = 2.1 * (1 - 0.98 * k);
     this.ambient.intensity = 0.2 * (1 - 0.75 * k);
@@ -538,7 +542,7 @@ export class GameRenderer {
     }
     this.lantern.intensity = k * (lit ? 4.2 + Math.sin(this.time.value * 7) * 0.15 : 0.9);
     this.lantern.distance = lit ? 11 : 4;
-    this.lantern.color.set(lit ? '#d8ffb8' : '#8a9aa8');
+    this.lantern.color.set(dungeon === 'sunken_shrine' ? '#a8f0e0' : dungeon ? '#ffd8a0' : lit ? '#d8ffb8' : '#8a9aa8');
     this.lantern.position.set(px, py + 1.7, pz);
     // No sea underground (its shader would show through the dark at the screen edges).
     this.water.visible = k < 0.5;
@@ -1126,7 +1130,7 @@ export class GameRenderer {
       case 'passage': {
         // Coming through a passage is a jump across the map: snap the camera.
         this.camTarget.set(p.x, groundHeight(w.map, p.x, p.z) + 0.8, p.z);
-        this.darkK = inHollow(p.x, p.z) ? 1 : 0;
+        this.darkK = inHollow(p.x, p.z) ? 1 : dungeonAt(p.x, p.z) ? 0.85 : 0;
         break;
       }
       case 'respawn': {

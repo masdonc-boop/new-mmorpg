@@ -216,9 +216,8 @@ export const QUESTS: Record<string, QuestDef> = {
   },
 };
 
-/** The requirements a character is missing for a quest, as short phrases ("combat level 12"). */
-export function missingRequirements(q: QuestDef, done: (quest: string) => boolean, combat: number, level: (s: SkillId) => number): string[] {
-  const r = q.requirements;
+/** The requirements a character is missing (for a quest or a dungeon door), as short phrases ("combat level 12"). */
+export function missingRequirements(r: QuestRequirements | undefined, done: (quest: string) => boolean, combat: number, level: (s: SkillId) => number): string[] {
   if (!r) return [];
   const out: string[] = [];
   for (const id of r.quests ?? []) if (!done(id)) out.push(QUESTS[id]?.name ?? id);

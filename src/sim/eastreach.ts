@@ -392,7 +392,7 @@ function buildCairnhold(c: Ctx, seed: number) {
   }
 
   // The Old Watchtower, barred, on the cliffs where the high road ends.
-  c.add('watchtower', 181.5, 20.5, true, S, 1, 0);
+  c.add('watchtower', 181.5, 20.5, true, 0, 1, 0);
   for (let z = 19; z <= 21; z++) for (let x = 180; x <= 182; x++) map.blocked[c.idx(x, z)] = c.occ[c.idx(x, z)] = 1;
 
   // Silver veins in the crags; clear pools at the tarn's edge.

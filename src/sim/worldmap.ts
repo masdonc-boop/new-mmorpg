@@ -7,6 +7,7 @@ import type { NpcId } from '../data/npcs';
 import { HOUSE } from '../data/construction';
 import type { StationKind } from '../data/recipes';
 import { generateEastreach } from './eastreach';
+import { carveDungeons } from './dungeonmap';
 
 /** Terrain tile types. */
 export const T = {
@@ -25,6 +26,9 @@ export const T = {
   Heath: 11,
   Snow: 12,
   Marsh: 13,
+  // Dungeons (Phase 4C, docs/DUNGEONS.md): drowned flagstones and dressed tower stone.
+  ShrineFloor: 14,
+  TowerFloor: 15,
 } as const;
 export type TileType = (typeof T)[keyof typeof T];
 
@@ -62,7 +66,13 @@ export type DecorKind =
   | 'heather'
   | 'sunken_shrine'
   | 'standing_stone'
-  | 'watchtower';
+  | 'watchtower'
+  // Dungeons (Phase 4C)
+  | 'glow_pool'
+  | 'pillar'
+  | 'brazier'
+  | 'dungeon_chest'
+  | 'stairs';
 
 export interface Decor {
   kind: DecorKind;
@@ -135,6 +145,8 @@ export interface Passage {
   arriveZ: number;
   /** The other end. */
   to: string;
+  /** A dungeon door: the dungeon whose requirements must be met to go through (data/dungeons.ts). */
+  requires?: string;
 }
 
 /**
@@ -209,6 +221,9 @@ export const REGIONS: Region[] = [
   { id: 'heronwick', name: 'Heronwick', x: 147, z: 84, radius: 7, levels: 'Village', danger: 0 },
   { id: 'ninefold', name: 'Ninefold Stones', x: 178, z: 40, radius: 5, levels: 'Lv 22–34', danger: 2 },
   { id: 'watchtower', name: 'Old Watchtower', x: 181, z: 21, radius: 6, levels: 'Barred · Lv 34', danger: 3 },
+  // Inside the dungeons (Phase 4C).
+  { id: 'shrine_halls', name: 'The Sunken Shrine', x: 51, z: 140, radius: 20, levels: 'Lv 34–42', danger: 3 },
+  { id: 'tower_halls', name: 'The Old Watchtower', x: 91, z: 140, radius: 20, levels: 'Lv 36–48', danger: 3 },
   { id: 'sunken_shrine', name: 'Sunken Shrine', x: 177, z: 108, radius: 6, levels: 'Sealed · Lv 30', danger: 3 },
 ];
 
@@ -247,7 +262,7 @@ export function regionAt(x: number, z: number): Region | null {
  */
 export const ISLAND_SIZE = 112;
 export const MAP_WIDTH = 208;
-export const MAP_HEIGHT = 128;
+export const MAP_HEIGHT = 160;
 export const inIslandBox = (x: number, z: number) => x < ISLAND_SIZE && z < ISLAND_SIZE;
 
 export function generateWorld(seed = 1337): WorldMap {
@@ -767,6 +782,8 @@ export function generateWorld(seed = 1337): WorldMap {
   };
   // Eastreach, last of all and from its own random stream (nothing above moves).
   generateEastreach(map, occ, seed);
+  // The dungeons, carved south of everything (Phase 4C).
+  carveDungeons(map, occ, seed);
   return map;
 }
 

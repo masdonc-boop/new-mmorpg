@@ -27,6 +27,8 @@ import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type 
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
 import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
+import { dungeonAt } from './dungeonmap';
+import { DUNGEONS } from '../data/dungeons';
 import { LANTERN_SECONDS } from '../data/hollow';
 import { splitSave, type CharacterRecord, type ZoneState } from './records';
 import { TradeDesk, type TradeView } from './trade';
@@ -2833,6 +2835,15 @@ export class GameWorld {
     p.action = null;
     const other = this.doorways.find((o) => o.def.id === d.def.to);
     if (!other) return;
+    // A dungeon door asks for its requirements (the simulation checks; a client can't skip it).
+    const dungeon = d.def.requires ? DUNGEONS[d.def.requires] : undefined;
+    if (dungeon) {
+      const missing = this.missingFor(dungeon.requirements);
+      if (missing.length) {
+        this.message(`The door of ${dungeon.name} won’t move. You need ${missing.join(', ')}.`, 'warn');
+        return;
+      }
+    }
     p.x = p.prevX = other.def.arriveX;
     p.z = p.prevZ = other.def.arriveZ;
     p.path = [];
@@ -2849,7 +2860,12 @@ export class GameWorld {
         this.message(this.hasLantern() ? 'You climb down into Glimmer Hollow. Your lantern has no glowcaps to burn: it is pitch dark, and you can’t mine or fight.' : 'You climb down into Glimmer Hollow. It is pitch dark: without a glowcap lantern you can’t mine or fight here.', 'warn');
         p.darkWarned = true;
       } else this.message('You climb down into Glimmer Hollow. Your lantern glows green against the dark.', 'good');
-    } else this.message('You climb back up into the daylight.');
+    } else if (dungeonAt(p.x, p.z)) {
+      const from = dungeonAt(d.x, d.z);
+      const name = DUNGEONS[dungeonAt(p.x, p.z)!].name;
+      if (!from) this.message(`You step into ${name}. ${dungeonAt(p.x, p.z) === 'sunken_shrine' ? 'Cold water drips from the vaults, and something is chanting.' : 'Dust, old banners, and the scrape of armour somewhere above.'}`, 'warn');
+      else this.message(d.def.verb === 'Climb' ? 'You climb the stairs.' : 'You climb down the stairs.');
+    } else this.message(dungeonAt(d.x, d.z) ? 'You step back out into the open air.' : 'You climb back up into the daylight.');
   }
 
   hasLantern(): boolean {
@@ -3705,8 +3721,13 @@ export class GameWorld {
 
   /** Requirements the current player is missing for a quest (empty when they can start it). */
   questMissing(q: QuestDef): string[] {
+    return this.missingFor(q.requirements);
+  }
+
+  /** Requirements (of a quest or a dungeon door) the current player is missing. */
+  missingFor(r: QuestDef['requirements']): string[] {
     const p = this.player;
-    return missingRequirements(q, (id) => p.quests[id]?.done === true, p.skills.combatLevel(), (s) => p.skills.level(s));
+    return missingRequirements(r, (id) => p.quests[id]?.done === true, p.skills.combatLevel(), (s) => p.skills.level(s));
   }
 
   private acceptQuest(id: string) {

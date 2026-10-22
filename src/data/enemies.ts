@@ -1,7 +1,9 @@
 import type { ItemId } from './items';
 
-export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime' | 'bog_croaker' | 'mire_leech' | 'bog_mother' | 'bristleback' | 'ridge_stalker' | 'greymane';
-export type EnemyModel = 'slime' | 'wolf' | 'goblin' | 'toad' | 'leech' | 'boar';
+export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime' | 'bog_croaker' | 'mire_leech' | 'bog_mother' | 'bristleback' | 'ridge_stalker' | 'greymane'
+  // Dungeons (Phase 4C)
+  | 'drowned_acolyte' | 'drowned_guardian' | 'shrinekeeper' | 'hollow_sentinel' | 'forsworn_archer' | 'watchcaptain';
+export type EnemyModel = 'slime' | 'wolf' | 'goblin' | 'toad' | 'leech' | 'boar' | 'humanoid';
 
 export interface DropEntry {
   item: ItemId;
@@ -34,6 +36,21 @@ export interface EnemyDef {
   drops: DropEntry[];
   /** A region's boss: always fights whoever comes near, however strong (and shows larger on the minimap). */
   boss?: boolean;
+  /**
+   * How it attacks (default melee). Ranged and magic creatures strike from `attackRange` with a
+   * visible missile; magic is defended with Defence and Magic together (docs/DUNGEONS.md).
+   */
+  attackStyle?: 'melee' | 'ranged' | 'magic';
+  /** Humanoid creatures: their looks and what they carry. */
+  look?: { skin: string; hair: string; tunic: string; trousers: string; robe?: boolean; helmet?: boolean; cape?: string; beard?: boolean };
+  tool?: 'sword' | 'spear' | 'club' | 'bow' | 'wand';
+  /**
+   * Bosses: below this share of their hitpoints they enrage, attacking this much faster
+   * (attackSeconds is divided by `enrage.speed`).
+   */
+  enrage?: { below: number; speed: number };
+  /** Calls every creature within this many tiles to its side when it is attacked (a boss's guards). */
+  rally?: number;
 }
 
 export const ENEMIES: Record<EnemyType, EnemyDef> = {
@@ -198,6 +215,91 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'ridgehide_body', min: 1, max: 1, chance: 0.05 },
       { item: 'rowan_shortbow', min: 1, max: 1, chance: 0.05 },
       { item: 'glimsteel_sword', min: 1, max: 1, chance: 0.04 },
+    ],
+  },
+  // ---- The Sunken Shrine (Phase 4C, docs/DUNGEONS.md)
+  // Drowned acolytes: the shrine's last keepers, still at their rites. They cast cold bolts of water.
+  drowned_acolyte: {
+    id: 'drowned_acolyte', name: 'Drowned Acolyte', level: 34, maxHp: 190, attack: 32, strength: 28, defence: 22, maxHit: 17,
+    attackSeconds: 2.6, attackRange: 5, aggressive: true, aggroRange: 5, leashRange: 9, wanderRadius: 2,
+    speed: 2.4, respawnSeconds: 40, model: 'humanoid', scale: 1, color: '#7fa8a0', accent: '#9fe8d8', attackStyle: 'magic', tool: 'wand',
+    look: { skin: '#9fb8b0', hair: '#2a3a38', tunic: '#2f5a58', trousers: '#1f3a3a', robe: true },
+    drops: [
+      { item: 'coins', min: 40, max: 80, chance: 0.75 },
+      { item: 'air_rune', min: 8, max: 20, chance: 0.4 },
+      { item: 'linen', min: 1, max: 2, chance: 0.2 },
+      { item: 'marsh_pearl', min: 1, max: 1, chance: 0.04 },
+      { item: 'mireweave_hood', min: 1, max: 1, chance: 0.02 },
+    ],
+  },
+  // Drowned guardians: shrine wardens in weed-hung mail, standing their watch at the sanctum.
+  drowned_guardian: {
+    id: 'drowned_guardian', name: 'Drowned Guardian', level: 38, maxHp: 260, attack: 36, strength: 35, defence: 33, maxHit: 21,
+    attackSeconds: 2.2, attackRange: 1.5, aggressive: true, aggroRange: 4, leashRange: 8, wanderRadius: 1,
+    speed: 2.6, respawnSeconds: 45, model: 'humanoid', scale: 1.1, color: '#7fa8a0', accent: '#5f8a4a', tool: 'spear',
+    look: { skin: '#8aa8a0', hair: '#2a3a38', tunic: '#4a5a58', trousers: '#2f3a38', helmet: true },
+    drops: [
+      { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'coins', min: 40, max: 90, chance: 0.75 },
+      { item: 'steel_bar', min: 1, max: 1, chance: 0.15 },
+      { item: 'glimsteel_helm', min: 1, max: 1, chance: 0.02 },
+    ],
+  },
+  // The Shrinekeeper: whatever the shrine was raised to hold, it kept. Bolts of black water, and a
+  // fury when wounded. Its guardians come when it calls.
+  shrinekeeper: {
+    id: 'shrinekeeper', name: 'The Shrinekeeper', level: 42, maxHp: 900, attack: 42, strength: 40, defence: 34, maxHit: 26,
+    attackSeconds: 2.6, attackRange: 5.5, aggressive: true, aggroRange: 6, leashRange: 10, wanderRadius: 1,
+    speed: 2.2, respawnSeconds: 120, model: 'humanoid', scale: 1.55, color: '#5f8a80', accent: '#9fe8d8', boss: true, attackStyle: 'magic', tool: 'wand',
+    look: { skin: '#7f9a92', hair: '#d8e8e0', tunic: '#1f3a48', trousers: '#16303a', robe: true, cape: '#2f5a58' },
+    enrage: { below: 0.4, speed: 1.5 },
+    rally: 7,
+    drops: [
+      { item: 'big_bones', min: 1, max: 1, chance: 1 },
+      { item: 'coins', min: 380, max: 700, chance: 1 },
+      { item: 'marsh_pearl', min: 1, max: 1, chance: 0.5 },
+    ],
+  },
+  // ---- The Old Watchtower (Phase 4C)
+  // Hollow sentinels: suits of the old watch's armour, still standing their posts with nobody inside.
+  hollow_sentinel: {
+    id: 'hollow_sentinel', name: 'Hollow Sentinel', level: 38, maxHp: 250, attack: 36, strength: 35, defence: 36, maxHit: 20,
+    attackSeconds: 2.2, attackRange: 1.5, aggressive: true, aggroRange: 4, leashRange: 8, wanderRadius: 1,
+    speed: 2.5, respawnSeconds: 45, model: 'humanoid', scale: 1.05, color: '#8a8e96', accent: '#5a5e66', tool: 'sword',
+    look: { skin: '#3a3a40', hair: '#3a3a40', tunic: '#8a8e96', trousers: '#5a5e66', helmet: true },
+    drops: [
+      { item: 'coins', min: 40, max: 90, chance: 0.75 },
+      { item: 'steel_bar', min: 1, max: 2, chance: 0.2 },
+      { item: 'silver_ore', min: 1, max: 2, chance: 0.15 },
+      { item: 'steel_platelegs', min: 1, max: 1, chance: 0.03 },
+    ],
+  },
+  // Forsworn archers: the watch's last bowmen, who barred the door and never came down.
+  forsworn_archer: {
+    id: 'forsworn_archer', name: 'Forsworn Archer', level: 36, maxHp: 200, attack: 34, strength: 30, defence: 24, maxHit: 18,
+    attackSeconds: 2.4, attackRange: 6, aggressive: true, aggroRange: 6, leashRange: 9, wanderRadius: 2,
+    speed: 2.6, respawnSeconds: 40, model: 'humanoid', scale: 1, color: '#9a8a7a', accent: '#5a4a3a', attackStyle: 'ranged', tool: 'bow',
+    look: { skin: '#b8a894', hair: '#4a3a2a', tunic: '#5a4a3a', trousers: '#3a332c', cape: '#4a3a2a' },
+    drops: [
+      { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'coins', min: 30, max: 70, chance: 0.75 },
+      { item: 'steel_arrow', min: 8, max: 20, chance: 0.35 },
+      { item: 'rowan_logs', min: 1, max: 1, chance: 0.1 },
+      { item: 'boarhide_coif', min: 1, max: 1, chance: 0.03 },
+    ],
+  },
+  // The Last Watchcaptain: who barred the tower, and why, is a story nobody alive can tell.
+  watchcaptain: {
+    id: 'watchcaptain', name: 'The Last Watchcaptain', level: 48, maxHp: 1100, attack: 48, strength: 47, defence: 42, maxHit: 30,
+    attackSeconds: 2.4, attackRange: 1.8, aggressive: true, aggroRange: 6, leashRange: 9, wanderRadius: 1,
+    speed: 2.6, respawnSeconds: 120, model: 'humanoid', scale: 1.45, color: '#6a6e76', accent: '#a83a2a', boss: true, tool: 'sword',
+    look: { skin: '#5a5e66', hair: '#2a2a30', tunic: '#6a6e76', trousers: '#3a3e46', helmet: true, cape: '#7a2a22' },
+    enrage: { below: 0.35, speed: 1.6 },
+    rally: 7,
+    drops: [
+      { item: 'big_bones', min: 1, max: 1, chance: 1 },
+      { item: 'coins', min: 420, max: 780, chance: 1 },
+      { item: 'silver_bar', min: 1, max: 2, chance: 0.5 },
     ],
   },
 };

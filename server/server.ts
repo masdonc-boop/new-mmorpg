@@ -15,6 +15,7 @@ import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat, filterForm } from './chat
 import { LiveExchange, liveAccount } from './liveexchange';
 import { Bucket, DEFAULT_EXCHANGE_POLICY, ExchangeWatch, checkOffer, type ExchangePolicy } from './exchangeguard';
 import { BRIGHTWATER, HOLLOW_ZONE, zoneArea, zoneFor, zoneKind, type ZoneId } from '../src/sim/zones';
+import { DUNGEON_AREAS } from '../src/sim/dungeonmap';
 import type { TradeCommit } from '../src/sim/trade';
 
 /**
@@ -205,6 +206,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   };
   const zone = openZone(BRIGHTWATER);
   openZone(HOLLOW_ZONE);
+  // The dungeons (Phase 4C) are shared zones too, always running.
+  for (const id of Object.keys(DUNGEON_AREAS)) openZone(id);
   // The live Exchange (off unless switched on): one for the whole world, restored from the database.
   const live = opts.liveExchange ? new LiveExchange(clock, repos.exchangeState()) : null;
   const features = { liveExchange: live !== null };

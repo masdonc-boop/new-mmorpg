@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameWorld } from '../src/sim/world';
+import { dungeonAt } from '../src/sim/dungeonmap';
 import { findPath } from '../src/sim/pathfinding';
 import { T, generateWorld, isBlocked, tileAt, inHollow } from '../src/sim/worldmap';
 
@@ -34,8 +35,8 @@ describe('World generation', () => {
 
   it('connects the village to every enemy, resource cluster and NPC', () => {
     const s = map.spawn;
-    // Glimmer Hollow is reached through its passage, not on foot (checked in its own test).
-    for (const e of map.enemySpawns.filter((e) => !inHollow(e.x, e.z))) {
+    // Glimmer Hollow and the dungeons are reached through their passages, not on foot (checked in their own tests).
+    for (const e of map.enemySpawns.filter((e) => !inHollow(e.x, e.z) && !dungeonAt(e.x, e.z))) {
       expect(findPath(map, s.x, s.z, e.x, e.z, 20000), `enemy ${e.type} at ${e.x},${e.z}`).not.toBeNull();
     }
     for (const n of map.npcs) expect(findPath(map, s.x, s.z, n.x, n.z, 20000), n.id).not.toBeNull();

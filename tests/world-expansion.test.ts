@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { generateWorld, inIslandBox, isBlocked, regionAt, T, MAP_WIDTH, MAP_HEIGHT, type WorldMap } from '../src/sim/worldmap';
 import { CAUSEWAY, EAST, islandTilesChanged } from '../src/sim/eastreach';
 import { findPath } from '../src/sim/pathfinding';
+import { dungeonAt } from '../src/sim/dungeonmap';
 import { GameWorld, type SaveData } from '../src/sim/world';
 import { zoneFor } from '../src/sim/zones';
 import { fnv } from '../src/exchange/engine';
@@ -112,7 +113,7 @@ describe('4A.1 Eastreach is reachable and whole', () => {
     let reached = 0;
     const pockets: string[] = [];
     for (let z = 0; z < map.height; z++) for (let x = 0; x < W; x++) {
-      if (inIslandBox(x, z) || map.blocked[z * W + x]) continue;
+      if (inIslandBox(x, z) || dungeonAt(x, z) || map.blocked[z * W + x]) continue;
       open++;
       if (seen[z * W + x]) reached++;
       else if (pockets.length < 5) pockets.push(`${x},${z}`);

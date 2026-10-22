@@ -20,6 +20,8 @@ export const TILE_COLORS: Record<number, string> = {
   [T.Heath]: '#9a8a7c',
   [T.Snow]: '#eef2f4',
   [T.Marsh]: '#7e8f4e',
+  [T.ShrineFloor]: '#5f7a72',
+  [T.TowerFloor]: '#8a857a',
 };
 
 const tmpV = new THREE.Vector3();

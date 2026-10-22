@@ -279,6 +279,40 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
       }
       return merge(parts);
     }
+    // ---- Dungeons (Phase 4C): the glowing parts are added separately with unlit materials.
+    case 'glow_pool':
+      // A stone rim round a sunken pool (the water's glow is added unlit).
+      return merge([0, 1, 2, 3, 4, 5].map((i) => part(Box(0.42, 0.18, 0.16), '#6f7f78', { x: Math.cos((i / 6) * Math.PI * 2) * 0.42, y: 0.06, z: Math.sin((i / 6) * Math.PI * 2) * 0.42, ry: -(i / 6) * Math.PI * 2 + Math.PI / 2, jitter: 0.08 })));
+    case 'pillar':
+      return merge([
+        part(Box(0.62, 0.22, 0.62), '#8a8e86', { y: 0.11 }),
+        part(Cyl(0.24, 0.27, 2.9, 8), '#a4a89e', { y: 1.6, jitter: 0.06 }),
+        part(Box(0.6, 0.24, 0.6), '#8a8e86', { y: 3.1 }),
+        part(blob(0.18, 0, 0.3, rng()), '#5f8a4a', { x: 0.2, y: 0.4, z: 0.18, sy: 0.6 }),
+      ]);
+    case 'brazier':
+      // An iron bowl on three legs (the flames are added unlit).
+      return merge([
+        ...[0, 1, 2].map((i) => part(Cyl(0.03, 0.03, 0.75, 4), '#3a3632', { x: Math.cos(i * 2.1) * 0.2, y: 0.37, z: Math.sin(i * 2.1) * 0.2, rz: Math.cos(i * 2.1) * 0.12, rx: -Math.sin(i * 2.1) * 0.12 })),
+        part(Cyl(0.34, 0.2, 0.2, 8), '#4a4440', { y: 0.82 }),
+        part(Cyl(0.3, 0.3, 0.04, 8), '#2a1a12', { y: 0.92, jitter: 0 }),
+      ]);
+    case 'dungeon_chest':
+      // A heavy iron-bound chest on a stone dais (its lock glows when you have a claim on it).
+      return merge([
+        part(Box(1.2, 0.2, 0.9), '#7a7a72', { y: 0.1 }),
+        part(Box(0.9, 0.5, 0.56), '#6b4428', { y: 0.45 }),
+        part(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 8, 1, false, 0, Math.PI), '#7a5030', { y: 0.7, rz: Math.PI / 2, ry: Math.PI / 2 }),
+        part(Box(0.94, 0.06, 0.6), '#3a3632', { y: 0.32 }),
+        part(Box(0.94, 0.06, 0.6), '#3a3632', { y: 0.62 }),
+        part(Box(0.16, 0.18, 0.04), '#c9a646', { y: 0.62, z: 0.3, jitter: 0 }),
+      ]);
+    case 'stairs': {
+      // Stone steps against the wall, rising away from you.
+      const parts: THREE.BufferGeometry[] = [];
+      for (let i = 0; i < 5; i++) parts.push(part(Box(0.9, 0.22 + i * 0.22, 0.2), '#9a968c', { y: (0.22 + i * 0.22) / 2, z: 0.4 - i * 0.2, jitter: 0.05 }));
+      return merge(parts);
+    }
     case 'glowcap':
       // Pale stalks; the glowing caps are added separately with an unlit material.
       return merge([part(Cyl(0.03, 0.04, 0.18, 5), '#e8e2cc', { y: 0.09 })]);
@@ -814,6 +848,8 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
   const lanternGeo = new THREE.BoxGeometry(0.16, 0.2, 0.16);
   const glowcapGeo = new THREE.SphereGeometry(0.11, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
   const glowcapMat = new THREE.MeshBasicMaterial({ color: '#b8ffa0' });
+  const poolGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.04, 8);
+  const poolMat = new THREE.MeshBasicMaterial({ color: '#5fe8d0', transparent: true, opacity: 0.85 });
   const shaftGeo = new THREE.CylinderGeometry(0.35, 0.9, 4.4, 10, 1, true);
   const shaftMat = new THREE.MeshBasicMaterial({ color: '#fff4c8', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
 
@@ -860,6 +896,24 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
       m.position.set(d.x, y + 0.2 * d.scale, d.z);
       m.scale.setScalar(d.scale);
       group.add(m);
+    } else if (d.kind === 'glow_pool') {
+      const m = new THREE.Mesh(poolGeo, poolMat);
+      m.position.set(d.x, y + 0.08, d.z);
+      m.rotation.y = d.rot;
+      group.add(m);
+      glows.push({ mesh: m, baseY: y + 0.08, phase: rng() * 6, kind: 'lantern' });
+    } else if (d.kind === 'brazier') {
+      const f = new THREE.Group();
+      const outer = new THREE.Mesh(flameGeo, flameMat);
+      const inner = new THREE.Mesh(flameGeo, flameCoreMat);
+      inner.scale.setScalar(0.55);
+      inner.position.y = -0.1;
+      f.add(outer, inner);
+      f.scale.setScalar(0.7);
+      f.position.set(d.x, y + 1.2, d.z);
+      group.add(f);
+      glows.push({ mesh: f, baseY: y + 1.2, phase: rng() * 6, kind: 'flame' });
+      emitters.push({ x: d.x, y: y + 1.4, z: d.z, kind: 'fire' });
     } else if (d.kind === 'light_shaft') {
       const m = new THREE.Mesh(shaftGeo, shaftMat);
       m.position.set(d.x, y + 2.2, d.z);

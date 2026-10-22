@@ -72,7 +72,8 @@ describe('4B.4 loot tables', () => {
   it('gear dropped by a creature belongs to its tier (no top-tier gear from the weakest creatures)', () => {
     for (const e of Object.values(ENEMIES)) for (const d of e.drops) {
       const req = itemDef(d.item).equip?.req;
-      if (!req) continue;
+      // Ammunition is dropped by the handful, like coins (only gear is capped).
+      if (!req || itemDef(d.item).stackable) continue;
       const lvl = Math.max(...Object.values(req));
       expect(lvl, `${d.item} from ${e.id}`).toBeLessThanOrEqual(e.level + 12);
       if (!e.boss) expect(d.chance, `${d.item} from ${e.id}`).toBeLessThanOrEqual(0.2);
@@ -86,7 +87,7 @@ describe('4B.4 dungeon framework (ready for Phase 4C)', () => {
     const { generateWorld } = await import('../src/sim/worldmap');
     const map = generateWorld(1337);
     for (const d of Object.values(DUNGEONS)) {
-      expect(d.status, d.id).toBe('sealed');
+      expect(d.status, d.id).toBe('open');
       expect(map.decor.some((x) => x.kind === d.landmark), d.id).toBe(true);
       for (const q of d.requirements.quests ?? []) expect(QUESTS[q], `${d.id} needs ${q}`).toBeTruthy();
       expect(d.recommended.combat).toBeGreaterThanOrEqual(d.requirements.combat ?? 0);
