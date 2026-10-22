@@ -47,6 +47,8 @@ export interface HudCallbacks {
   zoom(f: number): void;
   resetCamera(): void;
   newCharacter(): void;
+  /** Network play: sign out (the server saves the character). Replaces "New character". */
+  signOut?(): void;
   cameraYaw(): number;
 }
 
@@ -1648,11 +1650,17 @@ export class Hud {
       this.renderSettings();
     });
     row('Show FPS', fps);
-    const fresh = el('button', 'danger', 'New character');
-    fresh.addEventListener('click', () => {
-      if (armConfirm(fresh, 'Tap again: progress will be lost')) this.cb.newCharacter();
-    });
-    row('Character', fresh, 'One character per account');
+    if (this.cb.signOut) {
+      const out = el('button', 'danger', 'Sign out');
+      out.addEventListener('click', () => this.cb.signOut!());
+      row('Account', out, 'Your character is saved on the server');
+    } else {
+      const fresh = el('button', 'danger', 'New character');
+      fresh.addEventListener('click', () => {
+        if (armConfirm(fresh, 'Tap again: progress will be lost')) this.cb.newCharacter();
+      });
+      row('Character', fresh, 'One character per account');
+    }
     body.appendChild(
       el('div', 'help', `<b>How to play</b><br>
         • Drag on the left side of the screen to move with the joystick.<br>

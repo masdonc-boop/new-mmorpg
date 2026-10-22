@@ -1,31 +1,54 @@
+import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { GameWorld, TICK_SECONDS, type GameEvent, type PlayerId } from '../src/sim/world';
+import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type PlayerId } from '../src/sim/world';
 import { generateWorld, type WorldMap } from '../src/sim/worldmap';
+import { mergeSave } from '../src/sim/records';
 import { captureState } from '../src/net/replica';
-import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type ClientMessage, type ServerMessage } from '../src/net/protocol';
+import { GUEST_NAME, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from '../src/net/protocol';
+import { openDatabase } from './db';
+import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
+import { Repos, StaleWriteError } from './repo';
 
 /**
- * Brightwater development server (docs/MULTIPLAYER.md 3A.2): authoritative solo play over the
- * network. Each connected guest gets their own server-side `GameWorld` (today's single-player
- * simulation); the client sends intents and renders what the server sends back.
+ * Brightwater development server (docs/MULTIPLAYER.md 3A.2 and 3A.3).
  *
- * Development only: guests are identified by name, characters live in memory until the server
- * stops (accounts and persistence are 3A.3), and it listens on localhost by default.
+ * Authoritative play over the network: each signed-in character has its own server-side
+ * `GameWorld` (today's single-player simulation); clients send intents and render what the server
+ * sends back. Accounts, sessions and characters live in SQLite. Every save carries the character's
+ * lease epoch and version, so a stale writer (an older server, or a session that was taken over)
+ * can never overwrite newer data.
+ *
+ * Development only: listens on localhost by default, plain `ws://` (TLS is required before anything
+ * is reachable from other machines; see the approval gates in the plan).
  */
 
 export interface ServerOptions {
   port?: number;
   host?: string;
-  /** Real-world clock for farming (injectable for tests). */
+  /** SQLite file (default `server/data/dev.sqlite`), or `:memory:`. */
+  dbPath?: string;
+  /** Allow unsaved guest play by name (development and tests only). */
+  allowGuests?: boolean;
+  /** How often characters with changes are saved (ms). */
+  saveIntervalMs?: number;
+  /** How long a disconnected character stays in the world before being saved and logged out (ms). */
+  graceMs?: number;
+  /** This server instance's lease name (random by default). */
+  instance?: string;
+  /** Real-world clock (farming, sessions, rate limits); injectable for tests. */
   clock?: () => number;
   log?: (msg: string) => void;
 }
 
 export interface RunningServer {
   port: number;
-  close(): Promise<void>;
-  /** Live sessions by guest name (for tests and tooling). */
+  /** Loaded characters by key (`acct:<id>` or `guest:<name>`). */
   sessions: Map<string, Session>;
+  repos: Repos;
+  /** Saves every loaded character now (tests and tooling). */
+  saveAll(): void;
+  /** Stops the server. `save: false` simulates a crash (nothing is saved on the way down). */
+  close(opts?: { save?: boolean }): Promise<void>;
 }
 
 /** Movement inputs the server keeps queued at most (older ones are dropped and acknowledged). */
@@ -41,10 +64,18 @@ const DEVICE_LOCAL = new Set(['exchange', 'exchangeResetPractice']);
 const SERVER_ONLY_EVENTS = new Set<GameEvent['type']>(['exchange', 'exchangeResult']);
 
 export interface Session {
+  key: string;
   name: string;
   playerId: PlayerId;
   world: GameWorld;
   ws: WebSocket | null;
+  /** Persistence (null for guests). */
+  accountId: number | null;
+  characterId: number | null;
+  epoch: number;
+  version: number;
+  lastSaved: string;
+  disconnectedAt: number | null;
   inputs: { seq: number; dx: number; dz: number }[];
   lastSeq: number;
   ack: number;
@@ -59,13 +90,26 @@ export interface Session {
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const log = opts.log ?? ((m: string) => console.log(`[server] ${m}`));
   const clock = opts.clock ?? (() => Date.now());
+  const instance = opts.instance ?? `dev-${randomBytes(4).toString('hex')}`;
+  const graceMs = opts.graceMs ?? 30_000;
+  const saveIntervalMs = opts.saveIntervalMs ?? 30_000;
+  const db = openDatabase(opts.dbPath ?? 'server/data/dev.sqlite');
+  const repos = new Repos(db, clock);
   const map: WorldMap = generateWorld(1337);
   const content = contentVersion(map);
   const sessions = new Map<string, Session>();
-  let nextPlayerId = 1_000_000;
+  // Sign-in limits: per account name and per network address.
+  const accountFails = new RateLimiter(5, 5 * 60_000, clock);
+  const addressFails = new RateLimiter(30, 5 * 60_000, clock);
+  const registrations = new RateLimiter(5, 60 * 60_000, clock);
+  // A real hash to compare against when the account doesn't exist (so timing doesn't reveal names).
+  const dummyHash = await hashPassword(randomBytes(12).toString('hex'));
+  let nextGuestId = 1_500_000_000;
   let tick = 0;
 
-  const wss = new WebSocketServer({ port: opts.port ?? 8787, host: opts.host ?? '127.0.0.1', maxPayload: 64 * 1024 });
+  const host = opts.host ?? '127.0.0.1';
+  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) log('WARNING: listening beyond this machine without TLS. Development use only.');
+  const wss = new WebSocketServer({ port: opts.port ?? 8787, host, maxPayload: 64 * 1024 });
   await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
   const address = wss.address();
   const port = typeof address === 'object' && address ? address.port : opts.port ?? 8787;
@@ -73,13 +117,19 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const send = (ws: WebSocket | null, msg: ServerMessage) => {
     if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   };
+  const refuse = (ws: WebSocket, error: string, code: ErrorCode) => {
+    send(ws, { t: 'error', error, code, fatal: true });
+    ws.close(1008, code);
+  };
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    const addr = req.socket.remoteAddress ?? 'unknown';
     let session: Session | null = null;
+    let joining = false;
+    let token: string | null = null;
     let strikes = 0;
     const strike = (why: string) => {
-      const s = session;
-      const n = s ? ++s.strikes : ++strikes;
+      const n = session ? ++session.strikes : ++strikes;
       send(ws, { t: 'error', error: why });
       if (n >= MAX_STRIKES) {
         send(ws, { t: 'error', error: 'Too many invalid messages.', fatal: true });
@@ -87,7 +137,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       }
     };
     const helloTimer = setTimeout(() => {
-      if (!session) ws.close(1008, 'no hello');
+      if (!session && !joining) ws.close(1008, 'no hello');
     }, 5000);
 
     ws.on('message', (data, isBinary) => {
@@ -95,20 +145,38 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       const msg = parseClientMessage(data.toString());
       if (!msg) return strike('Invalid message.');
       if (!session) {
+        if (joining) return;
         if (msg.t !== 'hello') return strike('Say hello first.');
-        session = join(ws, msg);
+        joining = true;
         clearTimeout(helloTimer);
+        signIn(ws, addr, msg)
+          .then((r) => {
+            joining = false;
+            if (r) ({ session, token } = r);
+          })
+          .catch((err) => {
+            joining = false;
+            log(`sign-in failed: ${(err as Error).message}`);
+            refuse(ws, 'The server could not sign you in. Try again.', 'auth');
+          });
         return;
       }
+      if (session.ws !== ws) return;
       // Rate limit (token bucket refilled every tick).
       if (session.tokens <= 0) return strike('Too many messages.');
       session.tokens--;
+      if (msg.t === 'logout') {
+        logout(session, token);
+        session = null;
+        return;
+      }
       handle(session, msg);
     });
     ws.on('close', () => {
       clearTimeout(helloTimer);
       if (session && session.ws === ws) {
         session.ws = null;
+        session.disconnectedAt = clock();
         session.inputs = [];
         session.world.issueFor(session.playerId, { type: 'joystick', dx: 0, dz: 0 });
         log(`${session.name} disconnected`);
@@ -116,26 +184,122 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     });
   });
 
-  function join(ws: WebSocket, hello: Extract<ClientMessage, { t: 'hello' }>): Session | null {
+  /** Checks the hello, signs in (guest, new account, password or token) and attaches the character. */
+  async function signIn(ws: WebSocket, addr: string, hello: Extract<ClientMessage, { t: 'hello' }>): Promise<{ session: Session; token: string | null } | null> {
     if (hello.v !== PROTOCOL_VERSION || hello.content !== content) {
-      send(ws, { t: 'error', error: `This game version doesn't match the server (server ${content}, game ${hello.content}). Reload to update.`, fatal: true });
-      ws.close(1008, 'version');
+      refuse(ws, `This game version doesn't match the server (server ${content}, game ${hello.content}). Reload to update.`, 'version');
       return null;
     }
-    let s = sessions.get(hello.name.toLowerCase());
-    if (s?.ws) {
-      // One live connection per character: the newer one takes over.
-      send(s.ws, { t: 'error', error: 'Signed in from somewhere else.', fatal: true });
+    const auth: Auth = hello.auth;
+    const no = (error: string, code: ErrorCode) => {
+      refuse(ws, error, code);
+      return null;
+    };
+    if (auth.kind === 'guest') {
+      if (!opts.allowGuests) {
+        refuse(ws, 'Guest play is off on this server. Create an account or sign in.', 'auth');
+        return null;
+      }
+      if (!GUEST_NAME.test(auth.name)) return no('Guest names are up to 12 letters or numbers, starting with a letter.', 'auth');
+      return { session: attachGuest(ws, auth.name, auth.appearance), token: null };
+    }
+    if (addressFails.blocked(addr)) {
+      refuse(ws, 'Too many sign-in attempts from here. Try again in a few minutes.', 'locked');
+      return null;
+    }
+    let accountId: number;
+    let token: string | null = null;
+    let issued: string | undefined;
+    if (auth.kind === 'register') {
+      if (!USERNAME.test(auth.username)) return no('Names are 3 to 12 letters, numbers, - or _, starting with a letter.', 'auth');
+      const problem = passwordProblem(auth.password, auth.username);
+      if (problem) return no(problem, 'auth');
+      if (registrations.blocked(addr)) return no('Too many new accounts from here. Try again later.', 'locked');
+      const hash = await hashPassword(auth.password);
+      const record = new GameWorld({ name: auth.username, appearance: auth.appearance, map, clock }).characterRecord();
+      const made = repos.createAccount(auth.username, hash, record, {});
+      if (!made) return no('That name is taken. Try another.', 'taken');
+      registrations.fail(addr);
+      accountId = made.account.id;
+      issued = token = repos.createSession(accountId);
+      log(`new account ${auth.username}`);
+    } else if (auth.kind === 'login') {
+      const key = auth.username.toLowerCase();
+      if (accountFails.blocked(key)) {
+        repos.audit(repos.findAccount(auth.username)?.id ?? null, 'login-locked', auth.username);
+        return no('Too many wrong passwords for this name. Try again in a few minutes.', 'locked');
+      }
+      const account = repos.findAccount(auth.username);
+      const ok = await verifyPassword(auth.password, account?.password ?? dummyHash);
+      if (!account || !ok) {
+        accountFails.fail(key);
+        addressFails.fail(addr);
+        repos.audit(account?.id ?? null, 'login-failed', auth.username);
+        return no('Wrong name or password.', 'auth');
+      }
+      accountFails.clear(key);
+      accountId = account.id;
+      issued = token = repos.createSession(accountId);
+    } else {
+      const id = repos.sessionAccount(auth.token);
+      if (id === null) {
+        addressFails.fail(addr);
+        return no('Your sign-in has expired. Sign in again.', 'session');
+      }
+      accountId = id;
+      token = auth.token;
+    }
+    if (ws.readyState !== ws.OPEN) return null;
+    return { session: attachAccount(ws, accountId, issued), token };
+  }
+
+  function attachGuest(ws: WebSocket, name: string, appearance?: Appearance): Session {
+    const key = `guest:${name.toLowerCase()}`;
+    let s = sessions.get(key);
+    if (!s) {
+      const playerId = nextGuestId++;
+      const world = new GameWorld({ name, appearance, playerId, map, clock });
+      s = newSession(key, name, playerId, world, null, null, 0, 0);
+      sessions.set(key, s);
+      log(`new guest ${name} (#${playerId})`);
+    }
+    bind(s, ws);
+    return s;
+  }
+
+  function attachAccount(ws: WebSocket, accountId: number, issued?: string): Session {
+    const key = `acct:${accountId}`;
+    let s = sessions.get(key);
+    if (s) {
+      log(`${s.name} reconnected`);
+    } else {
+      // Load the character and take its lease: any older writer can no longer save it.
+      const row = repos.characterFor(accountId)!;
+      const leased = repos.acquireLease(row.id, instance);
+      const world = new GameWorld({ save: mergeSave({ character: leased.record, zone: leased.zone }), playerId: leased.playerId, map, clock });
+      s = newSession(key, leased.name, leased.playerId, world, accountId, leased.id, leased.leaseEpoch, leased.version);
+      s.lastSaved = persisted(s);
+      sessions.set(key, s);
+      log(`${s.name} signed in`);
+    }
+    repos.audit(accountId, 'login', instance);
+    bind(s, ws, issued);
+    return s;
+  }
+
+  function newSession(key: string, name: string, playerId: PlayerId, world: GameWorld, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
+    return { key, name, playerId, world, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE };
+  }
+
+  /** Points a session at a connection (taking over from any older one) and sends the welcome. */
+  function bind(s: Session, ws: WebSocket, issued?: string) {
+    if (s.ws && s.ws !== ws) {
+      // One live connection per character: the newer one takes over (same world, nothing reloaded).
+      send(s.ws, { t: 'error', error: 'Signed in from somewhere else.', fatal: true, code: 'replaced' });
       s.ws.close(4000, 'replaced');
     }
-    if (!s) {
-      const playerId = nextPlayerId++;
-      const world = new GameWorld({ name: hello.name, appearance: hello.appearance, playerId, map, clock });
-      s = { name: hello.name, playerId, world, ws: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE };
-      sessions.set(hello.name.toLowerCase(), s);
-      log(`new guest ${hello.name} (#${playerId})`);
-    } else log(`${hello.name} reconnected`);
     s.ws = ws;
+    s.disconnectedAt = null;
     s.inputs = [];
     s.lastSeq = 0;
     s.ack = 0;
@@ -143,8 +307,48 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.world.drainEvents();
     const character = s.world.characterRecord();
     s.lastCharacter = JSON.stringify(character);
-    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: captureState(s.world, tick, s.ack) });
-    return s;
+    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: captureState(s.world, tick, s.ack), ...(issued ? { session: issued } : {}) });
+  }
+
+  const persisted = (s: Session) => JSON.stringify([s.world.characterRecord(), s.world.zoneState()]);
+
+  /** Saves a character if it changed. A stale lease ends the session without writing anything. */
+  function save(s: Session, why: string): boolean {
+    if (s.characterId === null) return true;
+    const json = persisted(s);
+    if (json === s.lastSaved) return true;
+    try {
+      const [record, zone] = JSON.parse(json);
+      s.version = repos.saveCharacter(s.characterId, s.epoch, s.version, record, zone);
+      s.lastSaved = json;
+      return true;
+    } catch (err) {
+      if (!(err instanceof StaleWriteError)) throw err;
+      log(`${s.name}: ${why} save refused (${err.message}); dropping this copy`);
+      repos.audit(s.accountId, 'stale-write', `${instance} ${why}`);
+      if (s.ws) {
+        send(s.ws, { t: 'error', error: 'This character is now playing somewhere else.', fatal: true, code: 'stale' });
+        s.ws.close(4001, 'stale');
+      }
+      sessions.delete(s.key);
+      return false;
+    }
+  }
+
+  /** Saves and unloads a character, giving up its lease. */
+  function unload(s: Session, why: string) {
+    if (save(s, why) && s.characterId !== null) repos.releaseLease(s.characterId, s.epoch);
+    sessions.delete(s.key);
+  }
+
+  function logout(s: Session, token: string | null) {
+    if (token) repos.revokeSession(token);
+    if (s.accountId !== null) repos.audit(s.accountId, 'logout');
+    const ws = s.ws;
+    s.ws = null;
+    if (s.accountId !== null) unload(s, 'logout');
+    ws?.close(1000, 'logout');
+    log(`${s.name} signed out`);
   }
 
   function handle(s: Session, msg: ClientMessage) {
@@ -163,7 +367,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       case 'ping':
         send(s.ws, { t: 'pong', at: msg.at });
         return;
-      case 'hello':
+      default:
         return;
     }
   }
@@ -198,35 +402,61 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.events = [];
   }
 
-  // Fixed 30 Hz simulation; snapshots at SNAPSHOT_HZ. Worlds without a connection are paused.
+  // Fixed 30 Hz simulation; snapshots at SNAPSHOT_HZ. Signed-in characters keep playing through a
+  // short grace period after a disconnect (no escaping a fight by pulling the plug), then are saved
+  // and unloaded. Guests (development only) are paused instead.
   let last = performance.now();
   let acc = 0;
+  let sinceSave = 0;
   const every = Math.round(1 / TICK_SECONDS / SNAPSHOT_HZ);
   const timer = setInterval(() => {
     const now = performance.now();
-    acc += Math.min(0.25, (now - last) / 1000);
+    const elapsed = Math.min(0.25, (now - last) / 1000);
+    acc += elapsed;
     last = now;
     while (acc >= TICK_SECONDS) {
       acc -= TICK_SECONDS;
       tick++;
-      for (const s of sessions.values()) {
-        if (!s.ws) continue;
-        s.tokens = Math.min(MESSAGE_RATE, s.tokens + MESSAGE_RATE * TICK_SECONDS);
+      for (const s of [...sessions.values()]) {
+        if (!s.ws) {
+          if (s.accountId === null) continue;
+          if (s.disconnectedAt !== null && clock() - s.disconnectedAt > graceMs) {
+            unload(s, 'grace');
+            log(`${s.name} logged out after the grace period`);
+            continue;
+          }
+        }
+        if (s.ws) s.tokens = Math.min(MESSAGE_RATE, s.tokens + MESSAGE_RATE * TICK_SECONDS);
         step(s);
-        if (tick % every === 0) snapshot(s);
+        if (s.ws && tick % every === 0) snapshot(s);
       }
+    }
+    sinceSave += elapsed * 1000;
+    if (sinceSave >= saveIntervalMs) {
+      sinceSave = 0;
+      saveAll();
     }
   }, 1000 * TICK_SECONDS);
 
-  log(`listening on ws://${opts.host ?? '127.0.0.1'}:${port} (content ${content})`);
+  function saveAll() {
+    for (const s of [...sessions.values()]) save(s, 'periodic');
+  }
+
+  log(`listening on ws://${host}:${port} (content ${content}${opts.allowGuests ? ', guests allowed' : ''})`);
   return {
     port,
     sessions,
-    close: () =>
+    repos,
+    saveAll,
+    close: ({ save: doSave = true } = {}) =>
       new Promise<void>((resolve) => {
         clearInterval(timer);
+        if (doSave) for (const s of [...sessions.values()]) if (s.accountId !== null) unload(s, 'shutdown');
         for (const c of wss.clients) c.terminate();
-        wss.close(() => resolve());
+        wss.close(() => {
+          db.close();
+          resolve();
+        });
       }),
   };
 }

@@ -357,7 +357,45 @@ Acceptance:
 - Prediction keeps the own character smooth at 150 ms simulated latency (manual check plus a reconciliation unit test).
 - Local mode builds and plays exactly as before.
 
-### 3A.3 Accounts and persistence
+### 3A.3 Accounts and persistence: done
+
+How to run it:
+- `npm run server` keeps accounts and characters in `server/data/dev.sqlite`. The `server/data/` folder is git-ignored; delete it to start over.
+- `GUESTS=1 npm run server` also allows unsaved guest play by name, for development.
+- In the browser (`?server=…`), a sign-in screen asks for a name and password, or creates an account (then the character creator for looks). The session token is kept in `localStorage`, never the password.
+- **Sign out** replaces "New character" in Settings in network mode.
+
+Delivered:
+- **Database** (`server/db.ts`): SQLite via `better-sqlite3` 13.0.3, with WAL and numbered migrations (`user_version`).
+  - Tables: `accounts`, `sessions`, `characters` (with `record`, `zone`, `version`, `lease_owner`, `lease_epoch`) and `audit`.
+  - Each character's zone state (dropped loot and wisps) is stored with it while every character has its own world. It moves to per-zone storage in 3A.5.
+- **Accounts** (`server/auth.ts`, `server/repo.ts`):
+  - Passwords are hashed with Node's built-in scrypt (N=16384, r=8, p=1, 16-byte salt), compared in constant time.
+  - Session tokens are 256-bit, stored as SHA-256 hashes, expire after 30 days unused, and are revoked on sign-out.
+  - One account owns one character with the same name; names are unique ignoring case.
+  - Sign-in limits:
+    - 5 wrong passwords per name per 5 minutes;
+    - 30 failures per address;
+    - 5 new accounts per address per hour.
+
+    A sign-in for an unknown name still runs a hash, so the timing doesn't reveal which names exist.
+  - Sign-ins, failures, lockouts, sign-outs and refused saves are written to `audit`.
+- **Saving:**
+  - When: every 30 s for characters that changed, after the reconnect grace period, on sign-out and on shutdown.
+  - Every save is `UPDATE … WHERE lease_epoch = ? AND version = ?`. Loading a character raises its lease epoch, so an older server or a taken-over copy can never write. A refused save drops that copy and tells its player (`stale`).
+- **Sessions:**
+  - **One live connection per character:** signing in again takes over the same in-memory world, so nothing is reloaded or duplicated.
+  - **Dropped connections:** the character stays in the world for a 30 s grace period. The client reconnects by itself with its token and continues. After the grace period the character is saved and unloaded, and the lease released.
+- **Protocol version 2:** `hello` carries `auth` (`guest`, `register`, `login` or `token`). There is a `logout` message, `welcome` may carry a new session token, and errors carry codes (`auth`, `taken`, `locked`, `version`, `replaced`, `session`, `stale`).
+- **Tests:** `tests/net-accounts.test.ts` (14 tests):
+  - Hashing, the rate limiter, and repositories (unique names, hashed and expiring sessions, lease and version checks).
+  - Restarting the server keeps the character exactly, by token and by password.
+  - A crash loses only unsaved progress and never duplicates items.
+  - Two servers on one database: the stale one is refused and its player told.
+  - Take-over, the grace period and reconnect, and sign-out revoking the token.
+  - Wrong passwords and lockout, guests refused by default, and no password in the database file or server log.
+
+Planned scope (kept for reference):
 
 Goal: real characters on the server.
 - SQLite repositories. Register and login (scrypt), session tokens, logout.

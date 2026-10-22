@@ -1,0 +1,64 @@
+import Database from 'better-sqlite3';
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+/**
+ * The development server's database (docs/MULTIPLAYER.md 3A.3): one SQLite file (or `:memory:` in
+ * tests). Schema changes are numbered migrations tracked in SQLite's `user_version`.
+ */
+export type Db = Database.Database;
+
+const MIGRATIONS: string[] = [
+  // 1: accounts, sessions, characters, audit log.
+  `
+  CREATE TABLE accounts (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    password TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE sessions (
+    token_hash TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX sessions_account ON sessions(account_id);
+  CREATE TABLE characters (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL UNIQUE REFERENCES accounts(id),
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    player_id INTEGER NOT NULL UNIQUE,
+    record TEXT NOT NULL,
+    zone TEXT NOT NULL DEFAULT '{}',
+    version INTEGER NOT NULL DEFAULT 1,
+    lease_owner TEXT,
+    lease_epoch INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE audit (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    account_id INTEGER,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT ''
+  );
+  `,
+];
+
+export function openDatabase(path: string): Db {
+  if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+  const db = new Database(path);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  db.pragma('busy_timeout = 2000');
+  const current = db.pragma('user_version', { simple: true }) as number;
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    db.transaction(() => {
+      db.exec(MIGRATIONS[v]);
+      db.pragma(`user_version = ${v + 1}`);
+    })();
+  }
+  return db;
+}

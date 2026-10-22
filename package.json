@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Mobile-first stylized isometric fantasy RPG \u2014 Phase 1 vertical slice",
+  "description": "Mobile-first stylized isometric fantasy RPG — Phase 1 vertical slice",
   "scripts": {
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
@@ -13,10 +13,12 @@
     "server": "tsx server/main.ts"
   },
   "dependencies": {
+    "better-sqlite3": "13.0.3",
     "three": "0.169.0",
     "ws": "8.22.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.10.2",
     "@types/three": "0.169.0",
     "@types/ws": "8.5.13",

@@ -1,0 +1,149 @@
+import type { Db } from './db';
+import { hashToken, newToken } from './auth';
+import type { CharacterRecord, ZoneState } from '../src/sim/records';
+
+/**
+ * Repositories over the SQLite database (docs/MULTIPLAYER.md 3.5). Game code talks to these, not
+ * to SQL, so a PostgreSQL implementation can replace them later.
+ */
+
+export interface AccountRow {
+  id: number;
+  username: string;
+  password: string;
+}
+
+export interface CharacterRow {
+  id: number;
+  accountId: number;
+  name: string;
+  playerId: number;
+  record: CharacterRecord;
+  zone: ZoneState;
+  version: number;
+  leaseOwner: string | null;
+  leaseEpoch: number;
+}
+
+/** A save was refused because another server (or a later sign-in) now owns the character, or it changed underneath. */
+export class StaleWriteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'StaleWriteError';
+  }
+}
+
+/** Sessions last this long without being used. */
+export const SESSION_DAYS = 30;
+
+export class Repos {
+  constructor(
+    readonly db: Db,
+    private now: () => number = () => Date.now(),
+  ) {}
+
+  // ---------------------------------------------------------------- accounts
+
+  findAccount(username: string): AccountRow | null {
+    return (this.db.prepare('SELECT id, username, password FROM accounts WHERE username = ?').get(username) as AccountRow | undefined) ?? null;
+  }
+
+  /**
+   * Creates an account and its character in one transaction. Returns null if the name is taken
+   * (as an account or a character name).
+   */
+  createAccount(username: string, passwordHash: string, record: CharacterRecord, zone: ZoneState): { account: AccountRow; character: CharacterRow } | null {
+    return this.db.transaction(() => {
+      if (this.findAccount(username) || this.db.prepare('SELECT 1 FROM characters WHERE name = ?').get(username)) return null;
+      const at = this.now();
+      const info = this.db.prepare('INSERT INTO accounts (username, password, created_at) VALUES (?, ?, ?)').run(username, passwordHash, at);
+      const accountId = Number(info.lastInsertRowid);
+      const max = this.db.prepare('SELECT MAX(player_id) AS m FROM characters').get() as { m: number | null };
+      const playerId = Math.max(1_000_000, (max.m ?? 999_999) + 1);
+      const rec = { ...record, name: username, playerId };
+      this.db
+        .prepare('INSERT INTO characters (account_id, name, player_id, record, zone, version, lease_epoch, updated_at) VALUES (?, ?, ?, ?, ?, 1, 0, ?)')
+        .run(accountId, username, playerId, JSON.stringify(rec), JSON.stringify(zone), at);
+      this.audit(accountId, 'register', username);
+      return { account: this.findAccount(username)!, character: this.characterFor(accountId)! };
+    })();
+  }
+
+  // ---------------------------------------------------------------- sessions
+
+  createSession(accountId: number): string {
+    const token = newToken();
+    const at = this.now();
+    this.db.prepare('INSERT INTO sessions (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)').run(hashToken(token), accountId, at, at + SESSION_DAYS * 86_400_000);
+    return token;
+  }
+
+  /** The account a token belongs to, if the session is live (and extends it). */
+  sessionAccount(token: string): number | null {
+    const row = this.db.prepare('SELECT account_id AS a, expires_at AS e, revoked AS r FROM sessions WHERE token_hash = ?').get(hashToken(token)) as { a: number; e: number; r: number } | undefined;
+    if (!row || row.r || row.e < this.now()) return null;
+    this.db.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?').run(this.now() + SESSION_DAYS * 86_400_000, hashToken(token));
+    return row.a;
+  }
+
+  revokeSession(token: string) {
+    this.db.prepare('UPDATE sessions SET revoked = 1 WHERE token_hash = ?').run(hashToken(token));
+  }
+
+  // ---------------------------------------------------------------- characters
+
+  characterFor(accountId: number): CharacterRow | null {
+    const r = this.db.prepare('SELECT * FROM characters WHERE account_id = ?').get(accountId) as Record<string, unknown> | undefined;
+    if (!r) return null;
+    return {
+      id: r.id as number,
+      accountId: r.account_id as number,
+      name: r.name as string,
+      playerId: r.player_id as number,
+      record: JSON.parse(r.record as string),
+      zone: JSON.parse(r.zone as string),
+      version: r.version as number,
+      leaseOwner: (r.lease_owner as string | null) ?? null,
+      leaseEpoch: r.lease_epoch as number,
+    };
+  }
+
+  /**
+   * Takes the character's lease for `owner` (a server instance), raising the epoch. Any writer
+   * holding an older epoch can no longer save. Returns the new epoch and the current row.
+   */
+  acquireLease(characterId: number, owner: string): CharacterRow {
+    return this.db.transaction(() => {
+      this.db.prepare('UPDATE characters SET lease_owner = ?, lease_epoch = lease_epoch + 1 WHERE id = ?').run(owner, characterId);
+      const row = this.db.prepare('SELECT account_id FROM characters WHERE id = ?').get(characterId) as { account_id: number };
+      return this.characterFor(row.account_id)!;
+    })();
+  }
+
+  /**
+   * Saves a character (and its zone state) if the caller still holds the lease epoch and the row
+   * hasn't changed since `version`. Returns the new version; throws StaleWriteError otherwise.
+   */
+  saveCharacter(characterId: number, epoch: number, version: number, record: CharacterRecord, zone: ZoneState): number {
+    const info = this.db
+      .prepare('UPDATE characters SET record = ?, zone = ?, version = version + 1, updated_at = ? WHERE id = ? AND lease_epoch = ? AND version = ?')
+      .run(JSON.stringify(record), JSON.stringify(zone), this.now(), characterId, epoch, version);
+    if (info.changes !== 1) throw new StaleWriteError(`character ${characterId}: lease ${epoch} / version ${version} is out of date`);
+    return version + 1;
+  }
+
+  /** Gives up the lease (only if still held). */
+  releaseLease(characterId: number, epoch: number) {
+    this.db.prepare('UPDATE characters SET lease_owner = NULL WHERE id = ? AND lease_epoch = ?').run(characterId, epoch);
+  }
+
+  // ---------------------------------------------------------------- audit
+
+  audit(accountId: number | null, kind: string, detail = '') {
+    this.db.prepare('INSERT INTO audit (at, account_id, kind, detail) VALUES (?, ?, ?, ?)').run(this.now(), accountId, kind, detail.slice(0, 500));
+  }
+
+  auditLog(accountId: number): { kind: string; detail: string }[] {
+    return this.db.prepare('SELECT kind, detail FROM audit WHERE account_id = ? ORDER BY id').all(accountId) as { kind: string; detail: string }[];
+  }
+}

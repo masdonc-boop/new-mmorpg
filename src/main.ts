@@ -8,9 +8,13 @@ import { Audio } from './ui/audio';
 import { ART } from './render/art';
 import type { GameEvent } from './sim/world';
 import { NetClient } from './net/client';
+import type { Auth } from './net/protocol';
+import { runSignIn } from './ui/signin';
 
 const SAVE_KEY = 'brightwater.save.v1';
 const SETTINGS_KEY = 'brightwater.settings.v1';
+/** Network play: session tokens by server address (never passwords). */
+const SESSION_KEY = 'brightwater.session.v1';
 
 interface Settings {
   quality: 'high' | 'balanced' | 'low';
@@ -64,20 +68,32 @@ async function boot() {
   const serverUrl = params.get('server');
   let net: NetClient | null = null;
   if (serverUrl) {
-    let name = save?.name ?? (params.has('autostart') ? 'Tester' : '');
-    let appearance = save?.appearance;
-    if (!name) {
-      const created = await runCharacterCreator(app);
-      name = created.name;
-      appearance = created.appearance;
+    // Sign in with a saved session token, or ask for a name and password (or a new account).
+    const tokens = loadJson<Record<string, string>>(SESSION_KEY) ?? {};
+    let auth: Auth | null = params.has('autostart') ? { kind: 'guest', name: 'Tester' } : tokens[serverUrl] ? { kind: 'token', token: tokens[serverUrl] } : null;
+    let message: string | undefined;
+    let lastName: string | undefined;
+    for (;;) {
+      if (!auth) {
+        loading.style.display = 'none';
+        auth = await runSignIn(app, { server: serverUrl, message, name: lastName });
+        lastName = auth.username;
+      }
+      net = new NetClient({ url: serverUrl, auth, autoReconnect: true });
+      loading.style.display = '';
+      try {
+        world = await net.connect();
+        break;
+      } catch (err) {
+        if (net.errorCode === 'version') throw new Error(net.closeReason);
+        if (!net.errorCode && auth.kind !== 'token') throw new Error(`Could not join the server at ${serverUrl}: ${(err as Error).message}`);
+        if (auth.kind === 'token') delete tokens[serverUrl];
+        message = auth.kind === 'token' ? undefined : net.closeReason;
+        auth = null;
+      }
     }
-    net = new NetClient({ url: serverUrl, name: name.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 12) || 'Guest', appearance });
-    loading.style.display = '';
-    try {
-      world = await net.connect();
-    } catch (err) {
-      throw new Error(`Could not join the server at ${serverUrl}: ${(err as Error).message}`);
-    }
+    if (net.session) tokens[serverUrl] = net.session;
+    saveJson(SESSION_KEY, tokens);
   } else if (!save) {
     if (params.has('autostart')) {
       world = new GameWorld({ name: 'Tester' });
@@ -183,6 +199,17 @@ async function boot() {
       location.reload();
     },
     cameraYaw: () => renderer.camYaw,
+    ...(net
+      ? {
+          signOut: () => {
+            net!.logout();
+            const tokens = loadJson<Record<string, string>>(SESSION_KEY) ?? {};
+            delete tokens[serverUrl!];
+            saveJson(SESSION_KEY, tokens);
+            setTimeout(() => location.reload(), 300);
+          },
+        }
+      : {}),
   });
 
   const applyZoom = (f: number) => {
@@ -268,6 +295,7 @@ async function boot() {
       // The server runs the game; the client predicts, interpolates and applies what it's sent.
       alpha = net.update(dt);
       acc = 0;
+      if (net.status === 'ready') disconnectShown = false;
       if (net.status === 'closed' && !disconnectShown) {
         disconnectShown = true;
         hud.handleEvent({ type: 'message', text: `${net.closeReason} Reload to reconnect.`, tone: 'bad' });

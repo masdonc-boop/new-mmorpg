@@ -10,7 +10,7 @@ let url = '';
 const silent = () => {};
 
 beforeAll(async () => {
-  server = await startServer({ port: 0, log: silent });
+  server = await startServer({ port: 0, log: silent, dbPath: ':memory:', allowGuests: true });
   url = `ws://127.0.0.1:${server.port}`;
 });
 afterAll(async () => {
@@ -30,9 +30,9 @@ async function pump(c: NetClient, ms: number) {
   }
 }
 async function join(name: string, latencyMs = 0) {
-  const c = new NetClient({ url, name, latencyMs });
+  const c = new NetClient({ url, auth: { kind: 'guest', name }, latencyMs });
   const world = await c.connect();
-  return { c, world, s: server.sessions.get(name.toLowerCase())! };
+  return { c, world, s: server.sessions.get(`guest:${name.toLowerCase()}`)! };
 }
 /** Test harness only: stand the server-side player next to something. */
 function standBeside(s: Session, x: number, z: number) {
@@ -63,7 +63,8 @@ describe('3A.2 protocol', () => {
     for (const bad of [
       'not json', '{}', '[]', 'null', JSON.stringify({ t: 'state' }), JSON.stringify({ t: 'cmd', cmd: { type: 'pray', x: 1 } }),
       JSON.stringify({ t: 'input', seq: 0, dx: 0, dz: 0 }), JSON.stringify({ t: 'input', seq: 1, dx: 9, dz: 0 }),
-      JSON.stringify({ t: 'hello', v: 1, content: 'x', name: '<script>' }), JSON.stringify({ t: 'hello', v: 1, content: 'x', name: 'Ok', appearance: { bodyType: 3 } }),
+      JSON.stringify({ t: 'hello', v: 2, content: 'x', auth: { kind: 'guest', name: 'x'.repeat(40) } }), JSON.stringify({ t: 'hello', v: 2, content: 'x', auth: { kind: 'guest', name: 'Ok', appearance: { bodyType: 3 } } }),
+      JSON.stringify({ t: 'hello', v: 2, content: 'x', auth: { kind: 'login', username: 'Ok', password: 'x', admin: true } }), JSON.stringify({ t: 'hello', v: 2, content: 'x', auth: { kind: 'token', token: 'short' } }),
       'x'.repeat(9000),
     ]) expect(parseClientMessage(bad), bad.slice(0, 40)).toBeNull();
   });
@@ -123,7 +124,7 @@ describe('3A.2 authoritative solo play over the network', () => {
     c.close();
     const { ws, got, closed } = await raw();
     const content = contentVersion(s.world.map);
-    ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, content, name: 'Moss' }));
+    ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, content, auth: { kind: 'guest', name: 'Moss' } }));
     await sleep(200);
     for (const m of [
       'garbage',
@@ -145,7 +146,7 @@ describe('3A.2 authoritative solo play over the network', () => {
 
   it('turns away a client built from different game content', async () => {
     const { ws, got, closed } = await raw();
-    ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, content: '1-older-build', name: 'Old' }));
+    ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, content: '1-older-build', auth: { kind: 'guest', name: 'Old' } }));
     await closed;
     expect(got.join()).toContain("doesn't match the server");
   });

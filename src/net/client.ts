@@ -1,7 +1,7 @@
-import { GameWorld, TICK_SECONDS, type Appearance, type Command, type GameEvent, type PlayerId } from '../sim/world';
+import { GameWorld, TICK_SECONDS, type Command, type GameEvent, type PlayerId } from '../sim/world';
 import { mergeSave } from '../sim/records';
 import { applyCharacter, applyState, type WorldState } from './replica';
-import { PROTOCOL_VERSION, contentVersion, type ClientMessage, type ServerMessage } from './protocol';
+import { PROTOCOL_VERSION, contentVersion, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
 import { generateWorld } from '../sim/worldmap';
 
 /**
@@ -24,22 +24,31 @@ type Sample = { t: number; x: number; z: number };
 
 export interface NetClientOptions {
   url: string;
-  name: string;
-  appearance?: Appearance;
+  auth: Auth;
+  /** Try to reconnect (with the session token) when the connection drops. */
+  autoReconnect?: boolean;
   /** Testing: added one-way delay in ms for both directions (simulated latency). */
   latencyMs?: number;
   now?: () => number;
 }
 
+/** Reconnect attempts after a dropped connection, and the wait before each (ms). */
+const RECONNECT_DELAYS = [500, 1000, 2000, 4000, 8000];
+
 export class NetClient {
   world: GameWorld | null = null;
   playerId: PlayerId | null = null;
-  status: 'connecting' | 'ready' | 'closed' = 'connecting';
-  /** Why the connection ended (shown to the player). */
+  status: 'connecting' | 'ready' | 'reconnecting' | 'closed' = 'connecting';
+  /** Why the connection ended (shown to the player), and the server's reason code if it gave one. */
   closeReason = '';
+  errorCode: ErrorCode | null = null;
+  /** The session token from a password sign-in (store it to sign in again without the password). */
+  session: string | null = null;
   /** Largest single correction applied to the predicted position so far (tiles). */
   maxCorrection = 0;
   private ws: WebSocket | null = null;
+  private fatal = false;
+  private attempts = 0;
   private events: GameEvent[] = [];
   private seq = 0;
   private pending: { seq: number; dx: number; dz: number }[] = [];
@@ -54,19 +63,24 @@ export class NetClient {
 
   constructor(private opts: NetClientOptions) {
     this.now = opts.now ?? (() => performance.now());
+    if (opts.auth.kind === 'token') this.session = opts.auth.token;
   }
 
   /** Connects and resolves with the replica world once the server welcomes us. */
   connect(): Promise<GameWorld> {
+    return this.open(this.opts.auth);
+  }
+
+  private open(auth: Auth): Promise<GameWorld> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(this.opts.url);
       this.ws = ws;
       ws.onopen = () => {
-        const content = contentVersion(this.map);
-        this.post({ t: 'hello', v: PROTOCOL_VERSION, content, name: this.opts.name, ...(this.opts.appearance ? { appearance: this.opts.appearance } : {}) });
+        this.post({ t: 'hello', v: PROTOCOL_VERSION, content: contentVersion(this.map), auth });
       };
       ws.onmessage = (ev) => {
         const run = () => {
+          if (this.ws !== ws) return;
           const msg = JSON.parse(String(ev.data)) as ServerMessage;
           if (msg.t === 'welcome') resolve(this.welcome(msg));
           else this.receive(msg);
@@ -75,9 +89,18 @@ export class NetClient {
         else run();
       };
       ws.onclose = (ev) => {
-        this.status = 'closed';
+        if (this.ws !== ws) return;
+        const wasReady = this.status === 'ready';
         this.closeReason ||= ev.reason || 'Disconnected from the server.';
-        if (!this.world) reject(new Error(this.closeReason));
+        // A dropped connection (not a refusal) comes back by itself using the session.
+        if (wasReady && !this.fatal && this.opts.autoReconnect && this.attempts < RECONNECT_DELAYS.length) {
+          this.status = 'reconnecting';
+          this.events.push({ type: 'message', text: 'Connection lost. Reconnecting…', tone: 'warn' });
+          setTimeout(() => this.reconnect(), RECONNECT_DELAYS[this.attempts++]);
+          return;
+        }
+        this.status = 'closed';
+        if (!this.world || !wasReady) reject(new Error(this.closeReason));
       };
       ws.onerror = () => {
         this.closeReason ||= 'Could not reach the server.';
@@ -85,7 +108,27 @@ export class NetClient {
     });
   }
 
+  private reconnect() {
+    const auth: Auth | null = this.session ? { kind: 'token', token: this.session } : this.opts.auth.kind === 'guest' ? this.opts.auth : null;
+    if (!auth) {
+      this.status = 'closed';
+      return;
+    }
+    this.closeReason = '';
+    this.open(auth).catch(() => {
+      /* onclose schedules the next attempt or gives up */
+    });
+  }
+
+  /** Signs out: the server saves the character and ends this session token. */
+  logout() {
+    this.fatal = true;
+    this.post({ t: 'logout' });
+    this.session = null;
+  }
+
   close() {
+    this.fatal = true;
     this.ws?.close();
   }
 
@@ -98,7 +141,17 @@ export class NetClient {
   }
 
   private welcome(msg: Extract<ServerMessage, { t: 'welcome' }>): GameWorld {
+    if (msg.session) this.session = msg.session;
+    if (this.world && msg.playerId !== this.playerId) {
+      // A different character answered (the server was reset): start over.
+      this.fatal = true;
+      this.closeReason = 'The server has a different character for you now. Reload to continue.';
+      this.ws?.close();
+      return this.world;
+    }
+    const reconnected = this.world !== null;
     this.playerId = msg.playerId;
+    this.attempts = 0;
     if (!this.world) {
       // The replica: built from the server's character, on the locally generated map.
       this.world = new GameWorld({ save: mergeSave({ character: msg.character }), playerId: msg.playerId, map: this.map });
@@ -106,14 +159,18 @@ export class NetClient {
     } else applyCharacter(this.world, msg.character);
     this.applySnapshot(msg.state, true);
     this.status = 'ready';
-    this.events.push({ type: 'message', text: `Connected to the development server as ${this.world.player.name}.`, tone: 'good' });
+    this.events.push({ type: 'message', text: reconnected ? 'Reconnected.' : `Connected to the development server as ${this.world.player.name}.`, tone: 'good' });
     return this.world;
   }
 
   private receive(msg: ServerMessage) {
     if (msg.t === 'error') {
       this.events.push({ type: 'message', text: msg.error, tone: msg.fatal ? 'bad' : 'warn' });
-      if (msg.fatal) this.closeReason = msg.error;
+      if (msg.fatal) {
+        this.fatal = true;
+        this.closeReason = msg.error;
+        this.errorCode = msg.code ?? null;
+      }
       return;
     }
     if (msg.t !== 'state' || !this.world) return;

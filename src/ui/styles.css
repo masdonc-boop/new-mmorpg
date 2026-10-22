@@ -2439,3 +2439,35 @@ button.danger {
   min-height: 44px;
   font-size: 15px;
 }
+
+/* ------------------------------------------------------------ sign-in (network play) */
+.signin .si-spacer {
+  min-height: 40px;
+}
+.si-panel {
+  max-height: none;
+}
+.si-server {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  margin-bottom: 10px;
+  word-break: break-all;
+}
+.si-panel .cr-name {
+  justify-content: space-between;
+}
+.si-panel .cr-name input {
+  max-width: 70%;
+}
+.si-msg {
+  min-height: 18px;
+  color: #ffb3a8;
+  font-size: 13px;
+  font-weight: 800;
+}
+.si-note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}

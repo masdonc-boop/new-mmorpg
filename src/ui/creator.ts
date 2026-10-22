@@ -11,8 +11,11 @@ const TROUSERS = ['#4a3a2a', '#2c3a4f', '#5a4632', '#3d3d3d', '#6b4a7a', '#7a5a3
 const HAIR_STYLES = ['Short', 'Tousled', 'Long', 'Bun', 'Bald'];
 const NAMES = ['Rowan', 'Elara', 'Bram', 'Wren', 'Torin', 'Lyra', 'Cass', 'Fen', 'Mira', 'Aldric'];
 
-/** First-run character creation with a live 3D preview. Resolves with the chosen name and appearance. */
-export function runCharacterCreator(parent: HTMLElement): Promise<{ name: string; appearance: Appearance }> {
+/**
+ * First-run character creation with a live 3D preview. Resolves with the chosen name and appearance.
+ * `fixedName`: the name is already chosen (a new account), so only the looks are picked.
+ */
+export function runCharacterCreator(parent: HTMLElement, fixedName?: string): Promise<{ name: string; appearance: Appearance }> {
   return new Promise((resolve) => {
     const look: Appearance = { ...DEFAULT_APPEARANCE };
     const root = document.createElement('div');
@@ -32,7 +35,8 @@ export function runCharacterCreator(parent: HTMLElement): Promise<{ name: string
       </div>`;
     parent.appendChild(root);
     const input = root.querySelector('input')!;
-    input.value = NAMES[Math.floor(Math.random() * NAMES.length)];
+    input.value = fixedName ?? NAMES[Math.floor(Math.random() * NAMES.length)];
+    if (fixedName) (root.querySelector('.cr-name') as HTMLElement).style.display = 'none';
 
     const canvas = root.querySelector('canvas')!;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -100,7 +104,7 @@ export function runCharacterCreator(parent: HTMLElement): Promise<{ name: string
       look.hairStyle = Math.floor(Math.random() * HAIR_STYLES.length);
       look.tunic = r(TUNICS);
       look.trousers = r(TROUSERS);
-      input.value = r(NAMES);
+      if (!fixedName) input.value = r(NAMES);
       rebuild();
       renderOpts();
     });
@@ -141,7 +145,7 @@ export function runCharacterCreator(parent: HTMLElement): Promise<{ name: string
     loop();
 
     root.querySelector('.cr-go')!.addEventListener('click', () => {
-      const name = input.value.trim().replace(/[^\p{L}\p{N} '-]/gu, '').slice(0, 14) || 'Adventurer';
+      const name = fixedName ?? (input.value.trim().replace(/[^\p{L}\p{N} '-]/gu, '').slice(0, 14) || 'Adventurer');
       running = false;
       model?.dispose();
       renderer.dispose();

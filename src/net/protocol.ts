@@ -9,27 +9,44 @@ import { validateCommand } from './validate';
  * The network protocol between the browser and the development server (docs/MULTIPLAYER.md 3A.2).
  * JSON messages over a WebSocket. Clients send intents only; the server sends state and events.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 /** Largest message a client may send (bytes); anything bigger is rejected unread. */
 export const MAX_CLIENT_MESSAGE = 8 * 1024;
 /** Server snapshots per second. */
 export const SNAPSHOT_HZ = 10;
 
+/**
+ * How a client signs in (docs/MULTIPLAYER.md 3.4). `guest` only works on a server started with
+ * guests allowed (development and tests). A new account creates its character with the same name.
+ */
+export type Auth =
+  | { kind: 'guest'; name: string; appearance?: Appearance }
+  | { kind: 'register'; username: string; password: string; appearance?: Appearance }
+  | { kind: 'login'; username: string; password: string }
+  | { kind: 'token'; token: string };
+
 export type ClientMessage =
-  /** First message: protocol and content versions, and the guest character's name and looks. */
-  | { t: 'hello'; v: number; content: string; name: string; appearance?: Appearance }
+  /** First message: protocol and content versions, and how to sign in. */
+  | { t: 'hello'; v: number; content: string; auth: Auth }
+  /** Sign out: the server saves the character and ends the session token. */
+  | { t: 'logout' }
   | { t: 'cmd'; cmd: Command }
   /** One tick of joystick movement, numbered so the server can acknowledge it. */
   | { t: 'input'; seq: number; dx: number; dz: number }
   | { t: 'ping'; at: number };
 
 export type ServerMessage =
-  | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState }
+  /** `session`: a token to sign in again without the password (only after a password sign-in). */
+  | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string }
   | { t: 'state'; state: WorldState; events: GameEvent[]; character?: CharacterRecord }
-  | { t: 'error'; error: string; fatal?: boolean }
+  | { t: 'error'; error: string; fatal?: boolean; code?: ErrorCode }
   | { t: 'pong'; at: number };
 
-const NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,11}$/;
+/** Machine-readable reasons, so the client knows whether to ask for a password or try again. */
+export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale';
+
+/** Guest names (development). Account names are checked by the server so it can say what's wrong. */
+export const GUEST_NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,11}$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -50,6 +67,23 @@ export function validAppearance(a: unknown): a is Appearance {
   );
 }
 
+function validAuth(a: unknown): a is Auth {
+  if (!isPlainObject(a)) return false;
+  const str = (v: unknown, max: number) => typeof v === 'string' && v.length >= 1 && v.length <= max;
+  switch (a.kind) {
+    case 'guest':
+      return onlyKeys(a, ['kind', 'name', 'appearance']) && str(a.name, 32) && (a.appearance === undefined || validAppearance(a.appearance));
+    case 'register':
+      return onlyKeys(a, ['kind', 'username', 'password', 'appearance']) && str(a.username, 32) && str(a.password, 128) && (a.appearance === undefined || validAppearance(a.appearance));
+    case 'login':
+      return onlyKeys(a, ['kind', 'username', 'password']) && str(a.username, 32) && str(a.password, 128);
+    case 'token':
+      return onlyKeys(a, ['kind', 'token']) && typeof a.token === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(a.token);
+    default:
+      return false;
+  }
+}
+
 /** Parses and strictly validates a client message. Returns null for anything malformed. Never throws. */
 export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (typeof raw !== 'string' || raw.length > MAX_CLIENT_MESSAGE) return null;
@@ -62,11 +96,12 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (!isPlainObject(m)) return null;
   switch (m.t) {
     case 'hello':
-      if (!onlyKeys(m, ['t', 'v', 'content', 'name', 'appearance'])) return null;
+      if (!onlyKeys(m, ['t', 'v', 'content', 'auth'])) return null;
       if (!Number.isInteger(m.v) || typeof m.content !== 'string' || m.content.length > 64) return null;
-      if (typeof m.name !== 'string' || !NAME.test(m.name)) return null;
-      if (m.appearance !== undefined && !validAppearance(m.appearance)) return null;
+      if (!validAuth(m.auth)) return null;
       return m as ClientMessage;
+    case 'logout':
+      return onlyKeys(m, ['t']) ? { t: 'logout' } : null;
     case 'cmd': {
       if (!onlyKeys(m, ['t', 'cmd'])) return null;
       const cmd = validateCommand(m.cmd);
