@@ -111,7 +111,8 @@ The owner approved the replacement direction on 2026-10-22, with two conditions:
 | 1 | H3 (breastplate, greaves), H5 (warlord's bones), the item-id alias map applied to saves on load, and the originality guard test | Done |
 | 2 | H2 spark stones: air runes became spark stones (same id). New loop: mine spark quartz (Mining 5), chip it with a chisel (Crafting 1, 8 chips), charge the chips at the shrine or a waystone (Magic xp) | Done |
 | 3 | H1 vows: the Prayer skill is shown as **Devotion**; 16 original vows of five shrine spirits (Hearth, Ember, Lantern, Wind, Tide) with their own levels and per-minute drain; Mending Song, Keepsake, and Hearth's Bulwark (halves creature hits, never fully blocks). Bones give 5 Devotion xp, warlord's bones 18. Saves are unaffected (only points are saved; internal skill id unchanged) | Done |
-| 4 | H6 original metals | Planned |
+| 4a | H6, part 1: **Glimmerite and glimsteel.** Glimmerite veins in the deep Ironcrag Hills (Mining 40). Smelt a hot bloom (glimmerite + 2 coal, Smithing 40), then quench it in running water to make glimsteel bars. Glimsteel gear (Smithing 42–58, requires level 30) is light armour that adds a little accuracy; glimsteel tools are tier 4 (level 21) | Done |
+| 4b | H6, part 2: **Duskiron** (Goblin Encampment slag) and **Emberglass** (magic foci) | Planned |
 | 5 | H7 and H10 (fish, crops) with M6 | Planned |
 | 6 | H4, H8, H9 (leather set, furniture, thieving) | Planned |
 

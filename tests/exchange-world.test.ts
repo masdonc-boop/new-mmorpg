@@ -94,7 +94,8 @@ describe('Practice market in the game', () => {
   it('simulated traders keep trading as time passes, and the books always balance', () => {
     const w = new GameWorld();
     const before = x(w).history({}, 999).length;
-    run(w, 60);
+    // Traders act every 4 seconds of play; give them a few minutes.
+    run(w, 240);
     expect(x(w).history({}, 999).length).toBeGreaterThan(before);
     expect(x(w).verify()).toEqual([]);
   });

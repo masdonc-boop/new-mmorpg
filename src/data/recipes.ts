@@ -61,6 +61,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   bronze_bar: r({ id: 'bronze_bar', station: 'furnace', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'copper_ore', qty: 1 }, { item: 'tin_ore', qty: 1 }], output: { item: 'bronze_bar', qty: 1 }, seconds: 1.8 }),
   iron_bar: r({ id: 'iron_bar', station: 'furnace', skill: 'smithing', level: 15, xp: 25, inputs: [{ item: 'iron_ore', qty: 1 }], output: { item: 'iron_bar', qty: 1 }, seconds: 1.8 }),
   steel_bar: r({ id: 'steel_bar', station: 'furnace', skill: 'smithing', level: 30, xp: 35, inputs: [{ item: 'iron_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }], output: { item: 'steel_bar', qty: 1 }, seconds: 1.8 }),
+  // Glimsteel: smelt a hot bloom, then quench it in running water (see GameWorld.quench).
+  glimsteel_bloom: r({ id: 'glimsteel_bloom', station: 'furnace', skill: 'smithing', level: 40, xp: 30, inputs: [{ item: 'glimmerite_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }], output: { item: 'glimsteel_bloom', qty: 1 }, seconds: 1.8 }),
   // ---- Smithing: anvil
   bronze_dagger: r({ id: 'bronze_dagger', station: 'anvil', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_dagger', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   bronze_helm: r({ id: 'bronze_helm', station: 'anvil', skill: 'smithing', level: 3, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
@@ -88,6 +90,14 @@ export const RECIPES: Record<string, RecipeDef> = {
   steel_shield: r({ id: 'steel_shield', station: 'anvil', skill: 'smithing', level: 38, xp: 75, inputs: [{ item: 'steel_bar', qty: 2 }], output: { item: 'steel_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   steel_platelegs: r({ id: 'steel_platelegs', station: 'anvil', skill: 'smithing', level: 46, xp: 75, inputs: [{ item: 'steel_bar', qty: 2 }], output: { item: 'steel_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   steel_platebody: r({ id: 'steel_platebody', station: 'anvil', skill: 'smithing', level: 48, xp: 112, inputs: [{ item: 'steel_bar', qty: 3 }], output: { item: 'steel_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_dagger: r({ id: 'glimsteel_dagger', station: 'anvil', skill: 'smithing', level: 42, xp: 50, inputs: [{ item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_dagger', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_axe: r({ id: 'glimsteel_axe', station: 'anvil', skill: 'smithing', level: 43, xp: 50, inputs: [{ item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_axe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_helm: r({ id: 'glimsteel_helm', station: 'anvil', skill: 'smithing', level: 45, xp: 50, inputs: [{ item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_sword: r({ id: 'glimsteel_sword', station: 'anvil', skill: 'smithing', level: 46, xp: 50, inputs: [{ item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_sword', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_pickaxe: r({ id: 'glimsteel_pickaxe', station: 'anvil', skill: 'smithing', level: 47, xp: 100, inputs: [{ item: 'glimsteel_bar', qty: 2 }], output: { item: 'glimsteel_pickaxe', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_shield: r({ id: 'glimsteel_shield', station: 'anvil', skill: 'smithing', level: 50, xp: 100, inputs: [{ item: 'glimsteel_bar', qty: 2 }], output: { item: 'glimsteel_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_platelegs: r({ id: 'glimsteel_platelegs', station: 'anvil', skill: 'smithing', level: 54, xp: 100, inputs: [{ item: 'glimsteel_bar', qty: 2 }], output: { item: 'glimsteel_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_platebody: r({ id: 'glimsteel_platebody', station: 'anvil', skill: 'smithing', level: 58, xp: 150, inputs: [{ item: 'glimsteel_bar', qty: 3 }], output: { item: 'glimsteel_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   // ---- Fletching (knife on logs, anywhere)
   arrow_shafts: r({ id: 'arrow_shafts', station: 'fletching', skill: 'fletching', level: 1, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'arrow_shafts', qty: 15 }, seconds: 1.5, tool: 'knife' }),
   bronze_arrow: r({ id: 'bronze_arrow', station: 'fletching', skill: 'fletching', level: 3, xp: 20, inputs: [{ item: 'arrow_shafts', qty: 15 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_arrow', qty: 15 }, seconds: 1.5 }),

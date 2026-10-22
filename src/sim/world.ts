@@ -26,7 +26,7 @@ import { toolLabel, type ToolCategory } from '../data/tools';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
-import { generateWorld, isBlocked, regionAt, type Checkpoint, type WorldMap } from './worldmap';
+import { T, generateWorld, isBlocked, regionAt, tileAt, type Checkpoint, type WorldMap } from './worldmap';
 
 export const TICK_SECONDS = 1 / 30;
 export const PLAYER_SPEED = 4.4;
@@ -135,6 +135,8 @@ export type Command =
   | { type: 'pray' }
   /** Charge dull spark chips into spark stones at the shrine or a waystone. */
   | { type: 'chargeSparks' }
+  /** Quench hot glimsteel blooms into bars in running water (stand at the river's edge). */
+  | { type: 'quench' }
   /** Gameplay options that are part of the character (saved with it). */
   | { type: 'setOption'; option: 'autoGather'; on: boolean }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
@@ -205,6 +207,8 @@ export type GameEvent =
   | { type: 'prayer' }
   /** The player buried bones. */
   | { type: 'bury' }
+  /** Hot metal was quenched (steam). */
+  | { type: 'quench'; x: number; z: number }
   /** A player lit a fire (a new Fire station). */
   | { type: 'fireLit'; id: number }
   /** Toolbelt contents changed. */
@@ -1155,6 +1159,9 @@ export class GameWorld {
         break;
       case 'chargeSparks':
         this.chargeSparks();
+        break;
+      case 'quench':
+        this.quench();
         break;
       case 'setOption':
         if (cmd.option === 'autoGather') p.autoGather = cmd.on === true;
@@ -2781,6 +2788,39 @@ export class GameWorld {
     this.grantXp('magic', n * 0.5);
     this.emit({ type: 'loot', item: 'air_rune', qty: n });
     this.message(`The ${altar.name}'s light fills the chips: ${n} spark stone${n === 1 ? '' : 's'}.`, 'good');
+  }
+
+  /** Whether there is open water within reach (a river or lake edge). */
+  nearWater(): boolean {
+    const p = this.player;
+    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) {
+      if (Math.hypot(dx, dz) > 2.2) continue;
+      if (tileAt(this.map, p.x + dx, p.z + dz) === T.Water) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Glimsteel only sets when its hot bloom is plunged into running water: stand at a river or lake
+   * edge and every bloom you carry becomes a glimsteel bar (Smithing xp for each).
+   */
+  private quench() {
+    const p = this.player;
+    const n = p.inventory.count('glimsteel_bloom');
+    if (n <= 0) {
+      this.message('You have no hot glimsteel blooms to quench.', 'warn');
+      return;
+    }
+    if (!this.nearWater()) {
+      this.message('Glimsteel must be quenched in running water. Stand at the river’s edge.', 'warn');
+      return;
+    }
+    // One bloom becomes one bar in the same slot: it always fits.
+    for (let i = 0; i < p.inventory.slots.length; i++) if (p.inventory.slots[i]?.item === 'glimsteel_bloom') p.inventory.slots[i] = { item: 'glimsteel_bar', qty: 1 };
+    this.grantXp('smithing', n * 25);
+    this.emit({ type: 'quench', x: p.x, z: p.z });
+    this.emit({ type: 'loot', item: 'glimsteel_bar', qty: n });
+    this.message(`The river hisses and steams: ${n} glimsteel bar${n === 1 ? '' : 's'}.`, 'good');
   }
 
   private pray() {

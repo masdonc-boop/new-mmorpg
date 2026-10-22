@@ -854,6 +854,12 @@ export class GameRenderer {
         else this.particles.emit({ x: at.x, y: y + 1.0, z: at.z, count: 10, color: ['#c9a06a', '#8a6238', '#e6c48f'], speed: 1.2, up: 1.2, life: 0.6, size: 0.05 });
         break;
       }
+      case 'quench': {
+        // A burst of steam where the hot metal meets the water.
+        const y = groundHeight(w.map, e.x, e.z) + 0.6;
+        this.particles.emit({ x: e.x, y, z: e.z, count: 26, color: ['#ffffff', '#e8eef2', '#cfd8de'], speed: 0.9, up: 1.8, gravity: -0.6, life: 1.6, size: 0.16, spread: 0.6 });
+        break;
+      }
       case 'stunned': {
         // Little stars circling the head.
         const y = groundHeight(w.map, p.x, p.z) + 2.1;

@@ -6,7 +6,7 @@ import { isBlocked } from '../src/sim/worldmap';
 import { xpForLevel } from '../src/data/skills';
 
 /** RuneScape-specific names that must not appear in item names (grows with each originality batch). */
-const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i];
+const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i];
 
 describe('Originality guard', () => {
   it('no item uses a banned RuneScape-specific name', () => {
@@ -107,5 +107,72 @@ describe('Batch 2: spark stones', () => {
     expect(p.inventory.count('dull_spark')).toBe(0);
     expect(p.inventory.count('air_rune')).toBe(stones + quartz * 8);
     expect(p.skills.xp.magic).toBe(magic + quartz * 4);
+  });
+});
+
+describe('Batch 4a: glimmerite and glimsteel', () => {
+  const run = (w: GameWorld, seconds: number) => {
+    for (let t = 0; t < seconds * 30; t++) w.tick();
+  };
+  const stand = (w: GameWorld, x: number, z: number) => {
+    w.player.x = w.player.prevX = x;
+    w.player.z = w.player.prevZ = z;
+  };
+  const slotOf = (w: GameWorld, item: string) => w.player.inventory.slots.findIndex((s) => s?.item === item);
+
+  it('glimmerite veins lie in the deep Ironcrag Hills and need Mining 40', () => {
+    const w = new GameWorld();
+    const veins = w.nodes.filter((n) => n.def.id === 'glimmerite_rock');
+    expect(veins.length).toBeGreaterThanOrEqual(3);
+    expect(veins[0].def.levelReq).toBe(40);
+    for (const v of veins) expect(Math.hypot(v.x - 101, v.z - 62)).toBeLessThan(5);
+  });
+
+  it('smelt a hot bloom (Smithing 40), quench it in the river, forge glimsteel gear', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('smithing', xpForLevel(58));
+    p.inventory.add('glimmerite_ore', 3);
+    p.inventory.add('coal_ore', 6);
+    const furnace = w.stations.find((s) => s.kind === 'furnace')!;
+    stand(w, furnace.x - 1, furnace.z);
+    w.issue({ type: 'interact', target: furnace.id });
+    run(w, 0.3);
+    w.issue({ type: 'craft', recipe: 'glimsteel_bloom', count: 3 });
+    run(w, 7);
+    expect(p.inventory.count('glimsteel_bloom')).toBe(3);
+    // Not near water: refused.
+    w.drainEvents();
+    w.issue({ type: 'quench' });
+    expect(p.inventory.count('glimsteel_bloom')).toBe(3);
+    // At the riverbank by a fishing spot it sets.
+    const spot = w.nodes.find((n) => n.def.id === 'net_spot')!;
+    stand(w, spot.x + 1.2, spot.z);
+    expect(w.nearWater()).toBe(true);
+    const before = p.skills.xp.smithing;
+    w.issue({ type: 'quench' });
+    expect(p.inventory.count('glimsteel_bloom')).toBe(0);
+    expect(p.inventory.count('glimsteel_bar')).toBe(3);
+    expect(p.skills.xp.smithing).toBe(before + 75);
+    const anvil = w.stations.find((s) => s.kind === 'anvil')!;
+    stand(w, anvil.x - 1, anvil.z);
+    w.issue({ type: 'interact', target: anvil.id });
+    run(w, 0.3);
+    w.issue({ type: 'craft', recipe: 'glimsteel_platebody', count: 1 });
+    run(w, 3);
+    expect(p.inventory.count('glimsteel_platebody')).toBe(1);
+  });
+
+  it('glimsteel is above steel, with its own trait: light armour that sharpens your aim', () => {
+    expect(ITEMS.glimsteel_sword.equip!.power!).toBeGreaterThan(ITEMS.steel_sword.equip!.power!);
+    expect(ITEMS.glimsteel_platebody.equip!.armour!).toBeGreaterThan(ITEMS.steel_platebody.equip!.armour!);
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('defence', xpForLevel(30));
+    p.inventory.add('glimsteel_platebody');
+    const acc = w.playerBonuses().accuracy;
+    w.issue({ type: 'equip', slot: slotOf(w, 'glimsteel_platebody') });
+    expect(w.playerBonuses().accuracy).toBe(acc + 2);
+    expect(ITEMS.glimsteel_pickaxe.tool).toMatchObject({ tier: 4, req: { skill: 'mining', level: 21 } });
   });
 });
