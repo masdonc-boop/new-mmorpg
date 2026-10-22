@@ -302,6 +302,14 @@ button {
   text-align: center;
   line-height: 1.15;
 }
+.pr-spirit {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e8e2a8;
+  opacity: 0.7;
+}
 .pr-text {
   font-size: 10px;
   color: var(--muted);

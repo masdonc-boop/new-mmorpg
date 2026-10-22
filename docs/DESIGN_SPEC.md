@@ -36,7 +36,7 @@
 | Smithing | Furnace (bronze, iron, steel), anvil (weapons, armour, axes, pickaxes) with hammer | Same pattern | Mithril and above; more items (arrowtips, nails, bolts) |
 | Fletching | Knife on logs: shafts, unstrung bows; bowstring stringing; arrows | Same pattern | Feathers and headless arrows, longbows, more log tiers |
 | Firemaking | Tinderbox on logs (normal 1, oak 15), lights where you stand and steps you aside; fires cook and leave ashes | Same | Willow and above; fires are not saved (they burn out) |
-| Prayer | Bury bones (4.5) and big bones (15); 16 prayers to Protect from Melee (37); OSRS drain; recharge at the shrine or a waystone | Same, many more prayers, altars | Prayers above 37; prayer bonus on gear |
+| Devotion (prayer-style skill) | Bury bones (5) and warlord's bones (18); 16 original vows of the five shrine spirits, to Hearth's Bulwark (40); per-minute devotion drain; restore at the shrine or a waystone | A prayer skill with altars | Vows above 40; devotion bonus on gear |
 | Thieving | Pickpocket townsfolk (1), farmer (10), guard (40); bakery (5) and seed (27) stalls; stun on failure | Same pattern | Stall owners and guards don't catch you yet; no auto-repeat |
 | Agility | Village course (5 obstacles, lap bonus); slips on the beam at low level | Many courses, shortcuts, run energy | One course; no shortcuts; no run energy to restore |
 | Farming | 4 allotments: rake, plant 3 seeds, real-time growth (~40 min), harvest with lives; potatoes, onions, cabbages | Same, plus herbs, trees, disease, compost, watering | Disease, compost, watering, other patch types |
@@ -111,7 +111,7 @@ Owner notes on P1 choices:
 - Wolf pelts no longer stack (like OSRS hides); older saves split their stacks into slots.
 
 **P2: new OSRS skills (done)**
-9. **Prayer:** bury bones; 16 prayers. Boosts raise effective levels in the custom hit formula (the closest match to OSRS's level boosts); Protect from Melee blocks creatures' melee hits fully (every creature is melee); Protect Item keeps a 4th item.
+9. **Prayer → Devotion:** bury bones; vows to the shrine spirits raise effective levels in the custom hit formula. Replaced in originality batch 3 (`docs/ORIGINALITY.md`).
 10. **Thieving and Agility:** pickpocketing (townsfolk, farmer, guard), bakery and seed stalls; the village obstacle course east of the smithy.
 11. **Farming:** four allotments, real-time growth that continues while away; rake, seed dibber and spade toolbelt slots.
 12. **Construction:** a house north of the village with four furniture spaces; Bertram's sawmill; nails from the anvil; saw toolbelt slot.

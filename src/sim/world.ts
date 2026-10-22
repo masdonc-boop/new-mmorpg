@@ -18,7 +18,7 @@ import type { Result as ExchangeResult, Side } from '../exchange/engine';
 import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
 import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
 import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
-import { BONES, DRAIN_RESISTANCE, PRAYER_TICK, conflicts, prayerDef, type PrayerId } from '../data/prayers';
+import { BONES, BULWARK_DAMAGE, MENDING_REGEN_SECONDS, REGEN_SECONDS, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
@@ -456,9 +456,8 @@ export class Player implements Mover {
   prayerPoints = 1;
   /** Active prayers. Not saved (prayers switch off when you leave, as in OSRS). */
   prayers = new Set<PrayerId>();
-  /** OSRS drain counter: grows by the active prayers' drain each 0.6 s tick; 60 = one point. */
+  /** Devotion used by kept vows but not yet taken as a whole point. */
   prayerDrain = 0;
-  prayerTick = 0;
   buryTimer = 0;
   /** Seconds left stunned after a failed pickpocket (no moving or acting). */
   stunTimer = 0;
@@ -1289,7 +1288,7 @@ export class GameWorld {
     // Out-of-combat regeneration (Rapid Heal doubles it).
     if (p.combatTimer <= 0 && p.hp < p.maxHp) {
       p.regenTimer += dt;
-      if (p.regenTimer >= (p.prayers.has('rapid_heal') ? 0.5 : 1)) {
+      if (p.regenTimer >= (p.prayers.has('mending_song') ? MENDING_REGEN_SECONDS : REGEN_SECONDS)) {
         p.regenTimer = 0;
         p.hp = Math.min(p.maxHp, p.hp + Math.max(1, Math.round(p.maxHp * 0.02)));
       }
@@ -2720,11 +2719,11 @@ export class GameWorld {
       return;
     }
     if (p.skills.level('prayer') < def.level) {
-      this.message(`You need Prayer level ${def.level} for ${def.name}.`, 'warn');
+      this.message(`You need Devotion level ${def.level} to swear ${def.name}.`, 'warn');
       return;
     }
     if (p.prayerPoints <= 0) {
-      this.message('You have run out of prayer points. Recharge them at the shrine or a waystone.', 'warn');
+      this.message('Your devotion is spent. Restore it at the shrine or a waystone.', 'warn');
       return;
     }
     for (const other of [...p.prayers]) if (conflicts(def, prayerDef(other)!)) p.prayers.delete(other);
@@ -2732,25 +2731,20 @@ export class GameWorld {
     this.emit({ type: 'prayer' });
   }
 
-  /** OSRS drain: each 0.6 s tick adds the active prayers' drain; every 60 drains one point. */
+  /** Kept vows use devotion continuously (points per minute); a whole point is spent at a time. */
   private updatePrayer(dt: number) {
     const p = this.player;
     if (!p.prayers.size) return;
-    p.prayerTick += dt;
-    while (p.prayerTick >= PRAYER_TICK) {
-      p.prayerTick -= PRAYER_TICK;
-      for (const id of p.prayers) p.prayerDrain += prayerDef(id)!.drain;
-      while (p.prayerDrain >= DRAIN_RESISTANCE) {
-        p.prayerDrain -= DRAIN_RESISTANCE;
-        p.prayerPoints = Math.max(0, p.prayerPoints - 1);
-      }
-      if (p.prayerPoints <= 0) {
-        p.prayers.clear();
-        p.prayerDrain = 0;
-        this.emit({ type: 'prayer' });
-        this.message('You have run out of prayer points. Recharge them at the shrine or a waystone.', 'warn');
-        return;
-      }
+    for (const id of p.prayers) p.prayerDrain += (prayerDef(id)!.drainPerMin / 60) * dt;
+    while (p.prayerDrain >= 1) {
+      p.prayerDrain -= 1;
+      p.prayerPoints = Math.max(0, p.prayerPoints - 1);
+    }
+    if (p.prayerPoints <= 0) {
+      p.prayers.clear();
+      p.prayerDrain = 0;
+      this.emit({ type: 'prayer' });
+      this.message('Your devotion is spent and your vows fall quiet. Restore it at the shrine or a waystone.', 'warn');
     }
   }
 
@@ -2798,12 +2792,12 @@ export class GameWorld {
     }
     const max = p.skills.level('prayer');
     if (p.prayerPoints >= max) {
-      this.message('You already have full prayer points.');
+      this.message('Your devotion is already full.');
       return;
     }
     p.prayerPoints = max;
     this.emit({ type: 'prayer' });
-    this.message(`You pray at the ${altar.name}. Your prayer points are restored.`, 'good');
+    this.message(`You kneel at the ${altar.name}. The spirits restore your devotion.`, 'good');
   }
 
   // ---------------------------------------------------------------- enemies
@@ -2926,8 +2920,8 @@ export class GameWorld {
       { defenceLevel: p.skills.level('defence') * this.prayerBoost('defence'), armour: this.playerBonuses().armour },
       def.maxHit,
     );
-    // Protect from Melee blocks creatures' melee hits completely (every enemy fights in melee).
-    if (p.prayers.has('protect_from_melee')) r.damage = 0;
+    // Hearth's Bulwark halves creatures' hits (it softens blows; it never makes you untouchable).
+    if (p.prayers.has('hearth_bulwark') && r.damage > 0) r.damage = Math.max(1, Math.round(r.damage * BULWARK_DAMAGE));
     const dealt = Math.min(r.damage, p.hp);
     p.hp -= dealt;
     this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit: r.hit });
@@ -2947,7 +2941,7 @@ export class GameWorld {
     this.pending.length = 0;
     this.emit({ type: 'death', id: p.id });
     p.stationAt = null;
-    const keep = KEEP_ON_DEATH + (p.prayers.has('protect_item') ? 1 : 0);
+    const keep = KEEP_ON_DEATH + (p.prayers.has('keepsake') ? 1 : 0);
     p.prayers.clear();
     const { kept, lost } = takeLostOnDeath(p.inventory, p.equipment, keep);
     const lostCount = lost.reduce((a, s) => a + s.qty, 0);

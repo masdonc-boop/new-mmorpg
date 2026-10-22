@@ -138,7 +138,7 @@ export class Hud {
     bar.append(this.hpFill, this.hpText);
     // Prayer points: tap to open the prayers.
     this.prayerBar = el('button', 'bar prayer');
-    this.prayerBar.setAttribute('aria-label', 'Prayer');
+    this.prayerBar.setAttribute('aria-label', 'Devotion and vows');
     this.prayerFill = el('div', 'bar-fill');
     this.prayerText = el('div', 'bar-text');
     this.prayerBar.append(this.prayerFill, this.prayerText);
@@ -311,7 +311,7 @@ export class Hud {
     this.hpText.textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
     const maxPray = p.skills.level('prayer');
     this.prayerFill.style.width = `${(p.prayerPoints / maxPray) * 100}%`;
-    const pt = `🙏 ${p.prayerPoints} / ${maxPray}${p.prayers.size ? ' · active' : ''}`;
+    const pt = `🕯 ${p.prayerPoints} / ${maxPray}${p.prayers.size ? ' · vows kept' : ''}`;
     if (this.prayerText.textContent !== pt) this.prayerText.textContent = pt;
     this.prayerBar.classList.toggle('active', p.prayers.size > 0);
 
@@ -813,7 +813,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Prayer', exchange: 'Brightwater Exchange', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Vows', exchange: 'Brightwater Exchange', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -910,12 +910,12 @@ export class Hud {
     clearKeepingScroll(body);
     const p = this.world.player;
     const lvl = p.skills.level('prayer');
-    body.appendChild(el('div', 'ii-desc tb-intro', `Prayer level <b>${lvl}</b> · <b>${p.prayerPoints}</b> / ${lvl} points. Prayers drain points while on. Bury bones to train; pray at the shrine or a waystone to recharge.`));
+    body.appendChild(el('div', 'ii-desc tb-intro', `Devotion level <b>${lvl}</b> · <b>${p.prayerPoints}</b> / ${lvl} devotion. Five spirits watch over Brightwater: the <b>Hearth</b> wards you, the <b>Ember</b> fires your arm, the <b>Lantern</b> steadies your eye, the <b>Wind</b> guides arrows and the <b>Tide</b> carries spells. A kept vow uses devotion; bury bones to grow it, and kneel at the shrine or a waystone to restore it.`));
     const grid = el('div', 'pr-grid');
     for (const pr of PRAYERS) {
       const locked = lvl < pr.level;
       const on = p.prayers.has(pr.id);
-      const b = el('button', `pr-card${on ? ' on' : ''}${locked ? ' locked' : ''}`, `<span class="pr-icon">${pr.icon}</span><span class="pr-name">${pr.name}</span><span class="pr-text">${locked ? `Level ${pr.level}` : pr.text}</span>`);
+      const b = el('button', `pr-card${on ? ' on' : ''}${locked ? ' locked' : ''}`, `<span class="pr-icon">${pr.icon}</span><span class="pr-name">${pr.name}</span><span class="pr-text">${locked ? `Level ${pr.level}` : pr.text}</span><span class="pr-spirit">${pr.spirit}</span>`);
       b.addEventListener('click', () => {
         this.cb.command({ type: 'togglePrayer', prayer: pr.id });
         this.renderPrayer();
@@ -1132,7 +1132,7 @@ export class Hud {
       b = { id: -1, text: `✨ ${altar.name} · charge ${chips} spark chip${chips === 1 ? '' : 's'}`, d: 0, cmd: { type: 'chargeSparks' } };
       this.promptCmd = b.cmd!;
     } else if (altar && p.prayerPoints < p.skills.level('prayer') && (!b || Math.hypot(altar.x - p.x, altar.z - p.z) < b.d)) {
-      b = { id: -1, text: `🙏 ${altar.name} · recharge prayer`, d: 0, cmd: { type: 'pray' } };
+      b = { id: -1, text: `🕯 ${altar.name} · restore devotion`, d: 0, cmd: { type: 'pray' } };
       this.promptCmd = b.cmd!;
     }
     this.promptTarget = b ? b.id : null;

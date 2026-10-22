@@ -23,8 +23,8 @@ const lastMessage = (w: GameWorld) => {
 /** Somewhere quiet, away from the shrine and waystones. */
 const away = (w: GameWorld) => stand(w, w.map.spawn.x + 6, w.map.spawn.z + 6);
 
-describe('Prayer', () => {
-  it('bones no longer stack, and burying gives Prayer xp (warlord’s bones more), one at a time', () => {
+describe('Devotion and vows (originality batch 3)', () => {
+  it('bones no longer stack, and burying gives Devotion xp (warlord’s bones more), one at a time', () => {
     expect(itemDef('bones').stackable).toBe(false);
     const w = new GameWorld();
     const p = w.player;
@@ -33,12 +33,10 @@ describe('Prayer', () => {
     w.issue({ type: 'useItem', slot: slotOf(p.inventory, 'bones') });
     w.issue({ type: 'useItem', slot: slotOf(p.inventory, 'bones') }); // too soon
     expect(p.inventory.count('bones')).toBe(1);
-    expect(p.skills.xp.prayer).toBe(4.5);
+    expect(p.skills.xp.prayer).toBe(5);
     run(w, 1.3);
     w.issue({ type: 'useItem', slot: slotOf(p.inventory, 'big_bones') });
-    expect(p.skills.xp.prayer).toBe(19.5);
-    // Grukk drops warlord's bones.
-    expect(Object.values(itemDef('big_bones'))).toBeTruthy();
+    expect(p.skills.xp.prayer).toBe(23);
   });
 
   it('older saves split a bone stack into slots', () => {
@@ -48,54 +46,61 @@ describe('Prayer', () => {
     expect(new GameWorld({ save: JSON.parse(JSON.stringify(save)) }).player.inventory.count('bones')).toBe(6);
   });
 
-  it('prayers need the level and points; one prayer per boost; melee and ranged prayers exclude each other', () => {
+  it('every vow is original: five spirits, own names, levels and drain', () => {
+    const names = PRAYERS.map((v) => v.name).join(' ');
+    for (const old of ['Thick Skin', 'Burst of Strength', 'Clarity of Thought', 'Sharp Eye', 'Mystic', 'Rock Skin', 'Superhuman', 'Reflexes', 'Rapid Heal', 'Protect', 'Hawk Eye', 'Steel Skin', 'Ultimate Strength']) expect(names).not.toContain(old);
+    expect(new Set(PRAYERS.map((v) => v.spirit))).toEqual(new Set(['Hearth', 'Ember', 'Lantern', 'Wind', 'Tide']));
+    expect(PRAYERS.every((v) => v.drainPerMin > 0 && v.level >= 1)).toBe(true);
+  });
+
+  it('vows need the level and devotion; one per boost; the Wind and Tide exclude melee vows', () => {
     const w = new GameWorld();
     const p = w.player;
     w.drainEvents();
-    w.issue({ type: 'togglePrayer', prayer: 'rock_skin' });
-    expect(lastMessage(w)).toContain('Prayer level 10');
-    p.skills.addXp('prayer', xpForLevel(13));
-    p.prayerPoints = 13;
-    w.issue({ type: 'togglePrayer', prayer: 'thick_skin' });
-    w.issue({ type: 'togglePrayer', prayer: 'rock_skin' });
-    expect([...p.prayers]).toEqual(['rock_skin']);
-    w.issue({ type: 'togglePrayer', prayer: 'burst_of_strength' });
-    w.issue({ type: 'togglePrayer', prayer: 'clarity_of_thought' });
-    expect(p.prayers.has('burst_of_strength') && p.prayers.has('clarity_of_thought')).toBe(true);
-    w.issue({ type: 'togglePrayer', prayer: 'sharp_eye' });
-    expect([...p.prayers].sort()).toEqual(['rock_skin', 'sharp_eye']);
-    expect(w.prayerBoost('defence')).toBe(1.1);
+    w.issue({ type: 'togglePrayer', prayer: 'hearthward' });
+    expect(lastMessage(w)).toContain('Devotion level 14');
+    p.skills.addXp('prayer', xpForLevel(19));
+    p.prayerPoints = 19;
+    w.issue({ type: 'togglePrayer', prayer: 'warm_hearth' });
+    w.issue({ type: 'togglePrayer', prayer: 'hearthward' });
+    expect([...p.prayers]).toEqual(['hearthward']);
+    w.issue({ type: 'togglePrayer', prayer: 'ember_spark' });
+    w.issue({ type: 'togglePrayer', prayer: 'lantern_glow' });
+    expect(p.prayers.has('ember_spark') && p.prayers.has('lantern_glow')).toBe(true);
+    w.issue({ type: 'togglePrayer', prayer: 'light_breeze' });
+    expect([...p.prayers].sort()).toEqual(['hearthward', 'light_breeze']);
+    expect(w.prayerBoost('defence')).toBe(1.09);
     expect(w.prayerBoost('ranged')).toBe(1.05);
     expect(w.prayerBoost('attack')).toBe(1);
-    w.issue({ type: 'togglePrayer', prayer: 'sharp_eye' });
-    expect(p.prayers.has('sharp_eye')).toBe(false);
+    w.issue({ type: 'togglePrayer', prayer: 'light_breeze' });
+    expect(p.prayers.has('light_breeze')).toBe(false);
   });
 
-  it('drains at OSRS rates (Thick Skin: a point every 36 s) and switches off when empty', () => {
+  it('kept vows use devotion per minute (Warm Hearth: 1.5 a minute) and fall quiet when it runs out', () => {
     const w = new GameWorld();
     const p = w.player;
     away(w);
     p.skills.addXp('prayer', xpForLevel(2));
     p.prayerPoints = 2;
-    w.issue({ type: 'togglePrayer', prayer: 'thick_skin' });
-    run(w, 35);
+    w.issue({ type: 'togglePrayer', prayer: 'warm_hearth' });
+    run(w, 39);
     expect(p.prayerPoints).toBe(2);
     run(w, 2);
     expect(p.prayerPoints).toBe(1);
-    run(w, 37);
+    run(w, 41);
     expect(p.prayerPoints).toBe(0);
     expect(p.prayers.size).toBe(0);
     w.drainEvents();
-    w.issue({ type: 'togglePrayer', prayer: 'thick_skin' });
-    expect(lastMessage(w)).toContain('run out of prayer points');
+    w.issue({ type: 'togglePrayer', prayer: 'warm_hearth' });
+    expect(lastMessage(w)).toContain('devotion is spent');
   });
 
-  it('recharges at the shrine or a waystone, not elsewhere; points are saved, prayers are not', () => {
+  it('devotion is restored at the shrine or a waystone, not elsewhere; points are saved, vows are not', () => {
     const w = new GameWorld();
     const p = w.player;
     p.skills.addXp('prayer', xpForLevel(10));
     p.prayerPoints = 3;
-    w.issue({ type: 'togglePrayer', prayer: 'thick_skin' });
+    w.issue({ type: 'togglePrayer', prayer: 'warm_hearth' });
     const w2 = reload(w);
     expect(w2.player.prayerPoints).toBe(3);
     expect(w2.player.prayers.size).toBe(0);
@@ -108,25 +113,34 @@ describe('Prayer', () => {
     expect(w2.player.prayerPoints).toBe(10);
   });
 
-  it('Protect from Melee blocks creatures’ hits completely', () => {
+  it("Hearth's Bulwark halves creatures' hits (never fully blocks them)", () => {
     const w = new GameWorld();
     const p = w.player;
-    p.skills.addXp('prayer', xpForLevel(43));
-    p.prayerPoints = 43;
-    w.issue({ type: 'togglePrayer', prayer: 'protect_from_melee' });
+    p.skills.addXp('prayer', xpForLevel(45));
+    p.prayerPoints = 45;
+    w.issue({ type: 'togglePrayer', prayer: 'hearth_bulwark' });
     const wolf = w.enemies.find((e) => e.def.id === 'wolf')!;
     stand(w, wolf.x + 1, wolf.z);
     if (isBlocked(w.map, p.x, p.z)) stand(w, wolf.x - 1, wolf.z);
-    setRng(w, 0); // every enemy swing would hit
+    setRng(w, 0); // every enemy swing hits for its smallest roll
     w.drainEvents();
-    run(w, 8);
-    const hits = w.drainEvents().filter((e) => e.type === 'damage' && e.target === p.id);
+    run(w, 6);
+    const hits = w.drainEvents().filter((e) => e.type === 'damage' && e.target === p.id) as { amount: number }[];
     expect(hits.length).toBeGreaterThan(0);
-    expect(hits.every((e) => e.type === 'damage' && e.amount === 0)).toBe(true);
-    expect(p.hp).toBe(p.maxHp);
+    expect(hits.every((e) => e.amount >= 1)).toBe(true);
+    // Unwarded, the same roll hits for about twice as much.
+    const w2 = new GameWorld();
+    const wolf2 = w2.enemies.find((e) => e.def.id === 'wolf')!;
+    stand(w2, wolf.x + 1, wolf.z);
+    if (isBlocked(w2.map, w2.player.x, w2.player.z)) stand(w2, wolf2.x - 1, wolf2.z);
+    setRng(w2, 0);
+    w2.drainEvents();
+    run(w2, 6);
+    const raw = (w2.drainEvents().filter((e) => e.type === 'damage' && e.target === w2.player.id) as { amount: number }[])[0];
+    expect(hits[0].amount).toBe(Math.max(1, Math.round(raw.amount * 0.5)));
   });
 
-  it('Protect Item keeps a fourth item on death; prayers switch off and points refill on respawn', () => {
+  it('Keepsake keeps a fourth item on death; vows end and devotion refills on respawn', () => {
     const w = new GameWorld();
     const p = w.player;
     p.skills.addXp('prayer', xpForLevel(25));
@@ -135,7 +149,7 @@ describe('Prayer', () => {
     p.inventory.add('iron_sword');
     p.inventory.add('iron_helm');
     p.inventory.add('iron_shield');
-    w.issue({ type: 'togglePrayer', prayer: 'protect_item' });
+    w.issue({ type: 'togglePrayer', prayer: 'keepsake' });
     (w as unknown as { killPlayer: () => void }).killPlayer();
     expect(p.lastDeath?.keep).toBe(4);
     expect(p.lastDeath?.kept.map((k) => k.item).sort()).toEqual(['iron_helm', 'iron_platebody', 'iron_shield', 'iron_sword']);
@@ -144,12 +158,11 @@ describe('Prayer', () => {
     expect(p.prayerPoints).toBe(25);
   });
 
-  it('Prayer counts toward combat level (half a level per two prayer levels, as in OSRS)', () => {
+  it('Devotion counts toward combat level (half a level per two Devotion levels)', () => {
     const w = new GameWorld();
     const before = w.player.skills.combatLevel();
     w.player.skills.addXp('prayer', xpForLevel(40));
     expect(w.player.skills.combatLevel()).toBe(before + 5);
-    expect(PRAYERS.every((pr) => pr.drain > 0 && pr.level >= 1)).toBe(true);
   });
 });
 

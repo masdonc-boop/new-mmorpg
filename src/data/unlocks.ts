@@ -18,7 +18,7 @@ export function skillUnlocks(skill: SkillId): Unlock[] {
   for (const r of Object.values(RESOURCES)) if (r.skill === skill) out.push({ level: r.levelReq, text: `${verb} ${r.name.toLowerCase()}`, icon: r.item });
   if (skill === 'prayer') {
     for (const [item] of Object.entries(BONES)) out.push({ level: 1, text: `Bury ${itemDef(item).name.toLowerCase()}`, icon: item as ItemId });
-    for (const pr of PRAYERS) out.push({ level: pr.level, text: `${pr.name}: ${pr.text.toLowerCase()}`, icon: 'bones' });
+    for (const pr of PRAYERS) out.push({ level: pr.level, text: `Swear ${pr.name} (${pr.spirit}): ${pr.text.toLowerCase()}`, icon: 'bones' });
   }
   if (skill === 'firemaking') for (const [item, f] of Object.entries(FIRE_LOGS)) out.push({ level: f!.level, text: `Light ${itemDef(item).name.toLowerCase()}`, icon: item as ItemId });
   for (const r of Object.values(RECIPES)) {
