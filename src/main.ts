@@ -287,6 +287,13 @@ async function boot() {
   controls.rotationEnabled = settings.rotation;
   for (const text of notices) hud.handleEvent({ type: 'message', text, tone: 'info' });
 
+  // 3B.4: coming back to the game (or the network coming back) tries again if it gave up.
+  if (net) {
+    const resume = () => net!.resume();
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && resume());
+    window.addEventListener('online', resume);
+  }
+
   // HUD gestures never reach the world: Controls only handles gestures that start on the canvas.
   hud.root.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).closest('button')) audio.play('click');

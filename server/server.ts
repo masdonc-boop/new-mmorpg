@@ -53,6 +53,8 @@ export interface ServerOptions {
    * that send no Origin (not browsers) are always allowed. Unset: any page (development only).
    */
   allowedOrigins?: string[];
+  /** How often connections are pinged (one missed answer closes them). Default 10 s. */
+  heartbeatMs?: number;
   /** 3B.1 limits (defaults suit real players, each on their own address; tests raise them). */
   limits?: Partial<{ connectionsPerAddress: number; signInsPerAddress: number; transferCooldownMs: number }>;
   /** Live Exchange safeguards (3B.3); anything left out keeps its default. */
@@ -224,6 +226,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   /** Open connections by address (3B.1). */
   const connections = new Map<string, number>();
   const allowedOrigins = opts.allowedOrigins ?? null;
+  const alive = new WeakMap<WebSocket, boolean>();
+  const heartbeat = setInterval(() => {
+    for (const c of wss.clients) {
+      if (alive.get(c) === false) {
+        c.terminate();
+        continue;
+      }
+      alive.set(c, false);
+      c.ping();
+    }
+  }, opts.heartbeatMs ?? 10_000);
   const limits = { connectionsPerAddress: 8, signInsPerAddress: 2, transferCooldownMs: 1000, ...opts.limits };
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
   const registrations = new RateLimiter(5, 60 * 60_000, clock);
@@ -274,6 +287,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       return;
     }
     connections.set(addr, open);
+    // 3B.4: a connection that stops answering pings is closed, so a phone that vanished (no clean
+    // close) starts its grace period instead of standing in the world as if still there.
+    alive.set(ws, true);
+    ws.on('pong', () => alive.set(ws, true));
     ws.once('close', () => {
       const n = (connections.get(addr) ?? 1) - 1;
       if (n > 0) connections.set(addr, n);
@@ -1096,6 +1113,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     close: ({ save: doSave = true } = {}) =>
       new Promise<void>((resolve) => {
         clearInterval(timer);
+        clearInterval(heartbeat);
         if (doSave) for (const s of [...sessions.values()]) if (s.accountId !== null) unload(s, 'shutdown');
         for (const c of wss.clients) c.terminate();
         wss.close(() => {

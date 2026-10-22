@@ -798,3 +798,23 @@ Checked and fine (from the same review):
 - chat cleaning;
 - wisps and loot moving 1:1;
 - parameterized SQL.
+
+### 3B.4 Reconnecting, duplicate sign-ins and zone transfers: done
+
+Fixed:
+- **The client only retried once.** A reconnect attempt that failed before the welcome stopped all further retries. Node's WebSocket reports a refused connection only as an error, with no close event. The client now treats an error before opening, or no answer within 6 seconds, as a failed attempt. It backs off through seven attempts (0.5 to 8 seconds).
+- **Coming back to the game resumes.** When the page becomes visible again or the network comes back, a client that gave up tries again (`NetClient.resume`). It never retries a connection the server refused or ended (version, ban, kick, signed in elsewhere).
+- **Dead connections are noticed both ways:**
+  - The client drops a connection the server has been silent on for 8 seconds (snapshots normally arrive ten times a second) and reconnects at once, without waiting for the phone's network to notice.
+  - The server pings every 10 seconds and closes connections that don't answer. A phone that vanished without a clean close then starts its grace period instead of standing in the world as if still there.
+- **Exchange requests survive a drop.** Requests that were never answered are sent again after reconnecting with the same numbers, which the server already treats as safe retries (applied at most once). An open Exchange view is refreshed.
+- **Movement on reconnect.** Movement the old connection never had acknowledged is forgotten.
+- **Chat while offline.** Messages sent while disconnected say they weren't sent.
+
+Checked (`tests/net-reconnect.test.ts`, 6 tests):
+- the server going down and coming back a few seconds later;
+- a silent connection replaced by a fresh one, with no duplicate character;
+- the server closing a connection that stops answering pings, starting the grace period;
+- an Exchange offer placed while disconnected arriving once after reconnecting;
+- signing in elsewhere taking over the same character, never a copy;
+- dropping out inside a house: back in the same house within the grace period, the house closing after it, and signing in later reopening it.

@@ -48,7 +48,11 @@ export interface NetClientOptions {
 }
 
 /** Reconnect attempts after a dropped connection, and the wait before each (ms). */
-const RECONNECT_DELAYS = [500, 1000, 2000, 4000, 8000];
+const RECONNECT_DELAYS = [500, 1000, 2000, 4000, 8000, 8000, 8000];
+/** No message from the server for this long means the connection is gone. */
+const SILENCE_MS = 8000;
+/** A connection attempt that hasn't opened by then has failed. */
+const CONNECT_TIMEOUT_MS = 6000;
 
 export class NetClient {
   world: GameWorld | null = null;
@@ -85,6 +89,9 @@ export class NetClient {
   /** The live Exchange as this account sees it (after `gxOpen`), and price guides asked for. */
   liveView: LiveView | null = null;
   readonly guides = new Map<ItemId, Guide>();
+  private unanswered = new Map<number, LiveIntent>();
+  /** When the server was last heard from (a silent connection is treated as dropped). */
+  private lastHeard = 0;
   /** The last full state, which the next delta changes. */
   private last: WorldState | null = null;
   private serverPos: { x: number; z: number } | null = null;
@@ -106,12 +113,16 @@ export class NetClient {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(this.opts.url);
       this.ws = ws;
+      let opened = false;
       ws.onopen = () => {
+        opened = true;
+        clearTimeout(giveUp);
         this.post({ t: 'hello', v: PROTOCOL_VERSION, content: contentVersion(this.map), auth });
       };
       ws.onmessage = (ev) => {
         const run = () => {
           if (this.ws !== ws) return;
+          this.lastHeard = this.now();
           const msg = JSON.parse(String(ev.data)) as ServerMessage;
           if (msg.t === 'welcome') resolve(this.welcome(msg));
           else this.receive(msg);
@@ -119,24 +130,58 @@ export class NetClient {
         if (this.opts.latencyMs) setTimeout(run, this.opts.latencyMs);
         else run();
       };
-      ws.onclose = (ev) => {
-        if (this.ws !== ws) return;
+      // (Some WebSocket implementations report a failed connection only as an error, with no
+      // close event: either one ends this socket, once.)
+      let ended = false;
+      const end = (reason: string) => {
+        if (ended || this.ws !== ws) return;
+        ended = true;
+        onEnd(reason);
+      };
+      ws.onclose = (ev) => end(ev.reason);
+      ws.onerror = () => {
+        this.closeReason ||= 'Could not reach the server.';
+        if (!opened || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) end('');
+      };
+      // An attempt that neither opens nor fails (a network that swallows it) is given up too.
+      const giveUp = setTimeout(() => {
+        if (opened) return;
+        this.closeReason ||= 'Could not reach the server.';
+        end('');
+        try {
+          ws.close();
+        } catch {
+          /* never opened */
+        }
+      }, CONNECT_TIMEOUT_MS);
+      const onEnd = (reason: string) => {
         const wasReady = this.status === 'ready';
-        this.closeReason ||= ev.reason || 'Disconnected from the server.';
+        // (A reconnect attempt that fails before the welcome keeps trying too: 3B.4.)
+        const retrying = this.status === 'reconnecting';
+        this.closeReason ||= reason || 'Disconnected from the server.';
         // A dropped connection (not a refusal) comes back by itself using the session.
-        if (wasReady && !this.fatal && this.opts.autoReconnect && this.attempts < RECONNECT_DELAYS.length) {
+        if ((wasReady || retrying) && !this.fatal && this.opts.autoReconnect && this.attempts < RECONNECT_DELAYS.length) {
           this.status = 'reconnecting';
-          this.events.push({ type: 'message', text: 'Connection lost. Reconnecting…', tone: 'warn' });
+          if (wasReady) this.events.push({ type: 'message', text: 'Connection lost. Reconnecting…', tone: 'warn' });
           setTimeout(() => this.reconnect(), RECONNECT_DELAYS[this.attempts++]);
           return;
         }
         this.status = 'closed';
+        if (retrying && !this.fatal) this.events.push({ type: 'message', text: 'Still can’t reach the server. It will try again when you come back to the game.', tone: 'bad' });
         if (!this.world || !wasReady) reject(new Error(this.closeReason));
       };
-      ws.onerror = () => {
-        this.closeReason ||= 'Could not reach the server.';
-      };
     });
+  }
+
+  /**
+   * Try again after giving up (the phone was asleep, or the network came back): only for a
+   * connection that dropped, never one the server refused or ended.
+   */
+  resume() {
+    if (this.status !== 'closed' || this.fatal || !this.world || !this.opts.autoReconnect) return;
+    this.attempts = 0;
+    this.status = 'reconnecting';
+    this.reconnect();
   }
 
   private reconnect() {
@@ -203,9 +248,18 @@ export class NetClient {
       this.world = new GameWorld({ save: mergeSave({ character: msg.character }), playerId: msg.playerId, map: this.map });
       this.world.drainEvents();
     } else applyCharacter(this.world, msg.character);
+    // 3B.4: movement the old connection never had acknowledged is gone; start counting afresh.
+    this.pending = [];
     this.last = msg.state;
     this.applySnapshot(msg.state, true);
     this.status = 'ready';
+    this.lastHeard = this.now();
+    if (reconnected) {
+      // Exchange requests that were never answered go again (same numbers: applied at most once),
+      // and an open Exchange view is refreshed.
+      for (const req of this.unanswered.values()) this.post({ t: 'gx', req });
+      if (this.liveView) this.post({ t: 'gxOpen' });
+    }
     if (!this.quietWelcome) this.events.push({ type: 'message', text: reconnected ? 'Reconnected.' : `Connected to the development server as ${this.world.player.name}.`, tone: 'good' });
     this.quietWelcome = false;
     return this.world;
@@ -249,6 +303,7 @@ export class NetClient {
       return;
     }
     if (msg.t === 'gxResult') {
+      this.unanswered.delete(msg.nonce);
       this.events.push({ type: 'exchangeResult', nonce: msg.nonce, result: msg.result, live: true });
       return;
     }
@@ -341,6 +396,23 @@ export class NetClient {
   update(dt: number): number {
     const w = this.world;
     if (!w) return 0;
+    // 3B.4: the server sends something ten times a second; silence means the connection is dead
+    // even if the phone hasn't noticed yet, so drop it and reconnect.
+    if (this.status === 'ready' && this.lastHeard && this.now() - this.lastHeard > SILENCE_MS) {
+      this.lastHeard = 0;
+      // Let go of the dead socket (its close can take minutes to arrive) and start over at once.
+      const dead = this.ws;
+      this.ws = null;
+      dead?.close();
+      if (!this.fatal && this.opts.autoReconnect) {
+        this.status = 'reconnecting';
+        this.events.push({ type: 'message', text: 'The server stopped answering. Reconnecting…', tone: 'warn' });
+        setTimeout(() => this.reconnect(), RECONNECT_DELAYS[this.attempts++]);
+      } else {
+        this.status = 'closed';
+        this.closeReason = 'The server stopped answering.';
+      }
+    }
     const p = w.player;
     this.acc += dt;
     let steps = 0;
@@ -407,11 +479,18 @@ export class NetClient {
 
   /** Says something to players nearby, or privately to one player. */
   say(text: string, to?: string) {
+    if (this.status !== 'ready') {
+      this.events.push({ type: 'message', text: 'Not connected: your message wasn’t sent.', tone: 'warn' });
+      return;
+    }
     this.post(to ? { t: 'chat', channel: 'private', to, text } : { t: 'chat', channel: 'local', text });
   }
 
   /** Live Exchange requests (only when `features.liveExchange`). */
   gx(req: LiveIntent) {
+    // Kept until answered: after a dropped connection it is sent again with the same number, which
+    // the server treats as a retry (applied once at most).
+    this.unanswered.set(req.nonce, req);
     this.post({ t: 'gx', req });
   }
 
