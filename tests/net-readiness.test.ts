@@ -51,6 +51,11 @@ const SAMPLES: { [K in Command['type']]: Extract<Command, { type: K }> } = {
   tan: { type: 'tan', item: 'wolf_pelt', qty: 5 },
   tannerClose: { type: 'tannerClose' },
   acceptQuest: { type: 'acceptQuest', quest: Object.keys(QUESTS)[0] },
+  tradeRequest: { type: 'tradeRequest', target: 1_000_002 },
+  tradeOffer: { type: 'tradeOffer', slot: 4, qty: 10 },
+  tradeRemove: { type: 'tradeRemove', item: 'logs', qty: 2 },
+  tradeAccept: { type: 'tradeAccept' },
+  tradeDecline: { type: 'tradeDecline' },
   exchange: { type: 'exchange', req: { op: 'place', nonce: 3, slot: 0, side: 'buy', item: 'logs', qty: 10, price: 5 } },
   exchangeClose: { type: 'exchangeClose' },
   exchangeResetPractice: { type: 'exchangeResetPractice' },
@@ -266,7 +271,7 @@ describe('3A.1 event audiences', () => {
   it('every event kind is classified', () => {
     const kinds = new Set(Object.values(EVENT_AUDIENCE));
     expect([...kinds].sort()).toEqual(['nearby', 'self', 'zone']);
-    expect(Object.keys(EVENT_AUDIENCE).length).toBe(47);
+    expect(Object.keys(EVENT_AUDIENCE).length).toBe(49);
   });
 
   it('routes events: messages and loot to the player, gathering to those nearby, depletion to the zone', () => {

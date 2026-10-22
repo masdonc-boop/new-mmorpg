@@ -10,7 +10,7 @@ import { validateCommand } from './validate';
  * The network protocol between the browser and the development server (docs/MULTIPLAYER.md 3A.2).
  * JSON messages over a WebSocket. Clients send intents only; the server sends state and events.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 /** Largest message a client may send (bytes); anything bigger is rejected unread. */
 export const MAX_CLIENT_MESSAGE = 8 * 1024;
 /** A save import (signed-in accounts only) may be larger. */
@@ -38,7 +38,15 @@ export type ClientMessage =
   | { t: 'cmd'; cmd: Command }
   /** One tick of joystick movement, numbered so the server can acknowledge it. */
   | { t: 'input'; seq: number; dx: number; dz: number }
-  | { t: 'ping'; at: number };
+  | { t: 'ping'; at: number }
+  /** Chat (3A.6): to players nearby, or privately to one player by name. */
+  | { t: 'chat'; channel: ChatChannel; to?: string; text: string }
+  /** Stop (or start again) hearing from a player. */
+  | { t: 'block'; name: string; on: boolean }
+  /** Report a player's chat to the moderators (what this player saw from them goes along). */
+  | { t: 'report'; name: string; reason: string };
+
+export type ChatChannel = 'local' | 'private';
 
 export type ServerMessage =
   /** `session`: a token to sign in again without the password (only after a password sign-in). */
@@ -48,7 +56,13 @@ export type ServerMessage =
   | { t: 'error'; error: string; fatal?: boolean; code?: ErrorCode }
   | { t: 'pong'; at: number }
   /** The import worked: what was changed on the way in (a fresh `welcome` follows). */
-  | { t: 'imported'; report: string[] };
+  | { t: 'imported'; report: string[] }
+  /** A chat message. Private messages this player sent come back with `to` set. */
+  | { t: 'chat'; channel: ChatChannel; from: string; to?: string; text: string }
+  /** The players this account has blocked (sent on joining and after a change). */
+  | { t: 'social'; blocked: string[] }
+  /** A note from the server for the message log (chat refused, report filed, …). */
+  | { t: 'notice'; text: string; tone?: 'info' | 'warn' | 'good' };
 
 /** Machine-readable reasons, so the client knows whether to ask for a password or try again. */
 export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale' | 'import';
@@ -130,6 +144,18 @@ export function parseClientMessage(raw: unknown, opts: { allowImport?: boolean }
       return m as ClientMessage;
     case 'ping':
       if (!onlyKeys(m, ['t', 'at']) || !finite(m.at, 0, Number.MAX_SAFE_INTEGER)) return null;
+      return m as ClientMessage;
+    case 'chat':
+      if (!onlyKeys(m, ['t', 'channel', 'to', 'text']) || typeof m.text !== 'string' || m.text.length > 400) return null;
+      if (m.channel === 'local' && m.to === undefined) return m as ClientMessage;
+      if (m.channel === 'private' && typeof m.to === 'string' && m.to.length >= 1 && m.to.length <= 32) return m as ClientMessage;
+      return null;
+    case 'block':
+      if (!onlyKeys(m, ['t', 'name', 'on']) || typeof m.name !== 'string' || m.name.length < 1 || m.name.length > 32 || typeof m.on !== 'boolean') return null;
+      return m as ClientMessage;
+    case 'report':
+      if (!onlyKeys(m, ['t', 'name', 'reason']) || typeof m.name !== 'string' || m.name.length < 1 || m.name.length > 32) return null;
+      if (typeof m.reason !== 'string' || m.reason.length > 200) return null;
       return m as ClientMessage;
     default:
       return null;

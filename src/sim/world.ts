@@ -29,6 +29,7 @@ import { Skills } from './skills';
 import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
 import { LANTERN_SECONDS } from '../data/hollow';
 import { splitSave, type CharacterRecord, type ZoneState } from './records';
+import { TradeDesk, type TradeView } from './trade';
 
 export const TICK_SECONDS = 1 / 30;
 
@@ -73,6 +74,9 @@ export type ExchangeIntent =
   | { op: 'collect'; nonce: number; orderId: number };
 
 /** Client → simulation commands. In multiplayer these become network messages to the authoritative server. */
+/** Commands a player may use while a trade is open. */
+const TRADE_TIME_COMMANDS = new Set<Command['type']>(['tradeRequest', 'tradeOffer', 'tradeRemove', 'tradeAccept', 'tradeDecline', 'joystick', 'moveTo', 'setStyle', 'swapItems']);
+
 export type Command =
   | { type: 'joystick'; dx: number; dz: number }
   | { type: 'moveTo'; x: number; z: number }
@@ -131,6 +135,12 @@ export type Command =
   | { type: 'tan'; item: ItemId; qty: number }
   | { type: 'tannerClose' }
   | { type: 'acceptQuest'; quest: string }
+  /** Trading with another player (src/sim/trade.ts): ask (or answer a request), offer from a bag slot, take back, accept or confirm, decline. */
+  | { type: 'tradeRequest'; target: PlayerId }
+  | { type: 'tradeOffer'; slot: number; qty: number }
+  | { type: 'tradeRemove'; item: ItemId; qty: number }
+  | { type: 'tradeAccept' }
+  | { type: 'tradeDecline' }
   /**
    * Exchange intents (place, cancel, collect). The account is never sent by the client: the
    * simulation (later the server) supplies it. Today every request goes to the PRACTICE market.
@@ -236,6 +246,10 @@ export type GameEvent =
   /** Toolbelt contents changed. */
   | { type: 'toolbelt' }
   | { type: 'shopOpen'; shop: string }
+  /** Another player asks this one to trade. */
+  | { type: 'tradeRequest'; from: PlayerId; name: string }
+  /** This player's trade as they see it (null: closed). */
+  | { type: 'trade'; view: TradeView | null }
   | { type: 'tannerOpen'; service: 'tanner' | 'sawmill' }
   | { type: 'tannerClose' }
   | { type: 'shopClose' }
@@ -771,6 +785,8 @@ export class GameWorld {
   time = 0;
   private events: GameEvent[] = [];
   private eventActors: PlayerId[] = [];
+  /** Trades between players in this world. */
+  readonly trades: TradeDesk = new TradeDesk(this);
   private pending: PendingHit[] = [];
   private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
@@ -907,6 +923,7 @@ export class GameWorld {
       }
     }
     this.pending = this.pending.filter((h) => h.attacker !== id);
+    this.trades.leave(id, p.name);
     this.players.delete(id);
     if (this.player === p) this.player = this.players.values().next().value ?? new Player('Nobody', DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, ZONE_PLACEHOLDER_ID);
     return { player: p, zone };
@@ -1197,6 +1214,12 @@ export class GameWorld {
     this.eventActors.push(this.player.id);
   }
 
+  /** An event for a particular player (not necessarily the one acting). */
+  emitFor(id: PlayerId, e: GameEvent) {
+    this.events.push(e);
+    this.eventActors.push(id);
+  }
+
   message(text: string, tone: MessageTone = 'info') {
     this.emit({ type: 'message', text, tone });
   }
@@ -1239,6 +1262,11 @@ export class GameWorld {
     if (p.dead && cmd.type !== 'respawn') return;
     // Mid-obstacle, the player can't steer or start anything else until across.
     if (p.action?.type === 'obstacle' && p.action.crossing && (cmd.type === 'joystick' || cmd.type === 'moveTo' || cmd.type === 'interact' || cmd.type === 'pickpocket')) return;
+    // While trading, the bag stays put: only the trade, walking and the combat style.
+    if (this.trades.trading(p.id) && !TRADE_TIME_COMMANDS.has(cmd.type)) {
+      this.message('Finish or decline your trade first.', 'warn');
+      return;
+    }
     switch (cmd.type) {
       case 'joystick': {
         const m = Math.hypot(cmd.dx, cmd.dz);
@@ -1374,6 +1402,21 @@ export class GameWorld {
           this.message('You discard the held items.');
         }
         break;
+      case 'tradeRequest':
+        this.trades.request(cmd.target);
+        break;
+      case 'tradeOffer':
+        this.trades.offer(cmd.slot, cmd.qty);
+        break;
+      case 'tradeRemove':
+        this.trades.withdraw(cmd.item, cmd.qty);
+        break;
+      case 'tradeAccept':
+        this.trades.accept();
+        break;
+      case 'tradeDecline':
+        this.trades.decline();
+        break;
       case 'acceptQuest':
         this.acceptQuest(cmd.quest);
         break;
@@ -1451,6 +1494,7 @@ export class GameWorld {
       e.prevZ = e.z;
     }
     for (const p of this.players.values()) this.act(p, () => this.tickPlayer(dt));
+    this.trades.tick();
     this.updateGroundItems(dt);
     this.updateGraves(dt);
     this.updateFires(dt);

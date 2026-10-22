@@ -2,7 +2,7 @@ import { GameWorld, TICK_SECONDS, type Command, type GameEvent, type PlayerId } 
 import { patchState } from './delta';
 import { mergeSave } from '../sim/records';
 import { applyCharacter, applyState, type WorldState } from './replica';
-import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
+import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type ChatChannel, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
 import { generateWorld } from '../sim/worldmap';
 
 /**
@@ -17,6 +17,14 @@ import { generateWorld } from '../sim/worldmap';
  */
 
 /** How far in the past other entities are shown (ms): about one and a half snapshot gaps. */
+/** A chat message as received (`to`: a private message this player sent). */
+export interface ChatLine {
+  channel: ChatChannel;
+  from: string;
+  to?: string;
+  text: string;
+}
+
 export const INTERP_DELAY_MS = 150;
 const MAX_INTERP_DELAY_MS = 450;
 /** A pause longer than this between positions means it stood still. */
@@ -62,6 +70,9 @@ export class NetClient {
   private sentMoving = false;
   private acc = 0;
   private samples = new Map<number, Sample[]>();
+  /** Chat received since the last `drainChat`, and the players this account has blocked. */
+  private chat: ChatLine[] = [];
+  blocked: string[] = [];
   /** The last full state, which the next delta changes. */
   private last: WorldState | null = null;
   private serverPos: { x: number; z: number } | null = null;
@@ -207,6 +218,18 @@ export class NetClient {
       }
       return;
     }
+    if (msg.t === 'chat') {
+      this.chat.push({ channel: msg.channel, from: msg.from, to: msg.to, text: msg.text });
+      return;
+    }
+    if (msg.t === 'social') {
+      this.blocked = msg.blocked;
+      return;
+    }
+    if (msg.t === 'notice') {
+      this.events.push({ type: 'message', text: msg.text, tone: msg.tone ?? 'info' });
+      return;
+    }
     if (msg.t !== 'state' || !this.world || !this.last) return;
     if (msg.character) applyCharacter(this.world, msg.character);
     this.last = patchState(this.last, msg.delta);
@@ -340,6 +363,25 @@ export class NetClient {
     for (const n of w.npcs) place(n);
     for (const q of w.players.values()) if (q !== p) place(q);
     return this.acc / TICK_SECONDS;
+  }
+
+  /** Says something to players nearby, or privately to one player. */
+  say(text: string, to?: string) {
+    this.post(to ? { t: 'chat', channel: 'private', to, text } : { t: 'chat', channel: 'local', text });
+  }
+
+  block(name: string, on: boolean) {
+    this.post({ t: 'block', name, on });
+  }
+
+  report(name: string, reason: string) {
+    this.post({ t: 'report', name, reason });
+  }
+
+  drainChat(): ChatLine[] {
+    const out = this.chat;
+    this.chat = [];
+    return out;
   }
 
   /** Events from the server, plus any from the device-local practice market. */

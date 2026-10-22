@@ -63,6 +63,9 @@ export const EVENT_AUDIENCE: Record<GameEvent['type'], AudienceKind> = {
   tannerClose: 'self',
   shopClose: 'self',
   shop: 'self',
+  // Trade events are addressed to each of the two players (`emitFor`).
+  tradeRequest: 'self',
+  trade: 'self',
 };
 
 export type Audience = { kind: 'self'; player: PlayerId } | { kind: 'nearby'; x: number; z: number } | { kind: 'zone' };

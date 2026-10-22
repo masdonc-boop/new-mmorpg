@@ -56,6 +56,35 @@ const MIGRATIONS: string[] = [
     report TEXT NOT NULL DEFAULT '[]'
   );
   `,
+  // 3: player trading and chat (docs/MULTIPLAYER.md 3A.6). The item ledger is append-only: one row
+  // per item moved between characters, under the trade's reference.
+  `
+  CREATE TABLE item_ledger (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    from_character INTEGER NOT NULL REFERENCES characters(id),
+    to_character INTEGER NOT NULL REFERENCES characters(id),
+    item TEXT NOT NULL,
+    qty INTEGER NOT NULL CHECK (qty > 0)
+  );
+  CREATE INDEX item_ledger_ref ON item_ledger(ref);
+  CREATE TABLE blocks (
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    blocked TEXT NOT NULL COLLATE NOCASE,
+    PRIMARY KEY (account_id, blocked)
+  );
+  CREATE TABLE reports (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    reporter INTEGER NOT NULL REFERENCES accounts(id),
+    target TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    context TEXT NOT NULL DEFAULT '[]'
+  );
+  ALTER TABLE accounts ADD COLUMN muted_until INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openDatabase(path: string): Db {

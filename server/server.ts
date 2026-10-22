@@ -11,6 +11,7 @@ import { openDatabase } from './db';
 import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
 import { Repos, StaleWriteError } from './repo';
 import { prepareImport, type ImportPolicy } from './import';
+import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat } from './chat';
 
 /**
  * Brightwater development server (docs/MULTIPLAYER.md 3A.2 and 3A.3).
@@ -54,6 +55,8 @@ export interface RunningServer {
   repos: Repos;
   /** Load figures: whole server ticks (simulation, routing and snapshots) and bytes sent. */
   stats: ServerStats;
+  /** Moderation: stops a player chatting for a while (accounts: stored; guests: until they leave). */
+  mute(name: string, minutes: number): boolean;
   /** Saves every loaded character now (tests and tooling). */
   saveAll(): void;
   /** Stops the server. `save: false` simulates a crash (nothing is saved on the way down). */
@@ -111,6 +114,12 @@ export interface Session {
   lastState: WorldState | null;
   /** Bytes sent to this character's connections (load measurement). */
   bytesSent: number;
+  /** Chat: pacing, who they've blocked (lower case), what they received (for reports), mutes. */
+  pace: ChatPace;
+  blocked: Set<string>;
+  heard: { from: string; text: string }[];
+  mutedUntil: number;
+  lastReport: number;
   strikes: number;
   tokens: number;
   lastImportTry: number;
@@ -220,6 +229,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         session.disconnectedAt = clock();
         session.inputs = [];
         zone.issueFor(session.playerId, { type: 'joystick', dx: 0, dz: 0 });
+        // A trade never waits on someone who has gone.
+        zone.trades.leave(session.playerId, session.name);
         log(`${session.name} disconnected`);
       }
     });
@@ -330,7 +341,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
 
   function newSession(key: string, name: string, playerId: PlayerId, player: Player, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
-    return { key, name, playerId, player, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
+    return { key, name, playerId, player, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, pace: new ChatPace(clock), blocked: new Set(accountId === null ? [] : repos.blockedBy(accountId).map((n) => n.toLowerCase())), heard: [], mutedUntil: 0, lastReport: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
   }
 
   /** Points a session at a connection (taking over from any older one) and sends the welcome. */
@@ -350,6 +361,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.lastCharacter = characterKey(character);
     s.lastState = stateFor(s);
     send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: s.lastState, ...(issued ? { session: issued } : {}) });
+    send(ws, { t: 'social', blocked: [...s.blocked] });
   }
 
   /** The character and their own things in the world (wisps, private loot), as saved. */
@@ -444,8 +456,34 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         if (DEVICE_LOCAL.has(msg.cmd.type)) return;
         // Movement by joystick arrives as numbered inputs, not commands.
         if (msg.cmd.type === 'joystick') return;
+        if (msg.cmd.type === 'tradeRequest') {
+          // Trades are saved to both accounts as they happen, so guests (never saved) can't trade.
+          const other = sessionOf(msg.cmd.target);
+          if (s.accountId === null) return notice(s, 'Guests can’t trade. Create an account to trade.', 'warn');
+          if (other && other.accountId === null) return notice(s, `${other.name} is a guest and can’t trade.`, 'warn');
+        }
         zone.issueFor(s.playerId, msg.cmd);
         return;
+      case 'chat':
+        return chat(s, msg.channel, msg.text, msg.to);
+      case 'block': {
+        const name = msg.name.trim();
+        if (name.toLowerCase() === s.name.toLowerCase()) return notice(s, 'You can’t block yourself.', 'warn');
+        if (msg.on) s.blocked.add(name.toLowerCase());
+        else s.blocked.delete(name.toLowerCase());
+        if (s.accountId !== null) repos.setBlocked(s.accountId, name.toLowerCase(), msg.on);
+        send(s.ws, { t: 'social', blocked: [...s.blocked] }, s);
+        return notice(s, msg.on ? `You won’t hear from ${name} any more.` : `You can hear from ${name} again.`);
+      }
+      case 'report': {
+        if (s.accountId === null) return notice(s, 'Sign in to an account to report a player.', 'warn');
+        if (clock() - s.lastReport < 10_000) return notice(s, 'Please wait a moment before sending another report.', 'warn');
+        s.lastReport = clock();
+        const said = s.heard.filter((h) => h.from.toLowerCase() === msg.name.toLowerCase()).map((h) => h.text);
+        repos.report(s.accountId, msg.name, msg.reason, said);
+        log(`${s.name} reported ${msg.name}`);
+        return notice(s, `Thank you. Your report about ${msg.name} has been sent to the moderators.`, 'good');
+      }
       case 'input':
         if (msg.seq <= s.lastSeq) return;
         s.lastSeq = msg.seq;
@@ -458,6 +496,82 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return;
     }
   }
+
+  function sessionOf(playerId: PlayerId): Session | undefined {
+    for (const x of sessions.values()) if (x.playerId === playerId) return x;
+    return undefined;
+  }
+
+  function notice(s: Session, text: string, tone: 'info' | 'warn' | 'good' = 'info') {
+    send(s.ws, { t: 'notice', text, tone }, s);
+  }
+
+  /** Delivers a chat message to whoever should hear it (nobody who has blocked the speaker). */
+  function chat(s: Session, channel: 'local' | 'private', raw: string, to?: string) {
+    const muted = Math.max(s.mutedUntil, s.accountId === null ? 0 : repos.mutedUntil(s.accountId));
+    if (muted > clock()) return notice(s, `You are muted until ${new Date(muted).toUTCString()}.`, 'warn');
+    const clean = cleanChat(raw);
+    if ('error' in clean) return notice(s, clean.error, 'warn');
+    const slow = s.pace.take(clean.text);
+    if (slow) return notice(s, slow, 'warn');
+    const deliver = (r: Session, msg: ServerMessage) => {
+      send(r.ws, msg, r);
+      if (r !== s) {
+        r.heard.push({ from: s.name, text: clean.text });
+        if (r.heard.length > CHAT_HEARD) r.heard.shift();
+      }
+    };
+    if (channel === 'local') {
+      for (const r of sessions.values()) {
+        if (!r.ws || r.blocked.has(s.name.toLowerCase())) continue;
+        if (Math.abs(r.player.x - s.player.x) > CHAT_RADIUS || Math.abs(r.player.z - s.player.z) > CHAT_RADIUS) continue;
+        deliver(r, { t: 'chat', channel, from: s.name, text: clean.text });
+      }
+      return;
+    }
+    const target = [...sessions.values()].find((r) => r.ws && r.name.toLowerCase() === to!.trim().toLowerCase());
+    // Someone who has blocked you looks the same as someone who is away.
+    if (!target || target.blocked.has(s.name.toLowerCase())) return notice(s, `${to!.trim()} isn’t online.`, 'warn');
+    if (target === s) return notice(s, 'You can’t message yourself.', 'warn');
+    deliver(target, { t: 'chat', channel, from: s.name, text: clean.text });
+    send(s.ws, { t: 'chat', channel, from: s.name, to: target.name, text: clean.text }, s);
+  }
+
+  /**
+   * A finished trade is saved for both players, with its ledger rows, in one transaction before
+   * either is told. If that fails, the simulation undoes the swap (src/sim/trade.ts).
+   */
+  zone.trades.commitHook = (c) => {
+    const a = sessionOf(c.a);
+    const b = sessionOf(c.b);
+    if (!a || !b || a.characterId === null || b.characterId === null) throw new Error('trade between unsaved characters');
+    const ref = `trade-${randomBytes(8).toString('hex')}`;
+    const parts = [a, b].map((x) => ({ s: x, json: persisted(x) }));
+    const moves = [
+      ...c.aGave.map((m) => ({ from: a.characterId!, to: b.characterId!, item: m.item, qty: m.qty })),
+      ...c.bGave.map((m) => ({ from: b.characterId!, to: a.characterId!, item: m.item, qty: m.qty })),
+    ];
+    try {
+      const versions = repos.commitTrade(
+        ref,
+        parts.map(({ s: x, json }) => {
+          const [record, zoneState] = JSON.parse(json);
+          return { characterId: x.characterId!, epoch: x.epoch, version: x.version, record, zone: zoneState };
+        }),
+        moves,
+      );
+      parts.forEach(({ s: x, json }, i) => {
+        x.version = versions[i];
+        x.lastSaved = json;
+      });
+    } catch (err) {
+      log(`trade ${ref} between ${a.name} and ${b.name} refused: ${(err as Error).message}`);
+      throw err;
+    }
+    repos.audit(a.accountId, 'trade', `${ref} with ${b.name}`);
+    repos.audit(b.accountId, 'trade', `${ref} with ${a.name}`);
+    log(`${a.name} and ${b.name} traded (${ref}, ${moves.length} stacks)`);
+  };
 
   /** Applies at most one movement input for a session this tick. */
   function applyInput(s: Session) {
@@ -560,6 +674,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     repos,
     stats,
     saveAll,
+    mute: (name: string, minutes: number) => {
+      const until = clock() + minutes * 60_000;
+      const online = [...sessions.values()].find((x) => x.name.toLowerCase() === name.toLowerCase());
+      const account = repos.findAccount(name);
+      if (online) online.mutedUntil = until;
+      if (account) repos.mute(account.id, until, 'server');
+      return !!(online || account);
+    },
     close: ({ save: doSave = true } = {}) =>
       new Promise<void>((resolve) => {
         clearInterval(timer);

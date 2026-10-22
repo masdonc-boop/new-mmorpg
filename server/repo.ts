@@ -164,6 +164,62 @@ export class Repos {
     return r ? JSON.parse(r.report) : null;
   }
 
+  // ---------------------------------------------------------------- trades
+
+  /**
+   * Saves both sides of a player trade and its ledger rows in one transaction. Each character
+   * needs its current lease and version (throws StaleWriteError otherwise, and nothing is written).
+   * Returns the new versions.
+   */
+  commitTrade(
+    ref: string,
+    sides: { characterId: number; epoch: number; version: number; record: CharacterRecord; zone: ZoneState }[],
+    moves: { from: number; to: number; item: string; qty: number }[],
+  ): number[] {
+    return this.db.transaction(() => {
+      const versions = sides.map((x) => this.saveCharacter(x.characterId, x.epoch, x.version, x.record, x.zone));
+      const at = this.now();
+      const row = this.db.prepare('INSERT INTO item_ledger (at, kind, ref, from_character, to_character, item, qty) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const m of moves) row.run(at, 'trade', ref, m.from, m.to, m.item, m.qty);
+      return versions;
+    })();
+  }
+
+  ledger(ref?: string): { ref: string; from: number; to: number; item: string; qty: number }[] {
+    const sql = 'SELECT ref, from_character AS "from", to_character AS "to", item, qty FROM item_ledger' + (ref ? ' WHERE ref = ?' : '') + ' ORDER BY id';
+    return (ref ? this.db.prepare(sql).all(ref) : this.db.prepare(sql).all()) as { ref: string; from: number; to: number; item: string; qty: number }[];
+  }
+
+  // ---------------------------------------------------------------- chat and moderation
+
+  blockedBy(accountId: number): string[] {
+    return (this.db.prepare('SELECT blocked FROM blocks WHERE account_id = ? ORDER BY blocked').all(accountId) as { blocked: string }[]).map((r) => r.blocked);
+  }
+
+  setBlocked(accountId: number, name: string, on: boolean) {
+    if (on) this.db.prepare('INSERT OR IGNORE INTO blocks (account_id, blocked) VALUES (?, ?)').run(accountId, name);
+    else this.db.prepare('DELETE FROM blocks WHERE account_id = ? AND blocked = ?').run(accountId, name);
+  }
+
+  report(reporter: number, target: string, reason: string, context: string[]) {
+    this.db.prepare('INSERT INTO reports (at, reporter, target, reason, context) VALUES (?, ?, ?, ?, ?)').run(this.now(), reporter, target, reason.slice(0, 200), JSON.stringify(context));
+    this.audit(reporter, 'report', target);
+  }
+
+  reports(): { reporter: number; target: string; reason: string; context: string[] }[] {
+    return (this.db.prepare('SELECT reporter, target, reason, context FROM reports ORDER BY id').all() as { reporter: number; target: string; reason: string; context: string }[]).map((r) => ({ ...r, context: JSON.parse(r.context) }));
+  }
+
+  /** Until when an account may not chat (0: not muted). */
+  mutedUntil(accountId: number): number {
+    return (this.db.prepare('SELECT muted_until AS m FROM accounts WHERE id = ?').get(accountId) as { m: number } | undefined)?.m ?? 0;
+  }
+
+  mute(accountId: number, until: number, by: string) {
+    this.db.prepare('UPDATE accounts SET muted_until = ? WHERE id = ?').run(until, accountId);
+    this.audit(accountId, 'muted', `${by} until ${new Date(until).toISOString()}`);
+  }
+
   // ---------------------------------------------------------------- audit
 
   audit(accountId: number | null, kind: string, detail = '') {
