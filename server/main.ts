@@ -1,11 +1,14 @@
 import { startServer } from './server';
+import { configFromEnv } from './config';
 
-// `npm run server` — the local development server (docs/MULTIPLAYER.md 3A.2).
-const port = Number(process.env.PORT ?? 8787);
-const host = process.env.HOST ?? '127.0.0.1';
-// GUESTS=1 also allows unsaved guest play by name (development and automated tests).
-// LIVE_EXCHANGE=1 opens the live Exchange with real items and coins (off unless the owner says so).
-startServer({ port, host, allowGuests: process.env.GUESTS === '1', liveExchange: process.env.LIVE_EXCHANGE === '1' }).catch((err) => {
+// `npm run server`: the development server (docs/MULTIPLAYER.md 3A.2; settings in server/config.ts).
+const config = configFromEnv(process.env);
+if (!config.ok) {
+  console.error(`[server] ${config.error}`);
+  process.exit(1);
+}
+for (const note of config.notes) console.log(`[server] ${note}`);
+startServer(config.options).catch((err) => {
   console.error(err);
   process.exit(1);
 });

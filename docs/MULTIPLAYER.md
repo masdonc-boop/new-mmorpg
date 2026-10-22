@@ -845,3 +845,52 @@ The earlier load and chaos tests still run alongside:
 - the multi-player fuzz tests.
 
 New server limits (`limits.registrationsPerHour`) and the other 3B.1 limits are options, so tests can raise them; their defaults suit real players.
+
+### 3B.6 Single-player and Android controls: checked
+
+`tools/mobile-smoke.cjs` drives the single-player build the way a phone does:
+- an Android-sized touch screen;
+- real touch events (Chrome DevTools Protocol);
+- no server.
+
+It checks:
+- that no network connection is attempted and nothing is hidden as "offstage";
+- that the touch joystick moves the hero;
+- that tapping a tree on screen starts gathering;
+- that the Bag button opens the inventory;
+- that the game saves on the device and reloads in the same place;
+- that a save from before multiplayer (`p2-midgame`) still loads with its skills and house;
+- that no page errors occur.
+
+Run it with `npx vite build && npx vite preview --port 4173`, then `node tools/mobile-smoke.cjs`.
+
+It was run against both the current build and the last Phase 3A build, with the same results.
+- An early version of the tap check sometimes failed on both builds alike. Its diagnostics showed the tap always reached the right tree; the tree had simply fallen after its first log (a 25% chance), which ends gathering. The check now also counts a log chopped.
+- The joystick and tap code (`src/input/controls.ts`) is unchanged in 3B. The only change to tapping is that, in network play, tapping another player opens the player menu.
+
+Unit and simulation tests for single-player play (the save fixtures from every batch, the complete gathering → crafting → equipment loops and the world rules) all still pass.
+
+### 3B.7 A private Android test: ready
+
+`docs/ANDROID_TEST.md` gives the exact steps for the first two-phone test on the owner's own computer. It covers three free options and their privacy:
+- **USB cable** with `adb reverse` (recommended: the server stays on the computer and on no network);
+- the **same home Wi-Fi**;
+- **Tailscale** (a private network of the owner's own devices).
+
+Public tunnels are excluded without the owner's decision. The guide also includes a 20-minute test script, what to send back, and troubleshooting.
+
+The server is safe by default for this (`server/config.ts`, `npm run server` reading environment variables):
+- **Listening:** on the computer only (127.0.0.1), unless told otherwise.
+- **Beyond the computer** (any other `HOST`), it refuses to start without:
+  - an **invite code** (`INVITE_CODE`, at least 8 characters), which new accounts must give (compared in constant time; the sign-in screen has the field);
+  - the **allowed game pages** (`ALLOWED_ORIGINS`).
+  
+  Guests (no password) are refused there.
+- **The live Exchange** is still off unless `LIVE_EXCHANGE=1`, and the server says so when it is on.
+
+Checked:
+- `tests/net-remote.test.ts`: the configuration rules, and the invite code (refused without it or with the wrong one; signing in to an existing account doesn't need it).
+- A rehearsal of the Wi-Fi option in a browser: the server refused to start without the settings. With them:
+  - an account without the code was refused with a clear message;
+  - the same account with the code was created and signed in;
+  - a page from another origin was refused.

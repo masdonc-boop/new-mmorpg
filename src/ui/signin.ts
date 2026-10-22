@@ -17,6 +17,7 @@ export function runSignIn(parent: HTMLElement, opts: { server: string; message?:
         <div class="si-server">Development server · ${escape(opts.server)}</div>
         <label class="cr-name">Name <input name="username" maxlength="12" autocomplete="username" spellcheck="false" autocapitalize="off"></label>
         <label class="cr-name">Password <input name="password" type="password" maxlength="128" autocomplete="current-password"></label>
+        <label class="cr-name si-invite">Invite code <small>(new accounts, if the host gave you one)</small> <input name="invite" maxlength="64" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
         <div class="si-msg" role="alert"></div>
         <div class="cr-btns"><button type="button" class="si-new">Create account</button><button type="submit" class="cr-go">Sign in ▸</button></div>
         <div class="si-note">Names are 3 to 12 letters or numbers. Passwords need at least 8 characters. This is a test server on your own computer.</div>
@@ -25,6 +26,7 @@ export function runSignIn(parent: HTMLElement, opts: { server: string; message?:
     const form = root.querySelector('form')!;
     const user = form.querySelector<HTMLInputElement>('input[name=username]')!;
     const pass = form.querySelector<HTMLInputElement>('input[name=password]')!;
+    const invite = form.querySelector<HTMLInputElement>('input[name=invite]')!;
     const msg = root.querySelector<HTMLElement>('.si-msg')!;
     user.value = opts.name ?? '';
     msg.textContent = opts.message ?? '';
@@ -52,7 +54,8 @@ export function runSignIn(parent: HTMLElement, opts: { server: string; message?:
       const password = pass.value;
       root.remove();
       const { appearance } = await runCharacterCreator(parent, username);
-      resolve({ kind: 'register', username, password, appearance });
+      const code = invite.value.trim();
+      resolve({ kind: 'register', username, password, appearance, ...(code ? { invite: code } : {}) });
     });
   });
 }

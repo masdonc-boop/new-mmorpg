@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type Player, type PlayerId } from '../src/sim/world';
 import { routeEvents } from '../src/net/audience';
@@ -53,6 +53,8 @@ export interface ServerOptions {
    * that send no Origin (not browsers) are always allowed. Unset: any page (development only).
    */
   allowedOrigins?: string[];
+  /** New accounts need this code (3B.7). Unset: anyone may register. */
+  inviteCode?: string;
   /** How often connections are pinged (one missed answer closes them). Default 10 s. */
   heartbeatMs?: number;
   /** 3B.1 limits (defaults suit real players, each on their own address; tests raise them). */
@@ -95,6 +97,8 @@ const MAX_INPUT_QUEUE = 8;
 const INPUT_HOLD_TICKS = 6;
 /** Rate limit: messages per second per connection (token bucket), and strikes before disconnecting. */
 const MESSAGE_RATE = 90;
+/** Compares secrets without giving away how much matched. */
+const sameSecret = (a: string, b: string) => timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest());
 /** 3B.1 limits. */
 const MAX_PREAUTH_MESSAGE = 4096;
 const MAX_BUFFERED = 2 * 1024 * 1024;
@@ -430,6 +434,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       const problem = passwordProblem(auth.password, auth.username);
       if (problem) return no(problem, 'auth');
       if (registrations.blocked(addr)) return no('Too many new accounts from here. Try again later.', 'locked');
+      // 3B.7: a server open beyond its own computer only takes new accounts with its invite code.
+      if (opts.inviteCode && !sameSecret(auth.invite ?? '', opts.inviteCode)) {
+        registrations.fail(addr);
+        return no(auth.invite ? 'That invite code isn’t right.' : 'This server needs an invite code to create an account. Ask the host for it.', 'auth');
+      }
       const hash = await hashPassword(auth.password);
       const record = new GameWorld({ name: auth.username, appearance: auth.appearance, map, clock }).characterRecord();
       const made = repos.createAccount(auth.username, hash, record, {});

@@ -25,7 +25,8 @@ export const SNAPSHOT_HZ = 10;
  */
 export type Auth =
   | { kind: 'guest'; name: string; appearance?: Appearance }
-  | { kind: 'register'; username: string; password: string; appearance?: Appearance }
+  /** `invite`: the code a server open beyond its own computer asks new accounts for (3B.7). */
+  | { kind: 'register'; username: string; password: string; appearance?: Appearance; invite?: string }
   | { kind: 'login'; username: string; password: string }
   | { kind: 'token'; token: string };
 
@@ -150,7 +151,7 @@ function validAuth(a: unknown): a is Auth {
     case 'guest':
       return onlyKeys(a, ['kind', 'name', 'appearance']) && str(a.name, 32) && (a.appearance === undefined || validAppearance(a.appearance));
     case 'register':
-      return onlyKeys(a, ['kind', 'username', 'password', 'appearance']) && str(a.username, 32) && str(a.password, 128) && (a.appearance === undefined || validAppearance(a.appearance));
+      return onlyKeys(a, ['kind', 'username', 'password', 'appearance', 'invite']) && str(a.username, 32) && str(a.password, 128) && (a.appearance === undefined || validAppearance(a.appearance)) && (a.invite === undefined || (typeof a.invite === 'string' && a.invite.length <= 64));
     case 'login':
       return onlyKeys(a, ['kind', 'username', 'password']) && str(a.username, 32) && str(a.password, 128);
     case 'token':
