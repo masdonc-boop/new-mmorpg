@@ -120,8 +120,12 @@ Owner notes on P2 choices:
 - Crops take OSRS-like real time (about 40 minutes). No disease, compost or watering yet.
 - Stall owners and guards don't catch thieves yet; Agility has no run-energy benefit because run energy doesn't exist.
 
-**P3: multiplayer-dependent**
+**P3: multiplayer-dependent (on hold, owner decision)**
 13. Server-authoritative simulation, player trading, an exchange, shop stock shared between players, account-wide bank storage.
+
+Owner decisions so far:
+- On hold: no server is built until hosting is chosen (no paid services or public deployment without approval).
+- Sign-in, when it comes: simple username and password accounts stored on the game server, with hashed passwords.
 
 ## 7. Toolbelt reference (implemented)
 
