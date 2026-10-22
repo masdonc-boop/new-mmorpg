@@ -818,3 +818,30 @@ Checked (`tests/net-reconnect.test.ts`, 6 tests):
 - an Exchange offer placed while disconnected arriving once after reconnecting;
 - signing in elsewhere taking over the same character, never a copy;
 - dropping out inside a house: back in the same house within the grace period, the house closing after it, and signing in later reopening it.
+
+### 3B.5 Integration and load tests: done
+
+`tests/net-soak.test.ts` puts 16 accounts on one server, all doing their jobs at once:
+- **gathering:** chopping the nearest tree, over and over;
+- **fighting:** goblins and wolves, dying and respawning;
+- **banking:** opening the bank and moving planks in and out;
+- **trading:** in pairs, with asking, offering, accepting, confirming and the odd decline;
+- **the live Exchange:** placing, cancelling and collecting buy and sell offers.
+
+Every few hundred milliseconds someone's connection is cut, and their client reconnects by itself. The run has three phases, ending in **a crash, a clean restart and another crash**. After every phase:
+- **The marker item adds up exactly.** Oak planks: only the sawmill makes them, and nobody uses it. The total across every saved character (bag, bank, gear and wisps) plus the Exchange equals what there was at the start.
+- **The Exchange's books balance** (`verify()`), and the audit chain stored in the database checks out from its first entry.
+- **Zones:** every character is in exactly one zone.
+- **Speed:** the tick averaged under 10 ms during the phase.
+- **Errors:** nothing was logged as an error, a failure or a freeze.
+
+The test also checks that real work happened: trades in the item ledger, Exchange trades, and woodcutting and combat xp gained.
+
+The earlier load and chaos tests still run alongside:
+- 50 bots in one place (about 4.5 ms a tick, 8 KB/s per client);
+- 30 players crossing zones;
+- disconnects at every step of a trade;
+- live Exchange crashes and randomized sessions;
+- the multi-player fuzz tests.
+
+New server limits (`limits.registrationsPerHour`) and the other 3B.1 limits are options, so tests can raise them; their defaults suit real players.

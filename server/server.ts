@@ -56,7 +56,7 @@ export interface ServerOptions {
   /** How often connections are pinged (one missed answer closes them). Default 10 s. */
   heartbeatMs?: number;
   /** 3B.1 limits (defaults suit real players, each on their own address; tests raise them). */
-  limits?: Partial<{ connectionsPerAddress: number; signInsPerAddress: number; transferCooldownMs: number }>;
+  limits?: Partial<{ connectionsPerAddress: number; signInsPerAddress: number; transferCooldownMs: number; registrationsPerHour: number }>;
   /** Live Exchange safeguards (3B.3); anything left out keeps its default. */
   exchangePolicy?: Partial<ExchangePolicy>;
   /** How often the live Exchange checks its books against the database. Default one minute. */
@@ -239,7 +239,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }, opts.heartbeatMs ?? 10_000);
   const limits = { connectionsPerAddress: 8, signInsPerAddress: 2, transferCooldownMs: 1000, ...opts.limits };
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
-  const registrations = new RateLimiter(5, 60 * 60_000, clock);
+  const registrations = new RateLimiter(opts.limits?.registrationsPerHour ?? 5, 60 * 60_000, clock);
   // A real hash to compare against when the account doesn't exist (so timing doesn't reveal names).
   const dummyHash = await hashPassword(randomBytes(12).toString('hex'));
   let nextGuestId = 1_500_000_000;
