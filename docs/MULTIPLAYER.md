@@ -303,7 +303,47 @@ Acceptance:
 - A version 1 save loads, saves and reloads to the same `CharacterRecord` and `ZoneState`. Round-trip tests run against fixture saves from earlier batches.
 - The player id is no longer a constant (a world can be built with player id 7 and all tests pass).
 
-### 3A.2 Local server skeleton and authoritative solo play
+### 3A.2 Local server skeleton and authoritative solo play: done
+
+How to run it:
+- `npm run server` starts the development server on `ws://127.0.0.1:8787`.
+- `npm run dev` serves the client.
+- Open `http://localhost:5173/?server=ws://127.0.0.1:8787` to play in network mode.
+
+Without `?server=` the game is the usual local single-player game. In network mode the local save is never overwritten.
+
+Delivered:
+- **Server** (`server/server.ts`, entry `server/main.ts`). It uses `ws`, listens on localhost only, and runs the fixed 30 Hz loop. Each guest gets their own server-side `GameWorld` with a server player id (1,000,000 and up), sharing one generated map.
+  - Every message goes through `parseClientMessage`, which uses the 3A.1 command validator.
+  - It enforces a message size cap, a rate limit (90 messages a second) and strikes (20 invalid messages disconnect).
+  - A 5-second hello timeout; one live connection per character (a new sign-in replaces the old one).
+  - The content-version handshake turns away a client built from a different map or item table.
+  - Guests are kept in memory until the server stops. Disconnected worlds are paused.
+- **Protocol** (`src/net/protocol.ts`):
+  - From the client: `hello`, `cmd`, `input` (numbered one-tick joystick inputs) and `ping`.
+  - From the server: `welcome`, `state` (snapshot, events, and the character record only when it changed), `error` and `pong`.
+  - JSON, version 1.
+- **Replication** (`src/net/replica.ts`):
+  - `captureState` / `applyState` carry the player's runtime fields, plus creatures and NPCs within 32 tiles, depleted nodes, ground piles, wisps and fires.
+  - `applyCharacter` restores the character record through the normal save path onto the replica.
+- **Client** (`src/net/client.ts`, wired in `src/main.ts`):
+  - The renderer and HUD read a replica world unchanged.
+  - Joystick movement is predicted with the simulation's own movement code (`GameWorld.predictMove`), sent as numbered inputs and reconciled against the server's acknowledged position.
+  - Path movement follows the server smoothly. Other creatures and NPCs are interpolated 150 ms in the past.
+  - The practice market runs on the device; the server ignores those commands.
+- **Measured:** a snapshot is about 3.8 KB in the village, about 38 KB/s at 10 snapshots a second. Change-only updates (deltas) are planned for 3A.5.
+- **Tests:** `tests/net-server.test.ts` (9 tests). It starts a real server and connects real WebSocket clients:
+  - Protocol parsing and the content version.
+  - Welcome, and a matching replica.
+  - Chop, fletch and bank through commands.
+  - A tampering client: injected state, invented fields, other accounts, practice-market commands, and junk until disconnected.
+  - A version mismatch, and a replaced connection.
+  - The device-local practice market.
+  - Prediction at 150 ms round trips: movement starts before any server reply, ends within 0.05 tiles of the server, and corrections stay under 0.35 tiles.
+
+Packages added (owner approved): `ws` 8.22.0 (8.18 had published advisories), `tsx` 4.23.15, and the dev-only types `@types/ws` and `@types/node`. `npm audit` shows no advisories for these. The remaining warnings are in the existing Vite and Vitest development tooling.
+
+Planned scope (kept for reference):
 
 Goal: a Node server that runs one world per connected player (today's single-player simulation, but on the server), and a client network mode.
 - `server/` entry point with `ws`. Protocol envelope (version, sequence, type) and the 3A.1 validator at the gateway.
@@ -383,7 +423,7 @@ Acceptance:
 
 ### Approval gates
 
-- **Before 3A.2:** adding runtime dependencies (`ws`, `better-sqlite3`, `tsx`). All are free and open source, but they need owner approval.
+- **Before 3A.2:** adding runtime dependencies (`ws`, `better-sqlite3`, `tsx`). Approved by the owner; `ws` and `tsx` were added in 3A.2, `better-sqlite3` comes with 3A.3.
 - **Before anything reachable from the internet:** hosting choice, TLS, backups, and a privacy note for accounts.
 - **Before live trading:** the owner turns on `liveExchange` after a dry run with test accounts.
 

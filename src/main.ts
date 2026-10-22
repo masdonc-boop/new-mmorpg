@@ -7,6 +7,7 @@ import { Hud } from './ui/hud';
 import { Audio } from './ui/audio';
 import { ART } from './render/art';
 import type { GameEvent } from './sim/world';
+import { NetClient } from './net/client';
 
 const SAVE_KEY = 'brightwater.save.v1';
 const SETTINGS_KEY = 'brightwater.settings.v1';
@@ -58,7 +59,26 @@ async function boot() {
   if (save?.version !== 1) save = null;
   loading.style.display = 'none';
   let world: GameWorld;
-  if (!save) {
+  // Network play against the local development server (docs/MULTIPLAYER.md 3A.2): opt-in with
+  // ?server=ws://localhost:8787. The server owns the character; the local save is left untouched.
+  const serverUrl = params.get('server');
+  let net: NetClient | null = null;
+  if (serverUrl) {
+    let name = save?.name ?? (params.has('autostart') ? 'Tester' : '');
+    let appearance = save?.appearance;
+    if (!name) {
+      const created = await runCharacterCreator(app);
+      name = created.name;
+      appearance = created.appearance;
+    }
+    net = new NetClient({ url: serverUrl, name: name.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 12) || 'Guest', appearance });
+    loading.style.display = '';
+    try {
+      world = await net.connect();
+    } catch (err) {
+      throw new Error(`Could not join the server at ${serverUrl}: ${(err as Error).message}`);
+    }
+  } else if (!save) {
     if (params.has('autostart')) {
       world = new GameWorld({ name: 'Tester' });
     } else {
@@ -80,7 +100,7 @@ async function boot() {
   renderer.zoom = settings.zoom;
   loading.remove();
 
-  const issue: GameWorld['issue'] = (cmd) => world.issue(cmd);
+  const issue: GameWorld['issue'] = net ? net.issue : (cmd) => world.issue(cmd);
   const audio = new Audio();
   audio.enabled = settings.sound;
   const unlockAudio = () => audio.unlock();
@@ -157,6 +177,7 @@ async function boot() {
       persistSettings();
     },
     newCharacter: () => {
+      if (net) return location.reload();
       localStorage.removeItem(SAVE_KEY);
       skipSave = true;
       location.reload();
@@ -213,7 +234,8 @@ async function boot() {
 
   let skipSave = false;
   const persist = () => {
-    if (!skipSave) saveJson(SAVE_KEY, world.save());
+    // In network play the server keeps the character; never overwrite the local save with it.
+    if (!skipSave && !net) saveJson(SAVE_KEY, world.save());
     persistSettings();
   };
   setInterval(persist, 10000);
@@ -225,6 +247,7 @@ async function boot() {
   let acc = 0;
   let last = performance.now();
   let lastJoy = { x: 0, z: 0 };
+  let disconnectShown = false;
   const frame = () => {
     const now = performance.now();
     const dt = Math.min(0.25, (now - last) / 1000);
@@ -240,26 +263,38 @@ async function boot() {
       lastJoy = { x: jx, z: jz };
     }
 
-    let steps = 0;
-    while (acc >= TICK_SECONDS && steps < 9) {
-      world.tick(TICK_SECONDS);
-      acc -= TICK_SECONDS;
-      steps++;
+    let alpha: number;
+    if (net) {
+      // The server runs the game; the client predicts, interpolates and applies what it's sent.
+      alpha = net.update(dt);
+      acc = 0;
+      if (net.status === 'closed' && !disconnectShown) {
+        disconnectShown = true;
+        hud.handleEvent({ type: 'message', text: `${net.closeReason} Reload to reconnect.`, tone: 'bad' });
+      }
+    } else {
+      let steps = 0;
+      while (acc >= TICK_SECONDS && steps < 9) {
+        world.tick(TICK_SECONDS);
+        acc -= TICK_SECONDS;
+        steps++;
+      }
+      if (steps === 9) acc = 0;
+      alpha = acc / TICK_SECONDS;
     }
-    if (steps === 9) acc = 0;
-    for (const e of world.drainEvents()) {
+    for (const e of net ? net.drainEvents() : world.drainEvents()) {
       renderer.handleEvent(e);
       hud.handleEvent(e);
       playFor(e);
     }
-    renderer.render(dt, acc / TICK_SECONDS);
+    renderer.render(dt, alpha);
     hud.update(dt);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
 
   // Expose for debugging / automated smoke tests.
-  (window as unknown as { game: unknown }).game = { world, renderer, hud };
+  (window as unknown as { game: unknown }).game = { world, renderer, hud, net };
 }
 
 boot().catch((err) => {

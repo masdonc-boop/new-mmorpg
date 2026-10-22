@@ -754,14 +754,15 @@ export class GameWorld {
   private pending: PendingHit[] = [];
   private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
-  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId } = {}) {
+  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket } = {}) {
     const playerId = opts.playerId ?? LOCAL_PLAYER_ID;
     if (!isValidPlayerId(playerId)) throw new Error(`invalid player id ${playerId}`);
     this.clock = opts.clock ?? (() => Date.now());
     // Older saves may hold item ids that have since been renamed: convert them first.
     if (opts.save) opts = { ...opts, save: remapItemIds(opts.save) };
-    this.map = generateWorld(opts.seed ?? 1337);
-    this.market = PracticeMarket.restore(opts.save?.exchangePractice, this.clock) ?? new PracticeMarket(undefined, (opts.seed ?? 1337) ^ 0xe7c, this.clock);
+    // The map is static once generated, so worlds built from the same seed may share one.
+    this.map = opts.map ?? generateWorld(opts.seed ?? 1337);
+    this.market = opts.market ?? PracticeMarket.restore(opts.save?.exchangePractice, this.clock) ?? new PracticeMarket(undefined, (opts.seed ?? 1337) ^ 0xe7c, this.clock);
     this.rng = mulberry32((opts.seed ?? 1337) ^ 0x5eed);
     const s = opts.save;
     this.player = new Player(s?.name ?? opts.name ?? 'Adventurer', s?.appearance ?? opts.appearance ?? DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, playerId);
@@ -937,9 +938,51 @@ export class GameWorld {
 
   // ---------------------------------------------------------------- persistence
 
+  /**
+   * Network replica only (docs/MULTIPLAYER.md 3A.2): replaces ground piles, wisps and fires with the
+   * server's, keeping existing objects (by id) so the renderer's views stay attached.
+   */
+  syncDynamicEntities(state: {
+    ground: { id: number; item: ItemId; qty: number; x: number; z: number; owner: number | null; age: number }[];
+    graves: { id: number; x: number; z: number; owner: number; items: ItemStack[]; age: number }[];
+    fires: { id: number; x: number; z: number; life: number; age: number }[];
+  }) {
+    const ground = new Map(this.groundItems.map((g) => [g.id, g]));
+    for (const g of this.groundItems) this.byId.delete(g.id);
+    this.groundItems = state.ground.map((s) => {
+      const old = ground.get(s.id);
+      const g = old && old.item === s.item ? old : new GroundItem(s.id, s.item, s.qty, s.x, s.z, s.owner);
+      g.qty = s.qty;
+      g.age = s.age;
+      this.byId.set(g.id, g);
+      return g;
+    });
+    const graves = new Map(this.graves.map((g) => [g.id, g]));
+    for (const g of this.graves) this.byId.delete(g.id);
+    this.graves = state.graves.map((s) => {
+      const g = graves.get(s.id) ?? new Gravestone(s.id, s.x, s.z, s.owner, []);
+      g.items = s.items.map((i) => ({ ...i }));
+      g.age = s.age;
+      this.byId.set(g.id, g);
+      return g;
+    });
+    const fires = new Map(this.fires.map((f) => [f.id, f]));
+    for (const f of this.fires) {
+      this.byId.delete(f.id);
+      this.stations.splice(this.stations.indexOf(f), 1);
+    }
+    this.fires = state.fires.map((s) => {
+      const f = fires.get(s.id) ?? new Fire(s.id, s.x, s.z, s.life);
+      f.age = s.age;
+      this.byId.set(f.id, f);
+      this.stations.push(f);
+      return f;
+    });
+  }
+
   /** The character part of the save (docs/MULTIPLAYER.md 3A.1; see `src/sim/records.ts`). */
   characterRecord(): CharacterRecord {
-    return splitSave(this.save()).character;
+    return splitSave(this.save({ practice: false })).character;
   }
 
   /** The zone part of the save: ground piles and shrine wisps. */
@@ -947,7 +990,8 @@ export class GameWorld {
     return splitSave(this.save()).zone;
   }
 
-  save(): SaveData {
+  /** The whole save. `practice: false` leaves out the practice market (it is large and device-local). */
+  save(opts: { practice?: boolean } = {}): SaveData {
     const p = this.player;
     return {
       version: 1,
@@ -968,7 +1012,7 @@ export class GameWorld {
       options: { autoGather: p.autoGather },
       laps: p.laps,
       house: { ...p.furniture },
-      exchangePractice: this.market.toJSON(),
+      ...(opts.practice === false ? {} : { exchangePractice: this.market.toJSON() }),
       patches: this.patches.map((f) => ({ weeds: f.weeds, crop: f.crop, plantedAt: f.plantedAt, lives: f.lives, bareSince: f.bareSince })),
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
@@ -1307,13 +1351,7 @@ export class GameWorld {
       p.exchangeAt = null;
       this.emit({ type: 'exchangeClose' });
     }
-    // Simulated traders act every few seconds (their own random stream: world randomness is untouched).
-    this.marketTimer += dt;
-    if (this.marketTimer >= 4) {
-      this.marketTimer = 0;
-      this.market.step();
-      this.emit({ type: 'exchange' });
-    }
+    this.tickPracticeMarket(dt);
     if (p.tannerAt !== null && !this.activeTanner()) {
       p.tannerAt = null;
       this.emit({ type: 'tannerClose' });
@@ -1617,6 +1655,35 @@ export class GameWorld {
     } else {
       this.pending.push({ at: this.time + 0.22, target: e.id, style: p.style, damage: result.damage, hit: result.hit });
     }
+  }
+
+  /** Simulated traders act every few seconds (their own random stream: world randomness is untouched). */
+  tickPracticeMarket(dt: number) {
+    this.marketTimer += dt;
+    if (this.marketTimer >= 4) {
+      this.marketTimer = 0;
+      this.market.step();
+      this.emit({ type: 'exchange' });
+    }
+  }
+
+  /**
+   * Client-side prediction for network play (docs/MULTIPLAYER.md 3A.2): one tick of joystick movement
+   * for the local player, using exactly the simulation's movement rules (speed, Agility, collision).
+   * Returns false when the simulation wouldn't move the player by joystick (dead, stunned, crossing).
+   */
+  predictMove(dx: number, dz: number, dt = TICK_SECONDS): boolean {
+    const p = this.player;
+    if (p.dead || p.stunTimer > 0 || (p.action?.type === 'obstacle' && p.action.crossing)) return false;
+    const m = Math.hypot(dx, dz);
+    const jx = m > 1 ? dx / m : dx;
+    const jz = m > 1 ? dz / m : dz;
+    const mag = Math.hypot(jx, jz);
+    if (mag <= 0.15) return false;
+    this.moveEntity(p, jx / mag, jz / mag, this.playerSpeed() * Math.min(1, 0.35 + mag) * dt);
+    p.moving = true;
+    p.facing = Math.atan2(jx, jz);
+    return true;
   }
 
   /** Walking speed: Agility makes you a little quicker on your feet (up to 8% faster at level 41). */
