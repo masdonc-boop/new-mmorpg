@@ -53,6 +53,20 @@ export const SHOPS: Record<string, ShopDef> = {
       { item: 'bread', price: 8 },
     ],
   },
+  // Cairnhold's silversmith (Thornridge Highlands): jewellery tools, and silver for those who don't mine.
+  cairnhold: {
+    name: 'Brask Silverwork',
+    npc: 'silversmith',
+    stock: [
+      { item: 'chisel', price: 2 },
+      { item: 'needle', price: 2 },
+      { item: 'thread', price: 1 },
+      { item: 'hammer', price: 6 },
+      { item: 'bronze_pickaxe', price: 16 },
+      { item: 'silver_bar', price: 170 },
+      { item: 'bread', price: 8 },
+    ],
+  },
 };
 
 export function shopFor(npc: NpcId): ShopDef | null {

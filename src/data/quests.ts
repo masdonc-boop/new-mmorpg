@@ -142,4 +142,62 @@ export const QUESTS: Record<string, QuestDef> = {
       text: ['1,500 coins', '5 silverpike', '1 marsh pearl', '1,200 Woodcutting xp', '1,200 Firemaking xp', '1,500 Hitpoints xp'],
     },
   },
+  // Cairnhold, Thornridge Highlands (Phase 4A, docs/WORLD_EXPANSION.md).
+  ninefold_watch: {
+    id: 'ninefold_watch',
+    name: 'The Ninefold Watch',
+    giver: 'warden',
+    summary: 'Help Warden Crane drive the stalkers from the high road and re-band the Ninefold Stones.',
+    stages: [
+      {
+        journal: 'Speak with Warden Crane in Cairnhold, in the Thornridge Highlands.',
+        objective: { type: 'talk', npc: 'warden' },
+        pendingLines: [],
+        completeLines: [
+          'A traveller on the high road. Good. We need hands.',
+          'The ridge stalkers have grown bold: they take sheep from the very walls, and last week a carter.',
+          'They hunt the crags east of here. Defeat 4 ridge stalkers and the rest will think twice.',
+        ],
+      },
+      {
+        journal: 'Defeat 4 ridge stalkers on the Thornridge crags, then return to Warden Crane.',
+        objective: { type: 'kill', enemy: 'ridge_stalker', count: 4, returnTo: 'warden' },
+        pendingLines: ['The stalkers keep to the crags east of Cairnhold, towards the snow. Four of them.'],
+        completeLines: [
+          'Four! The shepherds will drink to you tonight.',
+          'The old wardens bound the Ninefold Stones with bands of silver. Most were pried off long ago, and the stalkers came back.',
+          'Bring me 2 silver bars. There is silver in the crags (Mining 30) and Ottilie’s furnace to smelt it (Smithing 30).',
+        ],
+      },
+      {
+        journal: 'Bring 2 silver bars to Warden Crane.',
+        objective: { type: 'collect', item: 'silver_bar', count: 2, consume: true, returnTo: 'warden' },
+        pendingLines: ['Silver veins show bright in the grey crags. Smelt the ore at Ottilie’s furnace.'],
+        completeLines: [
+          'Fine silver. The stones will hold their bands again.',
+          'But the bands won’t matter while the pack has a leader. Greymane, the old one, dens in the Old Watchtower to the north-east.',
+          'End Greymane, and the watch on the high road will be kept.',
+        ],
+      },
+      {
+        journal: 'Defeat Greymane at the Old Watchtower, then return to Warden Crane.',
+        objective: { type: 'kill', enemy: 'greymane', count: 1, returnTo: 'warden' },
+        pendingLines: ['Greymane dens by the Old Watchtower, where the high road ends. Go ready.'],
+        completeLines: [
+          'Greymane? Truly? Then the pack is broken.',
+          'Cairnhold keeps its debts. Take this, and wear the silver with pride.',
+          'The tower’s door is still barred from the inside. Who barred it, I wonder? Another day.',
+        ],
+      },
+    ],
+    rewards: {
+      items: [
+        { item: 'coins', qty: 1800 },
+        { item: 'silver_ring', qty: 1 },
+        { item: 'silver_bar', qty: 2 },
+      ],
+      xp: { mining: 1200, smithing: 1200, hitpoints: 1800 },
+      text: ['1,800 coins', 'A Thornridge band', '2 silver bars', '1,200 Mining xp', '1,200 Smithing xp', '1,800 Hitpoints xp'],
+    },
+  },
 };

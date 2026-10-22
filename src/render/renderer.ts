@@ -11,7 +11,7 @@ import { RECIPES } from '../data/recipes';
 import { CROSS_SPEED } from '../data/agility';
 import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
-import { LeechModel, ToadModel } from './creatures';
+import { BoarModel, LeechModel, ToadModel } from './creatures';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, campfireGeometry, exchangePrefab, furniturePrefab, houseShellPrefab, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
@@ -23,7 +23,7 @@ import { HeroModel, type HeroGear, type HeroLook } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
 
-type EnemyModel = Humanoid | SlimeModel | WolfModel | ToadModel | LeechModel;
+type EnemyModel = Humanoid | SlimeModel | WolfModel | ToadModel | LeechModel | BoarModel;
 
 interface EnemyView {
   enemy: Enemy;
@@ -261,6 +261,7 @@ export class GameRenderer {
     else if (d.model === 'wolf') model = new WolfModel(d.color, d.accent, d.scale);
     else if (d.model === 'toad') model = new ToadModel(d.color, d.accent, d.scale);
     else if (d.model === 'leech') model = new LeechModel(d.color, d.accent, d.scale);
+    else if (d.model === 'boar') model = new BoarModel(d.color, d.accent, d.scale);
     else {
       const boss = d.id === 'goblin_warlord';
       model = new Humanoid(
@@ -1265,6 +1266,7 @@ function enemyHeight(e: Enemy): number {
   if (e.def.model === 'wolf') return 1.25 * e.def.scale;
   if (e.def.model === 'toad') return 0.95 * e.def.scale;
   if (e.def.model === 'leech') return 0.7 * e.def.scale;
+  if (e.def.model === 'boar') return 1.05 * e.def.scale;
   return 2.0 * e.def.scale;
 }
 

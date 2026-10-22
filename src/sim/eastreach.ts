@@ -181,6 +181,7 @@ export function generateEastreach(map: WorldMap, occ: Uint8Array, seed: number) 
   };
   const ctx: Ctx = { map, occ, idx, free, add, roads: list };
   buildHeronwick(ctx, seed);
+  buildCairnhold(ctx, seed);
   // Signposts: at the island end of the trail, where the causeway lands, and at the fork.
   add('signpost', 100.5, 61.5, true, -Math.PI / 2, 1, 0);
   add('signpost', e.fork.x + 1.5, e.fork.z - 1.5, true, 0, 1, 0);
@@ -334,4 +335,78 @@ function buildHeronwick(c: Ctx, seed: number) {
   // The Sunken Shrine: a ring of drowned pillars round a sealed door, half in the sea.
   c.add('sunken_shrine', 178.5, 109.5, true, (-3 * S) / 4, 1, 0);
   for (let z = 108; z <= 110; z++) for (let x = 177; x <= 179; x++) map.blocked[c.idx(x, z)] = c.occ[c.idx(x, z)] = 1;
+}
+
+/**
+ * Cairnhold, a shepherds' outpost of stone cottages on the Thornridge road, and the highlands round
+ * it: silver in the crags, boars on the heath, stalkers higher up, Greymane at the Old Watchtower.
+ */
+function buildCairnhold(c: Ctx, seed: number) {
+  const { map } = c;
+  // The warden's lodge (door south onto the plaza) and three cottages of grey stone.
+  building(c, { x: 144.5, z: 27, w: 5, d: 4, facing: 0, style: 'inn', wall: '#b8b4a8', roof: '#5a4a6a' });
+  building(c, { x: 140, z: 33, w: 4, d: 4, facing: S / 2, style: 'house', wall: '#c4beb0', roof: '#4a5a6a' });
+  building(c, { x: 156, z: 41, w: 4, d: 4, facing: S, style: 'house', wall: '#bdb6a6', roof: '#6a4a3a' });
+  building(c, { x: 151, z: 41, w: 4, d: 4, facing: S, style: 'house', wall: '#c8c2b4', roof: '#5a6a4a' });
+
+  npc(c, { id: 'warden', x: 144.5, z: 29.5, facing: 0 });
+  // The silversmith works beside her furnace; the bank keeps a stall across the plaza.
+  c.add('furnace', 148.5, 31.5, true, 0, 1, 0);
+  map.stations.push({ kind: 'furnace', x: 148.5, z: 31.5, facing: 0 });
+  npc(c, { id: 'silversmith', x: 147.5, z: 30.5, facing: S / 4 });
+  c.add('stall', 152.5, 33.5, true, -S / 2, 1, 1);
+  npc(c, { id: 'cairn_banker', x: 153.5, z: 33.5, facing: -S / 2 });
+  npc(c, {
+    id: 'shepherd',
+    x: 158.5,
+    z: 32.5,
+    facing: 0,
+    patrol: [
+      { x: 158.5, z: 32.5 },
+      { x: 162.5, z: 33.5 },
+      { x: 160.5, z: 29.5 },
+    ],
+  });
+  c.add('waystone', 147.5, 34.5, true, 0, 1, 0);
+  map.checkpoints.push({ id: 'cairnhold', name: 'Cairnhold Waystone', x: 147.5, z: 34.5, respawnX: 146.5, respawnZ: 35.5 });
+  for (const [x, z] of [[143.5, 37.5], [154.5, 29.5], [150.5, 37.5]]) if (c.free(Math.floor(x), Math.floor(z))) c.add('lamp', x, z, true, 0, 1, 0);
+  c.add('barrel', 149.5, 30.5, true);
+  c.add('crate', 141.5, 29.5, true);
+  c.add('haystack', 161.5, 36.5, true);
+
+  // The Ninefold Stones: nine standing stones in a ring, the high road running through the middle.
+  const ring = EAST.ninefold;
+  const spots: { x: number; z: number; a: number }[] = [];
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const x = ring.x + 0.5 + Math.cos(a) * 3.6;
+    const z = ring.z + 0.5 + Math.sin(a) * 3.6;
+    if (c.free(Math.floor(x), Math.floor(z)) && distToRoads(x, z, c.roads) >= 1.4) spots.push({ x, z, a });
+  }
+  // The ring stands in a clearing: no trees or rocks are scattered inside it.
+  for (let z = ring.z - 6; z <= ring.z + 6; z++) for (let x = ring.x - 6; x <= ring.x + 6; x++) if (Math.hypot(x - ring.x, z - ring.z) < 5.5) c.occ[c.idx(x, z)] = 1;
+  // Nine, spread evenly over the places off the road.
+  for (let k = 0; k < Math.min(9, spots.length); k++) {
+    const sp = spots[Math.floor((k * spots.length) / 9)];
+    c.add('standing_stone', sp.x, sp.z, true, -sp.a, 1, k);
+  }
+
+  // The Old Watchtower, barred, on the cliffs where the high road ends.
+  c.add('watchtower', 181.5, 20.5, true, S, 1, 0);
+  for (let z = 19; z <= 21; z++) for (let x = 180; x <= 182; x++) map.blocked[c.idx(x, z)] = c.occ[c.idx(x, z)] = 1;
+
+  // Silver veins in the crags; clear pools at the tarn's edge.
+  const crag = (x: number, z: number) => c.free(x, z) && map.tiles[c.idx(x, z)] === T.Rocky && distToRoads(x + 0.5, z + 0.5, c.roads) > 1.8;
+  const veins: [number, number, number][] = [[164, 26, 3], [178, 29, 3], [187, 42, 2], [158, 45, 2]];
+  veins.forEach(([x, z, n], i) => scatterNodes(c, 'silver_vein', x, z, n, 5, seed ^ (0x5170 + i), crag));
+  const tarnEdge = (x: number, z: number) =>
+    map.tiles[c.idx(x, z)] === T.Water && !c.occ[c.idx(x, z)] && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => map.tiles[c.idx(x + a, z + b)] !== T.Water && !map.blocked[c.idx(x + a, z + b)]);
+  scatterNodes(c, 'rod_spot', EAST.tarn.x, EAST.tarn.z, 2, EAST.tarn.r + 1, seed ^ 0x7a12, tarnEdge);
+
+  // Boars on the heath below the crags; stalkers up among them; Greymane by the tower.
+  spawnCreatures(c, 'bristleback', 160, 47, 8, 5, seed ^ 0xb0a1);
+  spawnCreatures(c, 'bristleback', 140, 20, 5, 3, seed ^ 0xb0a2);
+  spawnCreatures(c, 'ridge_stalker', 177, 30, 5, 4, seed ^ 0x57a1);
+  spawnCreatures(c, 'ridge_stalker', 186, 45, 4, 2, seed ^ 0x57a2);
+  map.enemySpawns.push({ type: 'greymane', x: 178.5, z: 22.5 });
 }

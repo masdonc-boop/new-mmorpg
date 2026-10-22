@@ -272,6 +272,13 @@ export const ITEMS = {
   marsh_pearl: def({ id: 'marsh_pearl', name: 'Marsh pearl', examine: 'A soft green-white pearl from a mire mussel. A silversmith could set it.', stackable: false, kind: 'material', value: 90, icon: { shape: 'gem', color: '#e6efe0', accent: '#a8c8a0' } }),
   // Mire oil: rendered from leeches. It reeks, but it burns clean and long in a lantern.
   mire_oil: def({ id: 'mire_oil', name: 'Mire oil', examine: 'A stoppered flask of dark leech oil. Heronwick’s lanterns burn it.', stackable: true, kind: 'material', value: 9, icon: { shape: 'gel', color: '#4a3a24', accent: '#d8a84a' } }),
+  // ---- Thornridge Highlands (Phase 4A)
+  // Highland silver: bright veins in the crags above Cairnhold. Soft, so it is worked into jewellery, not blades.
+  silver_ore: def({ id: 'silver_ore', name: 'Silver ore', examine: 'Grey rock threaded with bright metal, from the Thornridge crags.', stackable: false, kind: 'material', value: 40, icon: { shape: 'ore', color: '#7a7c80', accent: '#eef2f6' } }),
+  silver_bar: def({ id: 'silver_bar', name: 'Silver bar', examine: 'A soft, bright bar. Too soft for a blade; perfect for a ring.', stackable: false, kind: 'material', value: 95, icon: { shape: 'bar', color: '#dfe4ea', accent: '#ffffff' } }),
+  silver_ring: def({ id: 'silver_ring', name: 'Thornridge band', examine: 'A plain silver band, cold from the hills. Steadies the hand and the nerve.', stackable: false, kind: 'armour', value: 260, equip: { slot: 'ring', accuracy: 2, power: 3, armour: 2 }, icon: { shape: 'ring', color: '#dfe4ea', accent: '#ffffff' } }),
+  // The two regions' crafts meet: a marsh pearl in highland silver.
+  mirepearl_amulet: def({ id: 'mirepearl_amulet', name: 'Mirepearl amulet', examine: 'A marsh pearl caged in Thornridge silver. It seems to catch light that isn’t there.', stackable: false, kind: 'armour', value: 420, equip: { slot: 'neck', accuracy: 5, power: 4, armour: 2 }, icon: { shape: 'amulet', color: '#e6efe0', accent: '#dfe4ea' } }),
   burnt_fish: def({ id: 'burnt_fish', name: 'Burnt fish', examine: 'Charred to a crisp.', stackable: false, kind: 'material', value: 0, icon: { shape: 'fish', color: '#2e2622', accent: '#6a5a50' } }),
 } satisfies Record<string, ItemDef>;
 

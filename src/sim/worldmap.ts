@@ -60,7 +60,9 @@ export type DecorKind =
   | 'light_shaft'
   // Eastreach (Phase 4A)
   | 'heather'
-  | 'sunken_shrine';
+  | 'sunken_shrine'
+  | 'standing_stone'
+  | 'watchtower';
 
 export interface Decor {
   kind: DecorKind;
@@ -205,6 +207,8 @@ export const REGIONS: Region[] = [
   { id: 'cairnhold', name: 'Cairnhold', x: 150, z: 34, radius: 7, levels: 'Outpost', danger: 0 },
   { id: 'mirefen', name: 'Mirefen Marsh', x: 162, z: 98, radius: 30, levels: 'Lv 15–30', danger: 2 },
   { id: 'heronwick', name: 'Heronwick', x: 147, z: 84, radius: 7, levels: 'Village', danger: 0 },
+  { id: 'ninefold', name: 'Ninefold Stones', x: 178, z: 40, radius: 5, levels: 'Lv 22–34', danger: 2 },
+  { id: 'watchtower', name: 'Old Watchtower', x: 181, z: 21, radius: 6, levels: 'Barred · Lv 34', danger: 3 },
   { id: 'sunken_shrine', name: 'Sunken Shrine', x: 177, z: 108, radius: 6, levels: 'Sealed · Lv 30', danger: 3 },
 ];
 

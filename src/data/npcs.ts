@@ -2,7 +2,9 @@ import type { ItemId } from './items';
 
 export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer' | 'clerk_pell' | 'clerk_imogen' | 'exbanker' | 'gambler' | 'smuggler' | 'quartermaster'
   // Heronwick, Mirefen Marsh (Phase 4A)
-  | 'reeve' | 'provisioner' | 'heron_banker' | 'fisher';
+  | 'reeve' | 'provisioner' | 'heron_banker' | 'fisher'
+  // Cairnhold, Thornridge Highlands (Phase 4A)
+  | 'warden' | 'silversmith' | 'cairn_banker' | 'shepherd';
 
 export interface NpcDef {
   id: NpcId;
@@ -166,6 +168,39 @@ export const NPCS: Record<NpcId, NpcDef> = {
       'Silverpike cook best over Heronwick’s fire. Burns easy if you hurry it.',
     ],
     thieving: { level: 30, xp: 46, loot: [{ item: 'coins', min: 14, max: 30, weight: 4 }, { item: 'raw_silverpike', min: 1, max: 1, weight: 2 }, { item: 'bowstring', min: 1, max: 2, weight: 1 }], stunDamage: 16 },
+  },
+  // ---- Cairnhold, Thornridge Highlands (Phase 4A, docs/WORLD_EXPANSION.md)
+  warden: {
+    id: 'warden', name: 'Warden Halvard Crane', title: 'Warden of Thornridge',
+    look: { skin: '#d9a77c', hair: '#6a6a6a', hairStyle: 0, tunic: '#5a5048', trousers: '#3a332c', beard: true },
+    idleLines: [
+      'Cairnhold watches the high road. Always has. The Ninefold Stones were here before the first cottage.',
+      'The Old Watchtower has been barred since before my grandmother’s day. Something dens in it now.',
+      'Boars on the heath, stalkers on the crags. Walk the road and keep your eyes up.',
+    ],
+  },
+  silversmith: {
+    id: 'silversmith', name: 'Ottilie Brask', title: 'Silversmith',
+    look: { skin: '#f1cfae', hair: '#c4a060', hairStyle: 3, tunic: '#6a7a8a', trousers: '#3a3a44' },
+    service: 'shop',
+    reach: 2.2,
+    idleLines: [
+      'Silver from the crags, smelted at my furnace: thirty in Smithing for the bar, thirty in Crafting for a band.',
+      'Set a marsh pearl in silver and you have something worth wearing. Heronwick has the pearls; we have the silver.',
+    ],
+  },
+  cairn_banker: {
+    id: 'cairn_banker', name: 'Joss Ambry', title: 'Banker',
+    look: { skin: '#c98e62', hair: '#3b2a1c', hairStyle: 0, tunic: '#2f5d4a', trousers: '#2f2a26' },
+    idleLines: ['Even up here, the Bank of Brightwater keeps your things. Cold vaults keep well.'],
+    service: 'bank',
+    reach: 2.2,
+  },
+  shepherd: {
+    id: 'shepherd', name: 'Fenna Lowe', title: 'Shepherd',
+    look: { skin: '#e2b48c', hair: '#8a4a2c', hairStyle: 1, tunic: '#7a6a4a', trousers: '#4a3a2a' },
+    idleLines: ['The stalkers took three ewes last month. Three!', 'Heather honey and mutton, that’s Cairnhold. And the wind.'],
+    thieving: { level: 20, xp: 34, loot: [{ item: 'coins', min: 8, max: 20, weight: 4 }, { item: 'thread', min: 2, max: 4, weight: 2 }, { item: 'bread', min: 1, max: 1, weight: 1 }], stunDamage: 13 },
   },
   banker: {
     id: 'banker', name: 'Wendell Coinsworth', title: 'Banker',

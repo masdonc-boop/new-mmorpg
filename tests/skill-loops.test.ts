@@ -277,7 +277,9 @@ describe('Complete loops', () => {
 
   it('glass trout: clear pools upriver, a rod and Fishing 20; cooks into a 30 HP meal', () => {
     const pools = new GameWorld().nodes.filter((n) => n.def.id === 'rod_spot');
-    expect(pools.length).toBe(3);
+    // Three upriver on the island, two more at Thornridge's tarn (Phase 4A).
+    expect(pools.filter((n) => n.x < 112).length).toBe(3);
+    expect(pools.length).toBe(5);
     for (const n of pools) expect(SIDES.some(([a, b]) => !isBlocked(new GameWorld().map, n.x + a, n.z + b))).toBe(true);
     const w = new GameWorld();
     const p = w.player;

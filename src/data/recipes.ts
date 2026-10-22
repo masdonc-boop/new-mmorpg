@@ -61,6 +61,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   bronze_bar: r({ id: 'bronze_bar', station: 'furnace', skill: 'smithing', level: 1, xp: 8, inputs: [{ item: 'copper_ore', qty: 1 }, { item: 'tin_ore', qty: 1 }], output: { item: 'bronze_bar', qty: 1 }, seconds: 1.8 }),
   iron_bar: r({ id: 'iron_bar', station: 'furnace', skill: 'smithing', level: 12, xp: 20, inputs: [{ item: 'iron_ore', qty: 1 }], output: { item: 'iron_bar', qty: 1 }, seconds: 1.8 }),
   // Steel is iron refined a second time over coal: a bar of iron and a lump of coal.
+  // Thornridge silver (Smithing 30): soft, for jewellery rather than blades.
+  silver_bar: r({ id: 'silver_bar', station: 'furnace', skill: 'smithing', level: 30, xp: 32, inputs: [{ item: 'silver_ore', qty: 1 }], output: { item: 'silver_bar', qty: 1 }, seconds: 1.8 }),
   steel_bar: r({ id: 'steel_bar', station: 'furnace', skill: 'smithing', level: 26, xp: 24, inputs: [{ item: 'iron_bar', qty: 1 }, { item: 'coal_ore', qty: 1 }], output: { item: 'steel_bar', qty: 1 }, seconds: 1.8 }),
   // Glimsteel: smelt a hot bloom, then quench it in running water (see GameWorld.quench).
   glimsteel_bloom: r({ id: 'glimsteel_bloom', station: 'furnace', skill: 'smithing', level: 40, xp: 30, inputs: [{ item: 'glimmerite_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }], output: { item: 'glimsteel_bloom', qty: 1 }, seconds: 1.8 }),
@@ -145,6 +147,9 @@ export const RECIPES: Record<string, RecipeDef> = {
   agate_charm: r({ id: 'agate_charm', station: 'crafting', skill: 'crafting', level: 10, xp: 24, inputs: [{ item: 'polished_agate', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'agate_charm', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   agate_ring: r({ id: 'agate_ring', station: 'furnace', skill: 'crafting', level: 12, xp: 30, inputs: [{ item: 'polished_agate', qty: 1 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'agate_ring', qty: 1 }, seconds: 2.2 }),
   garnet_ring: r({ id: 'garnet_ring', station: 'furnace', skill: 'crafting', level: 22, xp: 55, inputs: [{ item: 'cut_sapphire', qty: 1 }, { item: 'iron_bar', qty: 1 }], output: { item: 'garnet_ring', qty: 1 }, seconds: 2.2 }),
+  // Thornridge silver: a plain band (30), and a marsh pearl set in silver (34), joining the two regions.
+  silver_ring: r({ id: 'silver_ring', station: 'furnace', skill: 'crafting', level: 30, xp: 60, inputs: [{ item: 'silver_bar', qty: 1 }], output: { item: 'silver_ring', qty: 1 }, seconds: 2.2 }),
+  mirepearl_amulet: r({ id: 'mirepearl_amulet', station: 'furnace', skill: 'crafting', level: 34, xp: 86, inputs: [{ item: 'silver_bar', qty: 1 }, { item: 'marsh_pearl', qty: 1 }], output: { item: 'mirepearl_amulet', qty: 1 }, seconds: 2.4 }),
   garnet_pendant: r({ id: 'garnet_pendant', station: 'furnace', skill: 'crafting', level: 30, xp: 72, inputs: [{ item: 'cut_sapphire', qty: 1 }, { item: 'steel_bar', qty: 1 }], output: { item: 'garnet_pendant', qty: 1 }, seconds: 2.4 }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 18, xp: 46, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking

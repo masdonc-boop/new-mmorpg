@@ -170,3 +170,88 @@ export class LeechModel implements BeastModel {
     flashMats(this.mats, this.flash);
   }
 }
+
+/** Bristleback boar: a stocky body, a ridge of bristles, short legs and upturned tusks. */
+export class BoarModel implements BeastModel {
+  readonly root = new THREE.Group();
+  private body = new THREE.Group();
+  private head = new THREE.Group();
+  private legs: THREE.Group[] = [];
+  private mats: THREE.MeshLambertMaterial[] = [];
+  private phase = 0;
+  private flash = 0;
+
+  constructor(color: string, accent: string, scale = 1) {
+    const hide = new THREE.MeshLambertMaterial({ color, flatShading: true });
+    const dark = new THREE.MeshLambertMaterial({ color: new THREE.Color(color).multiplyScalar(0.6), flatShading: true });
+    const tusk = new THREE.MeshLambertMaterial({ color: accent, flatShading: true });
+    this.mats.push(hide, dark);
+    this.body.position.y = 0.5;
+    this.body.add(mesh(box(0.56, 0.5, 0.95), hide, 0, 0, 0));
+    this.body.add(mesh(box(0.6, 0.56, 0.42), hide, 0, 0.04, 0.24));
+    // Bristle ridge along the spine.
+    for (let i = 0; i < 4; i++) this.body.add(mesh(box(0.1, 0.14, 0.18), dark, 0, 0.3, 0.32 - i * 0.2));
+    this.head.position.set(0, 0.02, 0.55);
+    this.head.add(mesh(box(0.42, 0.38, 0.36), hide, 0, 0, 0.06));
+    this.head.add(mesh(box(0.26, 0.2, 0.18), dark, 0, -0.06, 0.3));
+    this.head.add(mesh(box(0.18, 0.12, 0.04), new THREE.MeshLambertMaterial({ color: '#c88a7a', flatShading: true }), 0, -0.06, 0.4));
+    for (const sx of [-1, 1]) {
+      const t = mesh(box(0.05, 0.16, 0.05), tusk, sx * 0.12, 0.02, 0.36);
+      t.rotation.x = -0.5;
+      this.head.add(t);
+      this.head.add(mesh(box(0.1, 0.12, 0.05), dark, sx * 0.17, 0.22, -0.04));
+      this.head.add(mesh(box(0.05, 0.04, 0.02), new THREE.MeshBasicMaterial({ color: '#1a120c' }), sx * 0.13, 0.08, 0.25));
+    }
+    this.body.add(this.head);
+    for (const [x, z] of [[-0.17, 0.3], [0.17, 0.3], [-0.17, -0.3], [0.17, -0.3]]) {
+      const leg = new THREE.Group();
+      leg.position.set(x, 0.3, z);
+      leg.add(mesh(box(0.13, 0.3, 0.14), hide, 0, -0.15, 0));
+      leg.add(mesh(box(0.14, 0.06, 0.15), dark, 0, -0.29, 0.01));
+      this.legs.push(leg);
+      this.root.add(leg);
+    }
+    const tail = mesh(box(0.05, 0.05, 0.18), dark, 0, 0.12, -0.55);
+    tail.rotation.x = 0.7;
+    this.body.add(tail);
+    this.root.add(this.body);
+    this.root.scale.setScalar(scale);
+  }
+
+  hitFlash() {
+    this.flash = 0.18;
+  }
+
+  update(dt: number, moving: boolean, swingAge: number, dead: boolean, deadAge: number, time: number) {
+    if (dead) {
+      const e = Math.min(1, deadAge * 2.5);
+      this.root.rotation.z = e * 1.5;
+      this.root.position.y = e * 0.08;
+      return;
+    }
+    this.root.rotation.z = 0;
+    this.root.position.y = 0;
+    this.head.rotation.set(0, 0, 0);
+    this.head.position.z = 0.55;
+    if (moving) {
+      this.phase += dt * 13;
+      const s = Math.sin(this.phase);
+      this.legs[0].rotation.x = this.legs[3].rotation.x = s * 0.6;
+      this.legs[1].rotation.x = this.legs[2].rotation.x = -s * 0.6;
+      this.body.position.y = 0.5 + Math.abs(Math.cos(this.phase)) * 0.04;
+    } else {
+      for (const l of this.legs) l.rotation.x = 0;
+      this.body.position.y = 0.5;
+      // Rooting about: the snout dips now and then.
+      this.head.rotation.x = Math.max(0, Math.sin(time * 0.9)) * 0.35;
+    }
+    if (swingAge < 0.35) {
+      // A tusk-hook: head down, then up and forward.
+      const t = Math.sin((swingAge / 0.35) * Math.PI);
+      this.head.position.z = 0.55 + t * 0.2;
+      this.head.rotation.x = -t * 0.5;
+    }
+    if (this.flash > 0) this.flash -= dt;
+    flashMats(this.mats, this.flash);
+  }
+}

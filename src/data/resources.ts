@@ -2,7 +2,7 @@ import type { ItemId } from './items';
 import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
-export type ResourceType = 'tree' | 'oak' | 'willow' | 'mire_pool' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall' | 'ice_chest' | 'rod_spot' | 'warm_spring';
+export type ResourceType = 'tree' | 'oak' | 'willow' | 'mire_pool' | 'silver_vein' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall' | 'ice_chest' | 'rod_spot' | 'warm_spring';
 
 export interface ResourceDef {
   id: ResourceType;
@@ -55,6 +55,8 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   // Mirefen Marsh (Phase 4A): willows by the pools, and silverpike in the still mire pools.
   willow: { id: 'willow', name: 'Willow tree', skill: 'woodcutting', levelReq: 25, xp: 52, item: 'willow_logs', tool: 'axe', baseChance: 0.36, depleteChance: 0.14, respawnSeconds: 24, actionSeconds: 1.8 },
   mire_pool: { id: 'mire_pool', name: 'Mire pool', skill: 'fishing', levelReq: 28, xp: 62, item: 'raw_silverpike', tool: 'fishing_rod', baseChance: 0.35, depleteChance: 0, respawnSeconds: 0, actionSeconds: 3, rareDrop: { item: 'marsh_pearl', chance: 0.015 } },
+  // Thornridge Highlands (Phase 4A): silver in the crags.
+  silver_vein: { id: 'silver_vein', name: 'Silver vein', skill: 'mining', levelReq: 30, xp: 48, item: 'silver_ore', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 32, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.012 } },
   iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 12, xp: 32, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.015 } },
 };
 

@@ -1,7 +1,7 @@
 import type { ItemId } from './items';
 
-export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime' | 'bog_croaker' | 'mire_leech' | 'bog_mother';
-export type EnemyModel = 'slime' | 'wolf' | 'goblin' | 'toad' | 'leech';
+export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime' | 'bog_croaker' | 'mire_leech' | 'bog_mother' | 'bristleback' | 'ridge_stalker' | 'greymane';
+export type EnemyModel = 'slime' | 'wolf' | 'goblin' | 'toad' | 'leech' | 'boar';
 
 export interface DropEntry {
   item: ItemId;
@@ -134,6 +134,44 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'mire_oil', min: 3, max: 6, chance: 0.6 },
       { item: 'raw_silverpike', min: 2, max: 4, chance: 0.4 },
       { item: 'willow_shortbow', min: 1, max: 1, chance: 0.05 },
+    ],
+  },
+  // ---- Thornridge Highlands (Phase 4A, docs/WORLD_EXPANSION.md)
+  // Bristleback boars root through the heather. Get too close and they charge.
+  bristleback: {
+    id: 'bristleback', name: 'Bristleback Boar', level: 24, maxHp: 170, attack: 22, strength: 22, defence: 19, maxHit: 16,
+    attackSeconds: 2.2, attackRange: 1.5, aggressive: true, aggroRange: 3, leashRange: 10, wanderRadius: 5,
+    speed: 3.1, respawnSeconds: 22, model: 'boar', scale: 1, color: '#6a4a34', accent: '#e8dcc0',
+    drops: [
+      { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'raw_meat', min: 1, max: 2, chance: 0.8 },
+      { item: 'coins', min: 16, max: 38, chance: 0.7 },
+    ],
+  },
+  // Ridge stalkers: lean grey hunters of the crags, quick and patient.
+  ridge_stalker: {
+    id: 'ridge_stalker', name: 'Ridge Stalker', level: 32, maxHp: 210, attack: 31, strength: 29, defence: 26, maxHit: 19,
+    attackSeconds: 1.8, attackRange: 1.4, aggressive: true, aggroRange: 5, leashRange: 11, wanderRadius: 4,
+    speed: 3.5, respawnSeconds: 26, model: 'wolf', scale: 1.15, color: '#9a9ea6', accent: '#d8dce2',
+    drops: [
+      { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'wolf_pelt', min: 1, max: 1, chance: 0.55 },
+      { item: 'wolf_fang', min: 1, max: 1, chance: 0.25 },
+      { item: 'coins', min: 24, max: 52, chance: 0.7 },
+      { item: 'silver_ore', min: 1, max: 1, chance: 0.1 },
+    ],
+  },
+  // Greymane: the stalkers' old pack-leader, denned in the ruins of the Old Watchtower.
+  greymane: {
+    id: 'greymane', name: 'Greymane', level: 34, maxHp: 620, attack: 33, strength: 32, defence: 29, maxHit: 23,
+    attackSeconds: 2.2, attackRange: 1.8, aggressive: true, aggroRange: 6, leashRange: 9, wanderRadius: 2,
+    speed: 3.4, respawnSeconds: 90, model: 'wolf', scale: 1.7, color: '#5a5e66', accent: '#eef0f2', boss: true,
+    drops: [
+      { item: 'big_bones', min: 1, max: 1, chance: 1 },
+      { item: 'coins', min: 260, max: 520, chance: 1 },
+      { item: 'silver_bar', min: 1, max: 3, chance: 0.6 },
+      { item: 'wolf_pelt', min: 2, max: 3, chance: 0.8 },
+      { item: 'cut_sapphire', min: 1, max: 1, chance: 0.25 },
     ],
   },
 };

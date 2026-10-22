@@ -142,6 +142,7 @@ const ORE_COLORS: Record<string, string> = {
   glimmerite_rock: '#e6f4ff',
   duskiron_slag: '#6a5a8a',
   ember_vent: '#ff6a2a',
+  silver_vein: '#eef2f6',
 };
 
 function buildingPrefab(b: Building): THREE.BufferGeometry {
@@ -377,6 +378,36 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
       parts.push(part(Box(0.08, 0.5, 0.04), '#9fd8c8', { y: 0.95, z: 0.09, jitter: 0 }));
       parts.push(part(Box(0.3, 0.06, 0.04), '#9fd8c8', { x: 0.08, y: 1.18, z: 0.09, rz: 0.4, jitter: 0 }));
       parts.push(part(blob(0.3, 0, 0.3, rng()), '#5f8a4a', { x: 0.4, y: 2.05, sy: 0.35 }));
+      return merge(parts);
+    }
+    // Thornridge's Ninefold Stones: tall weathered slabs, each a little different, patched with lichen.
+    case 'standing_stone': {
+      const h = 1.7 + (variant % 3) * 0.35;
+      return merge([
+        part(Box(0.55, h, 0.32), ['#9a968c', '#a6a296', '#8e8a80'][variant % 3], { y: h / 2 - 0.1, rz: (rng() - 0.5) * 0.12, rx: (rng() - 0.5) * 0.08, jitter: 0.08 }),
+        part(blob(0.16, 0, 0.3, rng()), '#b8b04a', { x: 0.12, y: h * 0.6, z: 0.15, sy: 0.4 }),
+        part(blob(0.14, 0, 0.3, rng()), '#7fa65a', { x: -0.15, y: 0.2, z: 0.12, sy: 0.5 }),
+        variant === 4 ? part(Box(0.6, 0.08, 0.36), '#dfe4ea', { y: h * 0.45, jitter: 0 }) : part(Box(0.56, 0.06, 0.33), '#8a8478', { y: 0.05 }),
+      ]);
+    }
+    // The Old Watchtower: a broken round tower of grey stone, its door barred with old timbers.
+    case 'watchtower': {
+      const parts: THREE.BufferGeometry[] = [part(Cyl(1.25, 1.4, 0.5, 9), '#8a867c', { y: 0.2 })];
+      const courses = ['#a39f94', '#99958a', '#a8a498'];
+      for (let i = 0; i < 6; i++) parts.push(part(Cyl(1.1, 1.15, 0.7, 9), courses[i % 3], { y: 0.75 + i * 0.7, jitter: 0.06 }));
+      // A broken crown: uneven merlons round the top, some missing.
+      for (let i = 0; i < 9; i++) {
+        if (i === 2 || i === 6) continue;
+        const a = (i / 9) * Math.PI * 2;
+        parts.push(part(Box(0.36, 0.4 + rng() * 0.4, 0.3), courses[i % 3], { x: Math.cos(a) * 1.0, y: 4.85, z: Math.sin(a) * 1.0, ry: -a }));
+      }
+      // The barred door, and an arrow slit above it.
+      parts.push(part(Box(0.7, 1.2, 0.12), '#4a3a2a', { y: 0.95, z: 1.12 }));
+      parts.push(part(Box(0.9, 0.1, 0.1), '#6b4a2c', { y: 1.15, z: 1.2, rz: 0.25 }));
+      parts.push(part(Box(0.9, 0.1, 0.1), '#6b4a2c', { y: 0.75, z: 1.2, rz: -0.2 }));
+      parts.push(part(Box(0.12, 0.45, 0.05), '#2a2622', { y: 2.9, z: 1.13, jitter: 0 }));
+      parts.push(part(blob(0.35, 0, 0.3, rng()), '#6f8a4a', { x: 0.7, y: 0.35, z: 0.8, sy: 0.6 }));
+      parts.push(part(blob(0.4, 0, 0.3, rng()), '#8a867c', { x: -1.3, y: 0.2, z: 0.6, sy: 0.5 }));
       return merge(parts);
     }
     case 'fountain': {
