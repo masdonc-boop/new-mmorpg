@@ -69,6 +69,7 @@ const SAMPLES: { [K in Command['type']]: Extract<Command, { type: K }> } = {
   reclaimHeld: { type: 'reclaimHeld' },
   quench: { type: 'quench' },
   setOption: { type: 'setOption', option: 'autoGather', on: false },
+  setFocus: { type: 'setFocus', focus: 'power' },
   respawn: { type: 'respawn', at: 'checkpoint' },
 };
 

@@ -8,7 +8,7 @@ import { NPCS, pickpocketChance, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, type SkillId } from '../data/skills';
-import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
+import { STYLES, TRAINING_FOCUSES, combatXp, rollHit, type CombatStyle, type TrainingFocus } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { SERVICES, isConvertService } from '../data/tanning';
@@ -169,6 +169,8 @@ export type Command =
   | { type: 'quench' }
   /** Gameplay options that are part of the character (saved with it). */
   | { type: 'setOption'; option: 'autoGather'; on: boolean }
+  /** Where combat xp goes (docs/PROGRESSION.md). */
+  | { type: 'setFocus'; focus: TrainingFocus }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
 
 export interface Dialogue {
@@ -512,6 +514,8 @@ export class Player implements Mover {
   grants = new Set<string>();
   /** Walk on to the next node of the same kind when one runs out (a setting; off by default, as in OSRS). */
   autoGather = false;
+  /** Combat training focus: which skills combat xp goes to. */
+  focus: TrainingFocus = 'shared';
   /** What happened to the player's items at their latest death (for the death screen). */
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
   /** Items carried to the shrines by faded wisps, waiting to be reclaimed for a fee. */
@@ -737,7 +741,7 @@ export interface SaveData {
   /** Prayer points (optional for older saves: full). */
   prayerPoints?: number;
   /** Gameplay options (optional for older saves). */
-  options?: { autoGather?: boolean };
+  options?: { autoGather?: boolean; focus?: TrainingFocus };
   /** Gravestones still standing (optional for older saves). */
   graves?: SavedGrave[];
   /** Items held at the shrines after a wisp faded (optional for older saves). */
@@ -1134,7 +1138,7 @@ export class GameWorld {
       bankOptions: { placeholders: p.bank.placeholders },
       equipment: p.equipment.toJSON(),
       ammoQty: p.equipment.ammoQty,
-      options: { autoGather: p.autoGather },
+      options: { autoGather: p.autoGather, focus: p.focus },
       laps: p.laps,
       house: { ...p.furniture },
       ...(opts.practice === false ? {} : { exchangePractice: this.market.toJSON() }),
@@ -1174,6 +1178,7 @@ export class GameWorld {
     this.grantSkillTools('crafting-v1', ['needle', 'chisel'], 'New skill: Crafting! Tilly put a needle and a chisel on your toolbelt. Rook by the smithy tans pelts into wolfhide.');
     this.grantSkillTools('rod-v1', ['fishing_rod'], 'New: rod fishing! Tilly put a riverwood rod on your toolbelt. Glass trout swim in the clear pools upriver by the Whispering Woods (Fishing 20).');
     p.autoGather = s.options?.autoGather === true;
+    p.focus = TRAINING_FOCUSES.includes(s.options?.focus as TrainingFocus) ? s.options!.focus! : 'shared';
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
         const qty = Math.floor(Number(o?.qty));
@@ -1484,6 +1489,9 @@ export class GameWorld {
         break;
       case 'setOption':
         if (cmd.option === 'autoGather') p.autoGather = cmd.on === true;
+        break;
+      case 'setFocus':
+        if (TRAINING_FOCUSES.includes(cmd.focus)) p.focus = cmd.focus;
         break;
       case 'respawn':
         if (p.dead) this.respawnPlayer(cmd.at);
@@ -1898,7 +1906,7 @@ export class GameWorld {
     e.hp -= dealt;
     e.hurtAge = 0;
     this.emit({ type: 'damage', target: e.id, source: p.id, amount: dealt, hit });
-    if (dealt > 0) for (const x of combatXp(style, dealt)) this.grantXp(x.skill, x.amount);
+    if (dealt > 0) for (const x of combatXp(style, dealt, p.focus)) this.grantXp(x.skill, x.amount);
     if (e.state !== 'chase' && !p.dead) {
       e.state = 'chase';
       e.target = p.id;

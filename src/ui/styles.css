@@ -2778,3 +2778,26 @@ button.danger {
 .chat-line.system.bad {
   color: var(--warn);
 }
+/* Combat training focus (Phase 4B): above the skills grid. */
+.focus-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-bottom: 9px;
+}
+.focus-label {
+  font-weight: 800;
+  font-size: 13px;
+  flex: 1 1 180px;
+}
+.focus-label small {
+  display: block;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11px;
+}
+.focus-seg button {
+  flex: 1;
+}

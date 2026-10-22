@@ -1,3 +1,4 @@
+import type { TrainingFocus } from '../sim/combat';
 import type { ResourceType } from '../data/resources';
 import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { QUESTS } from '../data/quests';
@@ -67,6 +68,14 @@ const FISHING_LABELS: Partial<Record<ResourceType, string>> = {
   rod_spot: '🎣 Clear pool · glass trout (rod, Fishing 20)',
   warm_spring: '🎣 Warm spring · ember carp (rod, Fishing 35)',
   mire_pool: '🎣 Mire pool · silverpike (rod, Fishing 28)',
+};
+
+/** What each training focus does, under the Skills panel's focus buttons. */
+const FOCUS_HINT: Record<TrainingFocus, string> = {
+  shared: 'Melee xp is shared by Attack, Strength and Defence; bows and wands train Ranged or Magic.',
+  accuracy: 'Melee xp all goes to Attack; bows and wands train Ranged or Magic.',
+  power: 'Melee xp all goes to Strength; bows and wands train Ranged or Magic.',
+  defence: 'Melee xp all goes to Defence; bows and wands share theirs with Defence.',
 };
 
 export class Hud {
@@ -1531,6 +1540,20 @@ export class Hud {
     const s = this.world.player.skills;
     const body = this.panelBody;
     clearKeepingScroll(body);
+    // Combat training focus: where combat xp goes (docs/PROGRESSION.md).
+    const focus = this.world.player.focus;
+    const seg = el('div', 'seg focus-seg');
+    for (const [f, label] of [['shared', 'Shared'], ['accuracy', 'Attack'], ['power', 'Strength'], ['defence', 'Defence']] as const) {
+      const btn = el('button', f === focus ? 'on' : '', label);
+      btn.addEventListener('click', () => {
+        this.cb.command({ type: 'setFocus', focus: f });
+        this.renderSkills();
+      });
+      seg.appendChild(btn);
+    }
+    const focusRow = el('div', 'focus-row', `<div class="focus-label">Combat training <small>${FOCUS_HINT[focus]}</small></div>`);
+    focusRow.appendChild(seg);
+    body.appendChild(focusRow);
     const grid = el('div', 'skills-grid');
     for (const id of SKILL_IDS) {
       const info = SKILL_INFO[id];

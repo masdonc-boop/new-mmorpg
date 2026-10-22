@@ -4,7 +4,7 @@ import { QUESTS } from '../data/quests';
 import { PRAYERS } from '../data/prayers';
 import { TOOL_SLOTS } from '../data/tools';
 import { HOTSPOTS, furnitureDef } from '../data/construction';
-import { STYLES } from '../sim/combat';
+import { STYLES, TRAINING_FOCUSES } from '../sim/combat';
 import { INVENTORY_SLOTS } from '../sim/inventory';
 import { BANK_TABS } from '../sim/bank';
 import { MAX_COINS, MAX_QTY } from '../exchange/engine';
@@ -106,6 +106,7 @@ const COMMANDS: Record<Command['type'], Record<string, Field>> = {
   reclaimHeld: {},
   quench: {},
   setOption: { option: oneOf(['autoGather']), on: bool },
+  setFocus: { focus: oneOf(TRAINING_FOCUSES) },
   respawn: { at: oneOf(['home', 'checkpoint']) },
 };
 

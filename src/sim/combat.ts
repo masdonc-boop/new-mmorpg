@@ -64,9 +64,22 @@ export function rollHit(rng: Rng, a: AttackerStats, d: DefenderStats, fixedMax?:
   return { hit: true, damage };
 }
 
-/** XP distribution for damage dealt: 1.2xp per damage split over style skills, plus hitpoints. */
-export function combatXp(style: CombatStyle, damage: number): { skill: SkillId; amount: number }[] {
-  const skills = STYLES[style].xpSkills;
+/**
+ * Where combat xp goes (docs/PROGRESSION.md): shared (the original split), or focused on accuracy
+ * (Attack), power (Strength) or Defence. Ranged and Magic train their own skill unless the focus is
+ * Defence, which splits it half and half. The total per damage never changes.
+ */
+export type TrainingFocus = 'shared' | 'accuracy' | 'power' | 'defence';
+export const TRAINING_FOCUSES: readonly TrainingFocus[] = ['shared', 'accuracy', 'power', 'defence'];
+
+/** XP distribution for damage dealt: 1.2xp per damage over the focused skills, plus hitpoints. */
+export function combatXp(style: CombatStyle, damage: number, focus: TrainingFocus = 'shared'): { skill: SkillId; amount: number }[] {
+  let skills: SkillId[] = STYLES[style].xpSkills;
+  if (style === 'melee') {
+    if (focus === 'accuracy') skills = ['attack'];
+    else if (focus === 'power') skills = ['strength'];
+    else if (focus === 'defence') skills = ['defence'];
+  } else if (focus === 'defence') skills = [style, 'defence'];
   const per = (damage * 1.2) / skills.length;
   const out = skills.map((skill) => ({ skill, amount: per }));
   out.push({ skill: 'hitpoints', amount: damage * 0.4 });
