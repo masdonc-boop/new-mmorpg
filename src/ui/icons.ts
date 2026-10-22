@@ -1136,6 +1136,28 @@ export function itemIcon(id: string): string {
       g.restore();
       break;
     }
+    case 'eel': {
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 11;
+      g.beginPath();
+      g.moveTo(12, 40);
+      g.bezierCurveTo(22, 20, 34, 52, 52, 26);
+      g.stroke();
+      g.strokeStyle = color;
+      g.lineWidth = 7;
+      g.stroke();
+      g.strokeStyle = accent;
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(14, 38);
+      g.bezierCurveTo(24, 22, 34, 48, 50, 27);
+      g.stroke();
+      g.fillStyle = '#1a1a1a';
+      g.beginPath();
+      g.arc(49, 27, 1.8, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

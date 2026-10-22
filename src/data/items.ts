@@ -32,6 +32,7 @@ export type IconShape =
   | 'ashes'
   | 'spark'
   | 'wand'
+  | 'eel'
   | 'needle'
   | 'chisel'
   | 'thread'
@@ -128,7 +129,7 @@ export const ITEMS = {
   potato_seed: def({ id: 'potato_seed', name: 'Potato seed', examine: 'Plant in an allotment (Farming 1).', stackable: true, kind: 'material', value: 2, icon: { shape: 'seed', color: '#c9a06a', accent: '#7a5a34' } }),
   onion_seed: def({ id: 'onion_seed', name: 'Onion seed', examine: 'Plant in an allotment (Farming 5).', stackable: true, kind: 'material', value: 3, icon: { shape: 'seed', color: '#e8d6a0', accent: '#a07a3a' } }),
   cabbage_seed: def({ id: 'cabbage_seed', name: 'Cabbage seed', examine: 'Plant in an allotment (Farming 7).', stackable: true, kind: 'material', value: 4, icon: { shape: 'seed', color: '#9ec46a', accent: '#5a7a34' } }),
-  bread: def({ id: 'bread', name: 'Bread', examine: 'Warm village bread. Heals 30 HP.', stackable: false, kind: 'food', value: 6, heal: 30, icon: { shape: 'bread', color: '#d99a4e', accent: '#f6d7a0' } }),
+  bread: def({ id: 'bread', name: 'Bread', examine: 'Warm village bread. Heals 28 HP.', stackable: false, kind: 'food', value: 6, heal: 28, icon: { shape: 'bread', color: '#d99a4e', accent: '#f6d7a0' } }),
   bronze_axe: def({ id: 'bronze_axe', name: 'Bronze axe', examine: 'Required for woodcutting.', stackable: false, kind: 'tool', tool: { category: 'axe', tier: 1 }, value: 16, icon: { shape: 'axe', color: '#c98a4b', accent: '#7a4f2a' } }),
   bronze_pickaxe: def({ id: 'bronze_pickaxe', name: 'Bronze pickaxe', examine: 'Required for mining.', stackable: false, kind: 'tool', tool: { category: 'pickaxe', tier: 1 }, value: 16, icon: { shape: 'pickaxe', color: '#c98a4b', accent: '#7a4f2a' } }),
 
@@ -179,7 +180,7 @@ export const ITEMS = {
   wooden_shield: def({ id: 'wooden_shield', name: 'Wooden shield', examine: 'Planks pinned to a round frame.', stackable: false, kind: 'armour', value: 16, equip: { slot: 'shield', armour: 4, tint: '#8a5a34' }, icon: { shape: 'shield', color: '#8a5a34', accent: '#4e321e' } }),
   // ---- Cooking
   raw_meat: def({ id: 'raw_meat', name: 'Raw meat', examine: 'It needs cooking before you eat it.', stackable: false, kind: 'material', value: 3, icon: { shape: 'meat', color: '#d9646a', accent: '#f4e2d2' } }),
-  cooked_meat: def({ id: 'cooked_meat', name: 'Cooked meat', examine: 'Hearty and hot. Heals 25 HP.', stackable: false, kind: 'food', value: 8, heal: 25, icon: { shape: 'meat', color: '#9a5a32', accent: '#f4e2d2' } }),
+  cooked_meat: def({ id: 'cooked_meat', name: 'Cooked meat', examine: 'Hearty and hot. Heals 22 HP.', stackable: false, kind: 'food', value: 8, heal: 22, icon: { shape: 'meat', color: '#9a5a32', accent: '#f4e2d2' } }),
   burnt_meat: def({ id: 'burnt_meat', name: 'Burnt meat', examine: 'Charred beyond saving.', stackable: false, kind: 'material', value: 0, icon: { shape: 'meat', color: '#2e2622', accent: '#6a5a50' } }),
   // ---- Production tools (real inventory items; can be banked)
   iron_axe: def({ id: 'iron_axe', name: 'Iron axe', examine: 'A sharper, heavier axe: chops faster than bronze.', stackable: false, kind: 'tool', tool: { category: 'axe', tier: 2, req: { skill: 'woodcutting', level: 1 } }, value: 56, icon: { shape: 'axe', color: '#a3aab3', accent: '#7a4f2a' } }),
@@ -221,16 +222,17 @@ export const ITEMS = {
   bronze_nails: def({ id: 'bronze_nails', name: 'Bronze nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 1, icon: { shape: 'nails', color: '#c98a4b', accent: '#7a4f2a' } }),
   iron_nails: def({ id: 'iron_nails', name: 'Iron nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 2, icon: { shape: 'nails', color: '#a3aab3', accent: '#4e5560' } }),
   steel_nails: def({ id: 'steel_nails', name: 'Steel nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 3, icon: { shape: 'nails', color: '#d3d9df', accent: '#5c646e' } }),
-  small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
+  small_fishing_net: def({ id: 'small_fishing_net', name: 'Hand net', examine: 'A light net on a short pole, for scooping brightfin and eels from the shallows.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),
   shortbow_u: def({ id: 'shortbow_u', name: 'Unstrung shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 10, icon: { shape: 'unbow', color: '#9b6a3a', accent: '#9b6a3a' } }),
   oak_shortbow_u: def({ id: 'oak_shortbow_u', name: 'Unstrung oak shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 30, icon: { shape: 'unbow', color: '#6e472c', accent: '#6e472c' } }),
   // ---- Fishing and cooking
-  raw_shrimps: def({ id: 'raw_shrimps', name: 'Raw shrimps', examine: 'Fresh from the river. Cook before eating.', stackable: false, kind: 'material', value: 3, icon: { shape: 'fish', color: '#e89a8a', accent: '#f6d6c8' } }),
-  shrimps: def({ id: 'shrimps', name: 'Shrimps', examine: 'Pink and tasty. Heals 15 HP.', stackable: false, kind: 'food', value: 6, heal: 15, icon: { shape: 'fish', color: '#f07a5a', accent: '#ffd0b8' } }),
-  raw_anchovies: def({ id: 'raw_anchovies', name: 'Raw anchovies', examine: 'Small silvery fish. Cook before eating.', stackable: false, kind: 'material', value: 6, icon: { shape: 'fish', color: '#8fa5b8', accent: '#dfe8f0' } }),
-  anchovies: def({ id: 'anchovies', name: 'Anchovies', examine: 'Salty and filling. Heals 20 HP.', stackable: false, kind: 'food', value: 10, heal: 20, icon: { shape: 'fish', color: '#6f7f8e', accent: '#c9a06a' } }),
+  // Brightwater's river fish (ids kept from earlier content so saves carry over: docs/ORIGINALITY.md H7).
+  raw_shrimps: def({ id: 'raw_shrimps', name: 'Raw brightfin', examine: 'A little river fish whose gold-edged fins flash in the shallows. Cook it first.', stackable: false, kind: 'material', value: 3, icon: { shape: 'fish', color: '#d8dfe6', accent: '#f5c542' } }),
+  shrimps: def({ id: 'shrimps', name: 'Brightfin', examine: 'Crisp, golden and sweet. Heals 16 HP.', stackable: false, kind: 'food', value: 6, heal: 16, icon: { shape: 'fish', color: '#e0b060', accent: '#fff2c8' } }),
+  raw_anchovies: def({ id: 'raw_anchovies', name: 'Raw mudskipper eel', examine: 'A slippery eel from the muddy banks. It wriggles even now. Cook it first.', stackable: false, kind: 'material', value: 7, icon: { shape: 'eel', color: '#6a6a4a', accent: '#c9c08a' } }),
+  anchovies: def({ id: 'anchovies', name: 'Smoked mudskipper', examine: 'Rich, smoky eel. Heals 24 HP.', stackable: false, kind: 'food', value: 12, heal: 24, icon: { shape: 'eel', color: '#8a5a34', accent: '#e6c48f' } }),
   burnt_fish: def({ id: 'burnt_fish', name: 'Burnt fish', examine: 'Charred to a crisp.', stackable: false, kind: 'material', value: 0, icon: { shape: 'fish', color: '#2e2622', accent: '#6a5a50' } }),
 } satisfies Record<string, ItemDef>;
 

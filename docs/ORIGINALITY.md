@@ -113,7 +113,8 @@ The owner approved the replacement direction on 2026-10-22, with two conditions:
 | 3 | H1 vows: the Prayer skill is shown as **Devotion**; 16 original vows of five shrine spirits (Hearth, Ember, Lantern, Wind, Tide) with their own levels and per-minute drain; Mending Song, Keepsake, and Hearth's Bulwark (halves creature hits, never fully blocks). Bones give 5 Devotion xp, warlord's bones 18. Saves are unaffected (only points are saved; internal skill id unchanged) | Done |
 | 4a | H6, part 1: **Glimmerite and glimsteel.** Glimmerite veins in the deep Ironcrag Hills (Mining 40). Smelt a hot bloom (glimmerite + 2 coal, Smithing 40), then quench it in running water to make glimsteel bars. Glimsteel gear (Smithing 42–58, requires level 30) is light armour that adds a little accuracy; glimsteel tools are tier 4 (level 21) | Done |
 | 4b | H6, part 2: **Duskiron.** Slag heaps in the Goblin Encampment (Mining 55); smelted with slime gel as a flux (Smithing 55); very heavy armour that costs accuracy, and a warhammer (level 45). **Emberglass.** The camp's ember vents (Mining 35); the emberglass wand (Crafting 35, Magic 25). Also the riverwood wand (Fletching 10, from logs and spark chips): Brightwater's first real magic weapons | Done |
-| 5 | H7 and H10 (fish, crops) with M6 | Planned |
+| 5a | H7 and M6, part 1: **River fish.** Shrimps became **brightfin** and anchovies became **mudskipper eels**, smoked to eat (same ids, so fish in bags, banks and offers carry over). The small fishing net is now a **hand net**. Eels from Fishing 12 (Cooking 12). Retuned heal values, xp and burn levels: brightfin heals 16 (stops burning at 16), smoked mudskipper heals 24 (stops at 30), cooked meat 22 (stops at 22), bread 28. Glass trout (rod) and ember carp (warm springs) are left for when the fishing rod and new spots arrive | Done |
+| 5b | H10 (crops) | Planned |
 | 6 | H4, H8, H9 (leather set, furniture, thieving) | Planned |
 
 ## 6. Suggested order

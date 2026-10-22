@@ -219,7 +219,7 @@ describe('Production rules', () => {
 
   it('cooking can burn (no xp) and the chance falls to zero with level', () => {
     const rec = RECIPES.cooked_meat;
-    expect(failChance(rec, 1)).toBeCloseTo(0.35);
+    expect(failChance(rec, 1)).toBeCloseTo(rec.fail!.chance);
     expect(failChance(rec, rec.fail!.stopLevel)).toBe(0);
     const w = new GameWorld();
     const p = w.player;

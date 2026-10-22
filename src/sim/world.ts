@@ -2279,7 +2279,7 @@ export class GameWorld {
     const success = this.rng() < gatherChance(n.def, p.skills.level(n.def.skill), (n.def.tool ? this.toolFor(n.def.tool).tool?.tier : 1) ?? 1);
     this.emit({ type: 'gather', node: n.id, success });
     if (!success) return;
-    // Better catches (e.g. anchovies) become possible as the skill rises.
+    // Better catches (e.g. mudskipper eels) become possible as the skill rises.
     let item = n.def.item;
     let xp = n.def.xp;
     const lvl = p.skills.level(n.def.skill);

@@ -4,9 +4,11 @@ import { ITEM_ALIASES, remapItemIds } from '../src/data/aliases';
 import { GameWorld, type SaveData } from '../src/sim/world';
 import { isBlocked } from '../src/sim/worldmap';
 import { xpForLevel } from '../src/data/skills';
+import { RESOURCES } from '../src/data/resources';
+import { RECIPES } from '../src/data/recipes';
 
 /** RuneScape-specific names that must not appear in item names (grows with each originality batch). */
-const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i];
+const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i];
 
 describe('Originality guard', () => {
   it('no item uses a banned RuneScape-specific name', () => {
@@ -247,5 +249,28 @@ describe('Batch 4b: duskiron and emberglass', () => {
     p.skills.addXp('magic', xpForLevel(25));
     w.issue({ type: 'equip', slot: slotOf(w, 'emberglass_wand') });
     expect(w.playerBonuses()).toMatchObject({ weapon: 'emberglass_wand', power: 26 });
+  });
+});
+
+describe('Batch 5a: river fish', () => {
+  it('an old save’s shrimps and anchovies carry over as brightfin and mudskipper eels', () => {
+    const w = new GameWorld();
+    w.player.inventory.add('raw_shrimps', 3);
+    w.player.inventory.add('anchovies', 2);
+    w.player.bank.add('shrimps', 7);
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    const p = new GameWorld({ save }).player;
+    expect(p.inventory.count('raw_shrimps')).toBe(3);
+    expect(p.inventory.count('anchovies')).toBe(2);
+    expect(p.bank.count('shrimps')).toBe(7);
+    expect([ITEMS.raw_shrimps.name, ITEMS.shrimps.name, ITEMS.raw_anchovies.name, ITEMS.anchovies.name, ITEMS.small_fishing_net.name])
+      .toEqual(['Raw brightfin', 'Brightfin', 'Raw mudskipper eel', 'Smoked mudskipper', 'Hand net']);
+  });
+
+  it('retuned values: eels from Fishing 12 and Cooking 12; foods heal their own amounts', () => {
+    expect(RESOURCES.net_spot.catches).toEqual([{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }]);
+    expect(RECIPES.anchovies).toMatchObject({ level: 12, xp: 42, fail: { stopLevel: 30 } });
+    expect(RECIPES.shrimps.fail?.stopLevel).toBe(16);
+    expect([ITEMS.shrimps.heal, ITEMS.anchovies.heal, ITEMS.cooked_meat.heal, ITEMS.bread.heal]).toEqual([16, 24, 22, 28]);
   });
 });

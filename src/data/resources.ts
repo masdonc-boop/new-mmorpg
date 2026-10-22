@@ -43,7 +43,8 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   // Market stalls (Thieving): taking from one always works and empties it until it restocks.
   bakery_stall: { id: 'bakery_stall', name: 'Bakery stall', skill: 'thieving', levelReq: 5, xp: 16, item: 'bread', baseChance: 1, depleteChance: 1, respawnSeconds: 2.5, actionSeconds: 1.2 },
   seed_stall: { id: 'seed_stall', name: 'Seed stall', skill: 'thieving', levelReq: 27, xp: 10, item: 'potato_seed', baseChance: 1, depleteChance: 1, respawnSeconds: 6, actionSeconds: 1.2, catches: [{ item: 'onion_seed', level: 27, xp: 10, chance: 0.35 }, { item: 'cabbage_seed', level: 27, xp: 10, chance: 0.25 }] },
-  net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 10, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, catches: [{ item: 'raw_anchovies', level: 15, xp: 40, chance: 0.45 }] },
+  // Shallows: brightfin from level 1; mudskipper eels from the muddy edges from level 12.
+  net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 12, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, catches: [{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }] },
   iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 15, xp: 35, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
 };
 

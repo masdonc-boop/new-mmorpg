@@ -127,10 +127,12 @@ export const RECIPES: Record<string, RecipeDef> = {
   emberglass_wand: r({ id: 'emberglass_wand', station: 'crafting', skill: 'crafting', level: 35, xp: 70, inputs: [{ item: 'emberglass_shard', qty: 2 }, { item: 'oak_logs', qty: 1 }], output: { item: 'emberglass_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 20, xp: 50, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking
-  shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 18, output: 'burnt_fish' } }),
-  cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 20, output: 'burnt_meat' } }),
+  // Brightfin (recipe id kept for saves and offers in progress).
+  shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 28, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.32, stopLevel: 16, output: 'burnt_fish' } }),
+  cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 32, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.3, stopLevel: 22, output: 'burnt_meat' } }),
   baked_potato: r({ id: 'baked_potato', station: 'range', skill: 'cooking', level: 7, xp: 15, inputs: [{ item: 'potato', qty: 1 }], output: { item: 'baked_potato', qty: 1 }, seconds: 1.8, fail: { chance: 0.3, stopLevel: 40, output: 'burnt_potato' } }),
-  anchovies: r({ id: 'anchovies', station: 'range', skill: 'cooking', level: 15, xp: 40, inputs: [{ item: 'raw_anchovies', qty: 1 }], output: { item: 'anchovies', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 34, output: 'burnt_fish' } }),
+  // Mudskipper eel: smoked slowly over the coals.
+  anchovies: r({ id: 'anchovies', station: 'range', skill: 'cooking', level: 12, xp: 42, inputs: [{ item: 'raw_anchovies', qty: 1 }], output: { item: 'anchovies', qty: 1 }, seconds: 2.2, fail: { chance: 0.38, stopLevel: 30, output: 'burnt_fish' } }),
 };
 
 export function recipesFor(station: StationKind): RecipeDef[] {

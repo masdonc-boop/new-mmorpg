@@ -96,7 +96,7 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
 });
 
 describe('Tools', () => {
-  it('new characters start with axe, pickaxe, hammer, knife and fishing net on the toolbelt', () => {
+  it('new characters start with axe, pickaxe, hammer, knife and hand net on the toolbelt', () => {
     const p = new GameWorld().player;
     for (const t of ['bronze_axe', 'bronze_pickaxe', 'hammer', 'knife', 'small_fishing_net'] as ItemId[]) {
       expect(p.toolbelt.count(t)).toBe(1);
@@ -256,14 +256,14 @@ describe('Complete loops', () => {
     expect(p.hp).toBe(50 + itemDef('shrimps').heal!);
   });
 
-  it('fishing needs a net, and anchovies only appear from level 15', () => {
+  it('fishing needs a net, and mudskipper eels only appear from level 12', () => {
     const w = new GameWorld();
     const p = w.player;
-    setRng(w, 0.01); // every roll succeeds, including the anchovy roll if allowed
+    setRng(w, 0.01); // every roll succeeds, including the eel roll if allowed
     workNode(w, 'net_spot');
     run(w, 3);
     expect(p.inventory.count('raw_anchovies')).toBe(0);
-    p.skills.addXp('fishing', xpForLevel(15));
+    p.skills.addXp('fishing', xpForLevel(12));
     workNode(w, 'net_spot');
     run(w, 3);
     expect(p.inventory.count('raw_anchovies')).toBeGreaterThan(0);
