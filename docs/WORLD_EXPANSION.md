@@ -86,7 +86,7 @@ z:0   ┌──────────────┐     Thornridge Highlands 
 z:128
 ```
 
-- **The Saltwind Causeway:** an old stone causeway from the Ironcrag coast across the strait, with a ruined toll-house at its far end. It is the one way into Eastreach, so the new land is reached after the player has met the island's hills. It is easy to find: the Ironcrag road continues to it, and a signpost points the way.
+- **The Saltwind Causeway:** a long timber causeway from the Ironcrag coast across the strait, with a ruined toll-house at its far end. It is the one way into Eastreach, so the new land is reached after the player has met the island's hills. It is easy to find: the Ironcrag road continues to it, and a signpost points the way.
 - **From the causeway's end**, a road forks north up into **Thornridge** and south down into **Mirefen**. The two regions meet at a misty tree line, so the land reads as one place rather than islands of content.
 
 ### Regions in Phase 4A (built now, complete)

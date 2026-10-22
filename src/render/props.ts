@@ -219,6 +219,18 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
       }
       return merge(parts);
     }
+    // Thornridge heather: low clumps of dusky purple bells on wiry green stems.
+    case 'heather': {
+      const parts: THREE.BufferGeometry[] = [];
+      const bloom = ['#9b6fb0', '#b583c4', '#8a5fa3'][variant % 3];
+      for (let i = 0; i < 4; i++) {
+        const x = (rng() - 0.5) * 0.5;
+        const z = (rng() - 0.5) * 0.5;
+        parts.push(part(blob(0.13, 0, 0.3, rng()), '#5f7a45', { x, y: 0.08, z, sy: 0.7 }));
+        parts.push(part(blob(0.09, 0, 0.3, rng()), bloom, { x: x + 0.02, y: 0.17, z, sy: 0.9, sway: 1 }));
+      }
+      return merge(parts);
+    }
     case 'reeds': {
       const parts: THREE.BufferGeometry[] = [];
       for (let i = 0; i < 4; i++) {
@@ -934,6 +946,8 @@ const tmpQ = new THREE.Quaternion();
 const tmpS = new THREE.Vector3();
 const tmpP = new THREE.Vector3();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+/** Resources are drawn in squares of this many tiles, so off-screen ones are culled. */
+const RESOURCE_CHUNK = 32;
 
 export class ResourceView {
   readonly group = new THREE.Group();
@@ -972,28 +986,57 @@ export class ResourceView {
       variants.forEach((geo, v) => {
         const subset = list.filter((_, i) => i % variants.length === v);
         if (subset.length === 0) return;
-        const full = new THREE.InstancedMesh(geo, material, subset.length);
-        const dep = new THREE.InstancedMesh(depletedGeo, material, subset.length);
-        full.castShadow = true;
-        full.receiveShadow = true;
-        dep.castShadow = true;
-        const batch: ResourceBatch = { full, depleted: dep, nodes: subset, base: [] };
+        // Transforms are drawn in the original order so every tree and rock keeps its look; then split by area.
         const rnd = mulberry32(subset.length * 31 + v);
-        subset.forEach((n, i) => {
+        const base = subset.map((n) => {
           const s = isTree ? 0.9 + rnd() * 0.3 : 0.9 + rnd() * 0.25;
           tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2);
           const m = new THREE.Matrix4().compose(new THREE.Vector3(n.x, terrainHeight(this.map, n.x, n.z) - 0.05, n.z), tmpQ, new THREE.Vector3(s, s, s));
-          batch.base.push(m);
-          full.setMatrixAt(i, n.depleted ? ZERO : m);
-          dep.setMatrixAt(i, n.depleted ? m : ZERO);
           const tint = 0.92 + rnd() * 0.16;
-          full.setColorAt(i, new THREE.Color(tint, tint, tint));
+          return { m, tint };
         });
-        full.computeBoundingSphere();
-        dep.computeBoundingSphere();
-        this.group.add(full, dep);
-        this.batches.push(batch);
+        this.addChunked(subset, base, (count) => {
+          const full = new THREE.InstancedMesh(geo, material, count);
+          const depleted = new THREE.InstancedMesh(depletedGeo, material, count);
+          full.castShadow = true;
+          full.receiveShadow = true;
+          depleted.castShadow = true;
+          return { full, depleted };
+        });
       });
+    }
+  }
+
+  /**
+   * Splits one batch into RESOURCE_CHUNK-tile squares, so the camera only draws the ones in view
+   * (one batch across the whole world could never be culled).
+   */
+  private addChunked(nodes: ResourceNode[], base: { m: THREE.Matrix4; tint?: number }[], make: (count: number) => Omit<ResourceBatch, 'nodes' | 'base'>) {
+    const chunks = new Map<number, number[]>();
+    nodes.forEach((n, i) => {
+      const key = Math.floor(n.z / RESOURCE_CHUNK) * 1000 + Math.floor(n.x / RESOURCE_CHUNK);
+      const list = chunks.get(key) ?? [];
+      list.push(i);
+      chunks.set(key, list);
+    });
+    for (const idx of chunks.values()) {
+      const batch: ResourceBatch = { ...make(idx.length), nodes: idx.map((i) => nodes[i]), base: idx.map((i) => base[i].m) };
+      const layers = [batch.full, batch.depleted, batch.fullExtra, batch.depletedExtra].filter((m): m is THREE.InstancedMesh => !!m);
+      // Bounds come from the real transforms: hidden instances are zero-scaled at the origin and would stretch them.
+      for (const m of layers) {
+        idx.forEach((k, i) => m.setMatrixAt(i, base[k].m));
+        m.computeBoundingSphere();
+        this.group.add(m);
+      }
+      idx.forEach((k, i) => {
+        const n = nodes[k];
+        const m = base[k].m;
+        this.setFull(batch, i, n.depleted ? ZERO : m);
+        this.setDepleted(batch, i, n.depleted ? m : ZERO);
+        const tint = base[k].tint;
+        if (tint !== undefined) batch.full.setColorAt(i, new THREE.Color(tint, tint, tint));
+      });
+      this.batches.push(batch);
     }
   }
 
@@ -1072,32 +1115,24 @@ export class ResourceView {
       const subset = list.filter((_, i) => i % 2 === v);
       if (subset.length === 0) return;
       const g = copperRockV2(1200 + v * 17, false);
-      const mk = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
-        const m = new THREE.InstancedMesh(geo, mat, subset.length);
+      const mk = (geo: THREE.BufferGeometry, mat: THREE.Material, count: number) => {
+        const m = new THREE.InstancedMesh(geo, mat, count);
         m.castShadow = true;
         m.receiveShadow = true;
-        this.group.add(m);
         return m;
       };
-      const batch: ResourceBatch = {
-        full: mk(g.rock, material),
-        depleted: mk(dep.rock, material),
-        fullExtra: mk(g.ore, oreMat),
-        depletedExtra: mk(dep.ore, oreMat),
-        nodes: subset,
-        base: [],
-      };
       const rnd = mulberry32(subset.length * 37 + v);
-      subset.forEach((n, i) => {
+      const base = subset.map((n) => {
         const s = 0.95 + rnd() * 0.2;
         tmpQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2);
-        const m = new THREE.Matrix4().compose(new THREE.Vector3(n.x, terrainHeight(this.map, n.x, n.z) - 0.05, n.z), tmpQ, new THREE.Vector3(s, s, s));
-        batch.base.push(m);
-        this.setFull(batch, i, n.depleted ? ZERO : m);
-        this.setDepleted(batch, i, n.depleted ? m : ZERO);
+        return { m: new THREE.Matrix4().compose(new THREE.Vector3(n.x, terrainHeight(this.map, n.x, n.z) - 0.05, n.z), tmpQ, new THREE.Vector3(s, s, s)) };
       });
-      for (const m of [batch.full, batch.depleted, batch.fullExtra!, batch.depletedExtra!]) m.computeBoundingSphere();
-      this.batches.push(batch);
+      this.addChunked(subset, base, (count) => ({
+        full: mk(g.rock, material, count),
+        depleted: mk(dep.rock, material, count),
+        fullExtra: mk(g.ore, oreMat, count),
+        depletedExtra: mk(dep.ore, oreMat, count),
+      }));
     });
   }
 

@@ -16,10 +16,24 @@ export const TILE_COLORS: Record<number, string> = {
   [T.Field]: '#b58a4e',
   [T.Camp]: '#a88a5e',
   [T.Cave]: '#5f5a52',
+  // Eastreach: heather moor, snow on the high tops, marsh peat.
+  [T.Heath]: '#9a8a7c',
+  [T.Snow]: '#eef2f4',
+  [T.Marsh]: '#7e8f4e',
 };
 
-/** Builds the flat-shaded, vertex-coloured terrain mesh. */
-export function buildTerrain(map: WorldMap): THREE.Mesh {
+const tmpV = new THREE.Vector3();
+
+/** Terrain is split into squares of this many tiles, so the camera only draws what is in view. */
+const TERRAIN_CHUNK = 32;
+/** Sea floor this deep is hidden by the water above it and isn't drawn at all. */
+const HIDDEN_DEPTH = -1.5;
+
+/**
+ * Builds the flat-shaded, vertex-coloured terrain: one mesh per chunk, all sharing the same vertex
+ * buffers (each chunk only has its own triangle list), so culling costs no extra memory.
+ */
+export function buildTerrain(map: WorldMap): THREE.Group {
   const W = map.width;
   const H = map.height;
   const W1 = W + 1;
@@ -88,29 +102,44 @@ export function buildTerrain(map: WorldMap): THREE.Mesh {
       colors[i * 3 + 2] = acc.b * k;
     }
   }
-  const index: number[] = [];
-  for (let z = 0; z < H; z++) {
-    for (let x = 0; x < W; x++) {
-      const a = z * W1 + x;
-      const b = a + 1;
-      const d = a + W1;
-      const e = d + 1;
-      // Alternate diagonals for a less regular faceted look.
-      if ((x + z) % 2 === 0) index.push(a, d, b, b, d, e);
-      else index.push(a, d, e, a, e, b);
+  const position = new THREE.BufferAttribute(positions, 3);
+  const color = new THREE.BufferAttribute(colors, 3);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const group = new THREE.Group();
+  group.name = 'terrain';
+  for (let cz = 0; cz < H; cz += TERRAIN_CHUNK) {
+    for (let cx = 0; cx < W; cx += TERRAIN_CHUNK) {
+      const index: number[] = [];
+      const box = new THREE.Box3();
+      for (let z = cz; z < Math.min(H, cz + TERRAIN_CHUNK); z++) {
+        for (let x = cx; x < Math.min(W, cx + TERRAIN_CHUNK); x++) {
+          const a = z * W1 + x;
+          const b = a + 1;
+          const d = a + W1;
+          const e = d + 1;
+          const top = Math.max(map.heights[a], map.heights[b], map.heights[d], map.heights[e]);
+          if (top < HIDDEN_DEPTH) continue;
+          box.expandByPoint(tmpV.set(x, top, z)).expandByPoint(tmpV.set(x + 1, Math.min(map.heights[a], map.heights[b], map.heights[d], map.heights[e]), z + 1));
+          // Alternate diagonals for a less regular faceted look.
+          if ((x + z) % 2 === 0) index.push(a, d, b, b, d, e);
+          else index.push(a, d, e, a, e, b);
+        }
+      }
+      if (index.length === 0) continue;
+      const cg = new THREE.BufferGeometry();
+      cg.setAttribute('position', position);
+      cg.setAttribute('color', color);
+      cg.setIndex(index);
+      // Shared vertices span the whole map, so each chunk's bounds are set from its own quads.
+      cg.boundingBox = box;
+      cg.boundingSphere = box.getBoundingSphere(new THREE.Sphere());
+      const mesh = new THREE.Mesh(cg, mat);
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      group.add(mesh);
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  g.setIndex(index);
-  g.computeVertexNormals();
-  g.computeBoundingSphere();
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
-  const mesh = new THREE.Mesh(g, mat);
-  mesh.receiveShadow = true;
-  mesh.name = 'terrain';
-  return mesh;
+  return group;
 }
 
 /** Stylised water with depth tint, ripples, sparkles and shoreline foam driven by a baked height texture. */

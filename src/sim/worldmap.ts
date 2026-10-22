@@ -6,6 +6,7 @@ import type { EnemyType } from '../data/enemies';
 import type { NpcId } from '../data/npcs';
 import { HOUSE } from '../data/construction';
 import type { StationKind } from '../data/recipes';
+import { generateEastreach } from './eastreach';
 
 /** Terrain tile types. */
 export const T = {
@@ -20,6 +21,10 @@ export const T = {
   Field: 8,
   Camp: 9,
   Cave: 10,
+  // Eastreach (Phase 4A, docs/WORLD_EXPANSION.md): heather moor, mountain snow, marsh peat.
+  Heath: 11,
+  Snow: 12,
+  Marsh: 13,
 } as const;
 export type TileType = (typeof T)[keyof typeof T];
 
@@ -52,7 +57,9 @@ export type DecorKind =
   | 'icechest'
   | 'glowcap'
   | 'cave_mouth'
-  | 'light_shaft';
+  | 'light_shaft'
+  // Eastreach (Phase 4A)
+  | 'heather';
 
 export interface Decor {
   kind: DecorKind;
@@ -191,6 +198,12 @@ export const REGIONS: Region[] = [
   { id: 'fields', name: 'Southern Fields', x: 56, z: 90, radius: 10, levels: 'Safe', danger: 0 },
   { id: 'exchange', name: 'Exchange Plaza', x: 80.5, z: 43.5, radius: 6, levels: 'Trading', danger: 0 },
   { id: 'hollow', name: 'Glimmer Hollow', x: 16, z: 105, radius: 14, levels: 'Lv 14 · dark', danger: 2 },
+  // Eastreach (Phase 4A, docs/WORLD_EXPANSION.md)
+  { id: 'causeway', name: 'Saltwind Causeway', x: 110, z: 63, radius: 7, levels: 'To Eastreach', danger: 0 },
+  { id: 'thornridge', name: 'Thornridge Highlands', x: 168, z: 30, radius: 30, levels: 'Lv 22–34', danger: 2 },
+  { id: 'cairnhold', name: 'Cairnhold', x: 150, z: 34, radius: 7, levels: 'Outpost', danger: 0 },
+  { id: 'mirefen', name: 'Mirefen Marsh', x: 162, z: 98, radius: 30, levels: 'Lv 15–30', danger: 2 },
+  { id: 'heronwick', name: 'Heronwick', x: 147, z: 84, radius: 7, levels: 'Village', danger: 0 },
 ];
 
 /** The Exchange plaza north-east of the village: a round kiosk with clerks, and a bank booth. */
@@ -224,13 +237,23 @@ export function regionAt(x: number, z: number): Region | null {
   return best;
 }
 
+/**
+ * The original island is 112 × 112 tiles in the map's top-left corner. Everything in it is generated
+ * exactly as it always was (a test fingerprints it); the map is larger now (Phase 4A) and the rest is
+ * Eastreach (src/sim/eastreach.ts), generated afterwards from its own random stream.
+ */
+export const ISLAND_SIZE = 112;
+export const MAP_WIDTH = 208;
+export const MAP_HEIGHT = 128;
+export const inIslandBox = (x: number, z: number) => x < ISLAND_SIZE && z < ISLAND_SIZE;
+
 export function generateWorld(seed = 1337): WorldMap {
-  const W = 112;
-  const H = 112;
+  const W = MAP_WIDTH;
+  const H = MAP_HEIGHT;
   const rng: Rng = mulberry32(seed);
-  const cx = W / 2;
-  const cz = H / 2;
-  const R = W * 0.46;
+  const cx = ISLAND_SIZE / 2;
+  const cz = ISLAND_SIZE / 2;
+  const R = ISLAND_SIZE * 0.46;
 
   const heights = new Float32Array((W + 1) * (H + 1));
   const islandD = (x: number, z: number) =>
@@ -268,8 +291,8 @@ export function generateWorld(seed = 1337): WorldMap {
   const idx = (x: number, z: number) => z * W + x;
   const vh = (vx: number, vz: number) => heights[vz * (W + 1) + vx];
 
-  for (let z = 0; z < H; z++) {
-    for (let x = 0; x < W; x++) {
+  for (let z = 0; z < ISLAND_SIZE; z++) {
+    for (let x = 0; x < ISLAND_SIZE; x++) {
       const avg = (vh(x, z) + vh(x + 1, z) + vh(x, z + 1) + vh(x + 1, z + 1)) / 4;
       const mx = x + 0.5;
       const mz = z + 0.5;
@@ -298,13 +321,21 @@ export function generateWorld(seed = 1337): WorldMap {
       if (t === T.Path || t === T.Bridge || t === T.Plaza) occ[idx(x, z)] = 1;
     }
   }
-  // Map border is always blocked.
-  for (let i = 0; i < W; i++) {
-    blocked[idx(i, 0)] = blocked[idx(i, H - 1)] = 1;
-    blocked[idx(0, i)] = blocked[idx(W - 1, i)] = 1;
+  // Map border is always blocked (the island's old edge too: it is all sea).
+  for (let i = 0; i < ISLAND_SIZE; i++) {
+    blocked[idx(i, 0)] = blocked[idx(i, ISLAND_SIZE - 1)] = 1;
+    blocked[idx(0, i)] = blocked[idx(ISLAND_SIZE - 1, i)] = 1;
+  }
+  for (let x = 0; x < W; x++) blocked[idx(x, 0)] = blocked[idx(x, H - 1)] = 1;
+  for (let z = 0; z < H; z++) blocked[idx(0, z)] = blocked[idx(W - 1, z)] = 1;
+  // Outside the island everything starts as open sea; Eastreach is generated over it at the end.
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) if (!inIslandBox(x, z)) {
+    tiles[idx(x, z)] = T.Water;
+    blocked[idx(x, z)] = 1;
   }
 
-  const inBounds = (x: number, z: number) => x > 1 && z > 1 && x < W - 2 && z < H - 2;
+  // (The island's own bounds: everything up to Eastreach is placed exactly as before.)
+  const inBounds = (x: number, z: number) => x > 1 && z > 1 && x < ISLAND_SIZE - 2 && z < ISLAND_SIZE - 2;
   const free = (x: number, z: number) => inBounds(x, z) && !blocked[idx(x, z)] && !occ[idx(x, z)];
   const decor: Decor[] = [];
   const addDecor = (kind: DecorKind, x: number, z: number, block: boolean, rot = rng() * Math.PI * 2, scale = 0.85 + rng() * 0.3, variant = Math.floor(rng() * 4)) => {
@@ -473,8 +504,8 @@ export function generateWorld(seed = 1337): WorldMap {
   }
 
   // Scatter vegetation
-  for (let z = 2; z < H - 2; z++) {
-    for (let x = 2; x < W - 2; x++) {
+  for (let z = 2; z < ISLAND_SIZE - 2; z++) {
+    for (let x = 2; x < ISLAND_SIZE - 2; x++) {
       if (!free(x, z)) continue;
       const t = tiles[idx(x, z)];
       const vd = Math.hypot(x - VILLAGE.x, z - VILLAGE.z);
@@ -706,7 +737,7 @@ export function generateWorld(seed = 1337): WorldMap {
     }
   }
 
-  return {
+  const map: WorldMap = {
     seed,
     width: W,
     height: H,
@@ -731,6 +762,9 @@ export function generateWorld(seed = 1337): WorldMap {
     checkpoints,
     passages,
   };
+  // Eastreach, last of all and from its own random stream (nothing above moves).
+  generateEastreach(map, occ, seed);
+  return map;
 }
 
 export function tileAt(map: WorldMap, x: number, z: number): number {

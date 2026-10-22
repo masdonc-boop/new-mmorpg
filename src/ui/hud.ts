@@ -1631,6 +1631,7 @@ export class Hud {
       const lbl = el('div', `map-label d${r.danger}`, `<b>${r.name}</b><span>${r.levels}</span>`);
       lbl.style.left = `${(r.x / map.width) * 100}%`;
       lbl.style.top = `${(r.z / map.height) * 100}%`;
+      lbl.dataset.priority = String(r.radius);
       stage.appendChild(lbl);
       labels.push(lbl);
     }

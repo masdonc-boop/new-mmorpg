@@ -126,6 +126,20 @@ export class MapViewer {
     const inv = 1 / v.scale;
     for (const l of this.labels) l.style.transform = `translate(-50%, -50%) scale(${inv})`;
     this.viewport.dataset.scale = v.scale.toFixed(2);
+    this.declutter();
+  }
+
+  /** Hides labels that would overlap a more important one (bigger regions win); zooming in reveals them. */
+  private declutter() {
+    const order = [...this.labels].sort((a, b) => Number(b.dataset.priority ?? 0) - Number(a.dataset.priority ?? 0));
+    const rects = order.map((l) => l.getBoundingClientRect());
+    const shown: DOMRect[] = [];
+    order.forEach((l, i) => {
+      const r = rects[i];
+      const clash = shown.some((o) => r.left < o.right && r.right > o.left && r.top < o.bottom && r.bottom > o.top);
+      l.style.visibility = clash ? 'hidden' : '';
+      if (!clash) shown.push(r);
+    });
   }
 
   private local(e: PointerEvent | WheelEvent) {

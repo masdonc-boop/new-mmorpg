@@ -70,7 +70,7 @@ export class GameRenderer {
   private skyColor = new THREE.Color(SKY);
   private caveColor = new THREE.Color('#040506');
   private time = { value: 0 };
-  private terrain: THREE.Mesh;
+  private terrain: THREE.Group;
   private water: THREE.Mesh;
   private staticWorld: StaticWorld;
   private resources: ResourceView;
@@ -1246,11 +1246,16 @@ export class GameRenderer {
 
     const ndc = new THREE.Vector2((sx / rect.width) * 2 - 1, -(sy / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const hits = this.raycaster.intersectObject(this.terrain, false);
+    const hits = this.raycaster.intersectObject(this.terrain, true);
     if (hits.length > 0) return { kind: 'ground', x: hits[0].point.x, z: hits[0].point.z };
+    // Deep sea floor isn't drawn; a tap out at sea still points somewhere, as before.
+    const sea = this.raycaster.ray.intersectPlane(SEA_FLOOR, new THREE.Vector3());
+    if (sea) return { kind: 'ground', x: sea.x, z: sea.z };
     return null;
   }
 }
+
+const SEA_FLOOR = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.6);
 
 function enemyHeight(e: Enemy): number {
   if (e.def.model === 'slime') return 1.1 * e.def.scale;
