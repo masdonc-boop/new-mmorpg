@@ -1,8 +1,8 @@
 import { ITEMS, itemDef, type ItemId } from '../data/items';
-import { tradeable, type Order, type Result, type Side } from '../exchange/engine';
-import { PRACTICE_ACCOUNT, traderName } from '../exchange/simulation';
-import type { Command, GameWorld } from '../sim/world';
+import { tradeable, type Order, type Side } from '../exchange/engine';
+import type { LiveResult } from '../net/protocol';
 import { itemIcon } from './icons';
+import type { MarketSource } from './marketsource';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -25,29 +25,45 @@ function statusText(o: Order): { label: string; tone: 'active' | 'done' | 'cance
 }
 
 /**
- * The Exchange interface. Today it is wired to the PRACTICE market only: every coin and item shown
- * is practice stock and the other traders are simulated. The view sends intents (place, cancel,
- * collect) and redraws from engine state; it never decides balances or results itself.
+ * The Exchange interface, over either market (src/ui/marketsource.ts):
+ * - the PRACTICE market on this device: practice stock and simulated traders;
+ * - the LIVE Exchange on the server (only when connected to a server that has it switched on):
+ *   real items and coins, traded with other players, who are never named.
+ * The view sends intents (place, cancel, collect, take out) and redraws from what the market reports;
+ * it never decides balances or results itself.
  */
 export class ExchangeView {
   readonly root = el('div', 'gx');
   private screen: Screen = { kind: 'offers' };
   private notice: { text: string; ok: boolean } | null = null;
-  private pending = new Map<number, string>();
+  private pending = new Map<string, string>();
   private search = '';
   private qty = 1;
   private price = 1;
+  /** The price was filled in from the item's value while the live guide loads: replace it when it arrives. */
+  private priceAuto = false;
+  /** The form on screen was drawn before its price guide arrived. */
+  private formLoading = false;
+  private src: MarketSource;
 
   constructor(
-    private world: GameWorld,
-    private command: (c: Command) => void,
+    private practice: MarketSource,
+    private liveSource: MarketSource | null,
     private confirmTap: (key: string, btn: HTMLButtonElement, prompt: string) => boolean,
+    private practiceReset: () => void,
   ) {
+    this.src = liveSource ?? practice;
+    this.src.open();
     this.render();
   }
 
-  private get x() {
-    return this.world.market.exchange;
+  /** Which market is showing. */
+  get live() {
+    return this.src.live;
+  }
+
+  private get coinWord() {
+    return this.src.live ? 'coins' : 'practice coins';
   }
 
   private shownKey = '';
@@ -58,9 +74,9 @@ export class ExchangeView {
    */
   stateKey(): string {
     const s = this.screen;
-    const mine = JSON.stringify(this.x.ordersOf(PRACTICE_ACCOUNT)) + JSON.stringify(this.x.holdings(PRACTICE_ACCOUNT));
-    const market = s.kind === 'history' ? String(this.x.history({}, 1)[0]?.id ?? 0) : s.kind === 'new' && s.item ? JSON.stringify(this.x.guide(s.item)) : '';
-    return `${s.kind}|${mine}|${market}`;
+    const mine = JSON.stringify(this.src.orders()) + JSON.stringify(this.src.holdings());
+    const market = s.kind === 'history' ? `${this.src.market(1)[0]?.id ?? 0}/${this.src.mine(1)[0]?.id ?? 0}` : s.kind === 'new' && s.item ? JSON.stringify(this.src.guide(s.item)) : s.kind === 'new' ? JSON.stringify(this.src.sellable()) : '';
+    return `${this.src.live}|${s.kind}|${mine}|${market}`;
   }
 
   /** Redraws only if what this screen shows has changed. */
@@ -70,14 +86,16 @@ export class ExchangeView {
 
   /** True while the player is filling in a form (live market updates then wait). */
   get busy(): boolean {
-    return this.screen.kind === 'new' && this.screen.item !== null;
+    // A form drawn while its live price guide was on its way may be redrawn (it fills in the price).
+    return this.screen.kind === 'new' && this.screen.item !== null && !this.formLoading;
   }
 
-  /** A result from the simulation for one of this view's requests. */
-  onResult(nonce: number, result: Result) {
-    const what = this.pending.get(nonce);
+  /** A result for one of this view's requests (from the practice market or the live Exchange). */
+  onResult(nonce: number, result: LiveResult, live = false) {
+    const key = `${live}:${nonce}`;
+    const what = this.pending.get(key);
     if (what === undefined) return;
-    this.pending.delete(nonce);
+    this.pending.delete(key);
     if (result.ok) {
       if (what === 'place') {
         const t = result.trades?.reduce((a, tr) => a + tr.qty, 0) ?? 0;
@@ -85,17 +103,29 @@ export class ExchangeView {
         this.screen = { kind: 'offers' };
       } else if (what === 'collect') {
         const c = result.collected!;
-        this.notice = { text: `Collected ${[c.items ? `${fmt(c.items)} ${name(c.item!).toLowerCase()}` : '', c.coins ? `${fmt(c.coins)} practice coins` : ''].filter(Boolean).join(' and ')} into practice storage.`, ok: true };
-        if (this.screen.kind === 'detail' && !this.x.order(this.screen.orderId)) this.screen = { kind: 'offers' };
-      } else this.notice = { text: 'Offer cancelled. Anything unspent is waiting to be collected.', ok: true };
+        const got = [c.items ? `${fmt(c.items)} ${name(c.item!).toLowerCase()}` : '', c.coins ? `${fmt(c.coins)} ${this.coinWord}` : ''].filter(Boolean).join(' and ');
+        this.notice = { text: result.note ? `Collected ${got}. ${result.note}` : `Collected ${got} into practice storage.`, ok: true };
+        if (this.screen.kind === 'detail' && !this.src.order(this.screen.orderId)) this.screen = { kind: 'offers' };
+      } else if (what === 'claim') this.notice = { text: result.note ?? 'Taken out of exchange storage.', ok: true };
+      else this.notice = { text: 'Offer cancelled. Anything unspent is waiting to be collected.', ok: true };
     } else this.notice = { text: result.error, ok: false };
     this.render();
   }
 
-  private send(req: { op: 'place'; slot: number; side: Side; item: ItemId; qty: number; price: number } | { op: 'cancel' | 'collect'; orderId: number }) {
-    const nonce = this.x.nextNonce(PRACTICE_ACCOUNT);
-    this.pending.set(nonce, req.op);
-    this.command({ type: 'exchange', req: { ...req, nonce } as never });
+  private send(req: { op: 'place'; slot: number; side: Side; item: ItemId; qty: number; price: number } | { op: 'cancel' | 'collect'; orderId: number } | { op: 'claim' }) {
+    const nonce = this.src.nextNonce();
+    this.pending.set(`${this.src.live}:${nonce}`, req.op);
+    this.src.send({ ...req, nonce } as never);
+  }
+
+  /** Switches between the live and the practice market (when both are available). */
+  private use(src: MarketSource) {
+    if (src === this.src) return;
+    this.src = src;
+    src.open();
+    this.screen = { kind: 'offers' };
+    this.notice = null;
+    this.render();
   }
 
   render(): void {
@@ -103,7 +133,20 @@ export class ExchangeView {
     this.shownKey = this.stateKey();
     const scroll = r.querySelector('.gx-list')?.scrollTop ?? 0;
     r.replaceChildren();
-    r.appendChild(el('div', 'gx-banner', '🧪 <b>Practice market</b> · simulated traders and practice coins. Your real items and coins are never used. Live trading with other players arrives with multiplayer.'));
+    if (this.liveSource) {
+      const modes = el('div', 'gx-modes');
+      for (const [src, label] of [[this.liveSource, 'Live'], [this.practice, 'Practice']] as const) {
+        const b = el('button', `bank-chip${this.src === src ? ' active' : ''}${src.live ? ' live' : ''}`, label);
+        b.addEventListener('click', () => this.use(src));
+        modes.appendChild(b);
+      }
+      r.appendChild(modes);
+    }
+    r.appendChild(
+      this.src.live
+        ? el('div', 'gx-banner live', '🟢 <b>Live market</b> · real items and coins, traded with other players. An offer takes what it needs from your bank, then your bag; what you collect goes to your bag, then your bank.')
+        : el('div', 'gx-banner', `🧪 <b>Practice market</b> · simulated traders and practice coins. Your real items and coins are never used.${this.liveSource ? '' : ' Live trading with other players opens on servers that have it switched on.'}`),
+    );
     if (this.screen.kind === 'new') return this.renderNew(this.screen);
     if (this.screen.kind === 'detail') return this.renderDetail(this.screen.orderId);
     const tabs = el('div', 'gx-tabs');
@@ -130,13 +173,13 @@ export class ExchangeView {
   }
 
   private renderOffers() {
-    const orders = this.x.ordersOf(PRACTICE_ACCOUNT);
+    const orders = this.src.orders();
     const grid = el('div', 'gx-slots gx-list');
     // Offers placed before the slot count dropped to six stay visible until collected.
-    const shown = Math.max(this.x.slots, ...orders.map((o) => o.slot + 1));
+    const shown = Math.max(this.src.slots, ...orders.map((o) => o.slot + 1));
     for (let slot = 0; slot < shown; slot++) {
       const o = orders.find((x) => x.slot === slot);
-      if (!o && slot >= this.x.slots) continue;
+      if (!o && slot >= this.src.slots) continue;
       if (!o) {
         const card = el('div', 'gx-slot empty', `<div class="gx-slot-title">Slot ${slot + 1} · empty</div>`);
         const btns = el('div', 'gx-slot-btns');
@@ -168,7 +211,7 @@ export class ExchangeView {
   }
 
   private renderDetail(id: number): void {
-    const o = this.x.order(id);
+    const o = this.src.order(id);
     if (!o) {
       this.screen = { kind: 'offers' };
       return this.render();
@@ -179,11 +222,11 @@ export class ExchangeView {
     box.innerHTML = `<div class="gx-detail-head"><img src="${itemIcon(o.item)}" alt=""><div><div class="ii-name">${o.side === 'buy' ? 'Buying' : 'Selling'} ${fmt(o.qty)} × ${name(o.item)}</div><div class="ii-desc">Slot ${o.slot + 1} · ${o.side === 'buy' ? 'paying up to' : 'asking at least'} ${fmt(o.price)} each</div></div></div>
       <div class="gx-bar big"><div style="width:${(o.filled / o.qty) * 100}%"></div></div>
       <div class="gx-status ${st.tone}">${st.label}${o.filled ? ` · average ${fmt(avg)} each` : ''}</div>
-      <div class="ii-desc">Waiting to collect: ${o.boxItems ? `${fmt(o.boxItems)} ${name(o.item).toLowerCase()}` : 'no items'}, ${fmt(o.boxCoins)} practice coins.</div>`;
-    const trades = this.x.history({ account: PRACTICE_ACCOUNT, item: o.item }, 200).filter((t) => t.buyOrder === o.id || t.sellOrder === o.id);
+      <div class="ii-desc">Waiting to collect: ${o.boxItems ? `${fmt(o.boxItems)} ${name(o.item).toLowerCase()}` : 'no items'}, ${fmt(o.boxCoins)} ${this.coinWord}.</div>`;
+    const trades = this.src.mine(200).filter((t) => t.order === o.id || (this.src.live && t.item === o.item && t.bought === (o.side === 'buy')));
     if (trades.length) {
-      box.appendChild(el('div', 'gx-sub', 'Fills (simulated traders)'));
-      for (const t of trades.slice(0, 12)) box.appendChild(el('div', 'gx-row', `${fmt(t.qty)} @ ${fmt(t.price)} with ${traderName(o.side === 'buy' ? t.seller : t.buyer)}`));
+      box.appendChild(el('div', 'gx-sub', this.src.live ? 'Recent fills' : 'Fills (simulated traders)'));
+      for (const t of trades.slice(0, 12)) box.appendChild(el('div', 'gx-row', `${fmt(t.qty)} @ ${fmt(t.price)} with ${t.who}`));
     }
     const btns = el('div', 'ii-btns');
     const back = el('button', 'bank-btn', '‹ Back');
@@ -230,11 +273,18 @@ export class ExchangeView {
     this.renderNotice();
     if (!s.item) return this.renderPicker(s);
     const item = s.item;
-    const g = this.x.guide(item);
-    const have = this.x.balance(PRACTICE_ACCOUNT, s.side === 'buy' ? 'coins' : item);
+    const g = this.src.guide(item) ?? { price: Math.max(1, itemDef(item).value), fromTrades: false, bestBid: null, bestAsk: null, volume: 0 };
+    const loading = this.src.guide(item) === null;
+    this.formLoading = loading;
+    if (!loading && this.priceAuto) {
+      this.price = g.price;
+      this.priceAuto = false;
+    }
+    const have = this.src.available(s.side === 'buy' ? 'coins' : item);
+    const where = this.src.live ? 'in your bank and bag' : s.side === 'buy' ? '' : 'in practice storage';
     const form = el('div', 'gx-form gx-list');
     form.innerHTML = `<div class="gx-detail-head"><img src="${itemIcon(item)}" alt=""><div><div class="ii-name">${name(item)}</div><div class="ii-desc">${itemDef(item).examine}</div></div></div>
-      <div class="gx-guide">Guide price <b>${fmt(g.price)}</b> ${g.fromTrades ? `(recent trades, ${fmt(g.volume)} traded)` : '(no trades yet: item value)'} · best buy offer ${g.bestBid ? fmt(g.bestBid) : '—'} · best sell offer ${g.bestAsk ? fmt(g.bestAsk) : '—'}</div>`;
+      <div class="gx-guide">${loading ? 'Asking the clerks for the latest prices…' : `Guide price <b>${fmt(g.price)}</b> ${g.fromTrades ? `(recent trades, ${fmt(g.volume)} traded)` : '(no trades yet: item value)'} · best buy offer ${g.bestBid ? fmt(g.bestBid) : '—'} · best sell offer ${g.bestAsk ? fmt(g.bestAsk) : '—'}`}</div>`;
     const maxQty = s.side === 'sell' ? have : 1_000_000;
     // Quantity: − [n] + and quick amounts.
     const qrow = el('div', 'gx-field', '<span>Quantity</span>');
@@ -267,6 +317,7 @@ export class ExchangeView {
     for (const [label, f] of [['−5%', (v: number) => Math.min(v - 1, Math.floor(v * 0.95))], ['Guide', () => g.price], ['+5%', (v: number) => Math.max(v + 1, Math.ceil(v * 1.05))]] as const) {
       const b = el('button', 'bank-step', label);
       b.addEventListener('click', () => {
+        this.priceAuto = false;
         this.price = clampP(f(Number(pin.value)));
         pin.value = String(this.price);
         sync();
@@ -281,11 +332,14 @@ export class ExchangeView {
       this.price = clampP(Number(pin.value));
       const t = this.qty * this.price;
       const short = s.side === 'buy' ? t > have : this.qty > have;
-      total.innerHTML = `${s.side === 'buy' ? 'Total cost' : 'You receive at least'} <b>${fmt(t)}</b> practice coins · ${s.side === 'buy' ? `you have ${fmt(have)} practice coins` : `you have ${fmt(have)} in practice storage`}${short ? ' <span class="miss">· not enough</span>' : ''}`;
+      total.innerHTML = `${s.side === 'buy' ? 'Total cost' : 'You receive at least'} <b>${fmt(t)}</b> ${this.coinWord} · ${s.side === 'buy' ? `you have ${fmt(have)} ${this.coinWord}${this.src.live ? ` ${where}` : ''}` : `you have ${fmt(have)} ${where}`}${short ? ' <span class="miss">· not enough</span>' : ''}`;
       confirm.disabled = short;
     };
     qin.addEventListener('input', sync);
-    pin.addEventListener('input', sync);
+    pin.addEventListener('input', () => {
+      this.priceAuto = false;
+      sync();
+    });
     confirm.addEventListener('click', () => {
       sync();
       this.send({ op: 'place', slot: s.slot, side: s.side, item, qty: this.qty, price: this.price });
@@ -295,28 +349,31 @@ export class ExchangeView {
     this.root.appendChild(form);
   }
 
-  /** Item search: everything tradeable to buy; only what's in practice storage to sell. */
+  /** Item search: everything tradeable to buy; only what the player has to sell. */
   private renderPicker(s: Extract<Screen, { kind: 'new' }>) {
     const input = el('input', 'bank-search gx-search');
     input.type = 'search';
-    input.placeholder = s.side === 'buy' ? 'Search items to buy' : 'Search your practice storage';
+    input.placeholder = s.side === 'buy' ? 'Search items to buy' : this.src.live ? 'Search your bank and bag' : 'Search your practice storage';
     input.value = this.search;
     const list = el('div', 'gx-picker gx-list');
     const fill = () => {
       this.search = input.value;
       const q = input.value.trim().toLowerCase();
       list.replaceChildren();
-      const ids = s.side === 'buy' ? tradeableItems() : (this.x.holdings(PRACTICE_ACCOUNT).map((h) => h.asset).filter((a) => a !== 'coins') as ItemId[]);
+      const ids = s.side === 'buy' ? tradeableItems() : this.src.sellable().sort((a, b) => name(a).localeCompare(name(b)));
       const shown = ids.filter((i) => !q || name(i).toLowerCase().includes(q)).slice(0, 60);
-      if (!shown.length) list.appendChild(el('div', 'bank-empty', s.side === 'sell' ? 'Nothing in practice storage matches. Buy something first, or reset the practice market.' : 'No items match.'));
+      if (!shown.length) list.appendChild(el('div', 'bank-empty', s.side === 'sell' ? (this.src.live ? 'Nothing in your bank or bag matches.' : 'Nothing in practice storage matches. Buy something first, or reset the practice market.') : 'No items match.'));
       for (const i of shown) {
-        const g = this.x.guide(i);
-        const own = s.side === 'sell' ? ` · you have ${fmt(this.x.balance(PRACTICE_ACCOUNT, i))}` : '';
-        const b = el('button', 'gx-pick', `<img src="${itemIcon(i)}" alt=""><span class="gx-pick-name">${name(i)}</span><span class="gx-pick-price">${fmt(g.price)}${own}</span>`);
+        // The live guide comes from the server: shown once it arrives (the item's value until then).
+        const g = this.src.live ? null : this.src.guide(i);
+        const own = s.side === 'sell' ? ` · you have ${fmt(this.src.available(i))}` : '';
+        const b = el('button', 'gx-pick', `<img src="${itemIcon(i)}" alt=""><span class="gx-pick-name">${name(i)}</span><span class="gx-pick-price">${g ? fmt(g.price) : ''}${own}</span>`);
         b.addEventListener('click', () => {
           s.item = i;
-          this.price = g.price;
-          this.qty = s.side === 'sell' ? Math.min(this.x.balance(PRACTICE_ACCOUNT, i), 10) || 1 : 1;
+          const known = this.src.guide(i);
+          this.price = known?.price ?? Math.max(1, itemDef(i).value);
+          this.priceAuto = known === null;
+          this.qty = s.side === 'sell' ? Math.min(this.src.available(i), 10) || 1 : 1;
           this.render();
         });
         list.appendChild(b);
@@ -329,14 +386,26 @@ export class ExchangeView {
 
   private renderStorage() {
     const list = el('div', 'gx-list gx-storage');
-    list.appendChild(el('div', 'ii-desc', 'Practice storage holds what you collect from offers. It is separate from your inventory and bank: practice stock can’t leave the practice market.'));
-    const hold = this.x.holdings(PRACTICE_ACCOUNT).sort((a, b) => (a.asset === 'coins' ? -1 : b.asset === 'coins' ? 1 : 0));
-    for (const h of hold) list.appendChild(el('div', 'gx-row gx-hold', `<img src="${itemIcon(h.asset === 'coins' ? 'coins' : h.asset)}" alt=""><span>${h.asset === 'coins' ? 'Practice coins' : name(h.asset)}</span><b>${fmt(h.qty)}</b>`));
-    if (!hold.length) list.appendChild(el('div', 'bank-empty', 'Practice storage is empty.'));
+    const live = this.src.live;
+    list.appendChild(
+      el('div', 'ii-desc', live ? 'Exchange storage holds what you collected but had no room for in your bag or bank. Take it out once there is room.' : 'Practice storage holds what you collect from offers. It is separate from your inventory and bank: practice stock can’t leave the practice market.'),
+    );
+    const hold = this.src.holdings().sort((a, b) => (a.asset === 'coins' ? -1 : b.asset === 'coins' ? 1 : 0));
+    for (const h of hold) list.appendChild(el('div', 'gx-row gx-hold', `<img src="${itemIcon(h.asset === 'coins' ? 'coins' : h.asset)}" alt=""><span>${h.asset === 'coins' ? (live ? 'Coins' : 'Practice coins') : name(h.asset)}</span><b>${fmt(h.qty)}</b>`));
+    if (!hold.length) list.appendChild(el('div', 'bank-empty', live ? 'Exchange storage is empty.' : 'Practice storage is empty.'));
+    if (live) {
+      if (hold.length) {
+        const out = el('button', 'bank-btn primary', 'Take out');
+        out.addEventListener('click', () => this.send({ op: 'claim' }));
+        list.appendChild(out);
+      }
+      this.root.appendChild(list);
+      return;
+    }
     const reset = el('button', 'bank-btn', 'Reset practice market');
     reset.addEventListener('click', () => {
       if (!this.confirmTap('gx-reset', reset, 'Tap again: start over')) return;
-      this.command({ type: 'exchangeResetPractice' });
+      this.practiceReset();
       this.notice = { text: 'Practice market reset with fresh practice stock.', ok: true };
       this.render();
     });
@@ -346,15 +415,13 @@ export class ExchangeView {
 
   private renderHistory() {
     const list = el('div', 'gx-list gx-history');
-    const mine = this.x.history({ account: PRACTICE_ACCOUNT }, 40);
-    list.appendChild(el('div', 'gx-sub', 'Your practice trades'));
-    if (!mine.length) list.appendChild(el('div', 'bank-empty', 'No practice trades yet.'));
-    for (const t of mine) {
-      const bought = t.buyer === PRACTICE_ACCOUNT;
-      list.appendChild(el('div', 'gx-row', `<img src="${itemIcon(t.item)}" alt=""><span>${bought ? 'Bought' : 'Sold'} ${fmt(t.qty)} ${name(t.item).toLowerCase()} @ ${fmt(t.price)} ${bought ? 'from' : 'to'} ${traderName(bought ? t.seller : t.buyer)}</span>`));
-    }
-    list.appendChild(el('div', 'gx-sub', 'Recent market activity (simulated traders)'));
-    for (const t of this.x.history({}, 25)) list.appendChild(el('div', 'gx-row dim', `<img src="${itemIcon(t.item)}" alt=""><span>${fmt(t.qty)} ${name(t.item).toLowerCase()} @ ${fmt(t.price)}</span>`));
+    const live = this.src.live;
+    const mine = this.src.mine(40);
+    list.appendChild(el('div', 'gx-sub', live ? 'Your trades' : 'Your practice trades'));
+    if (!mine.length) list.appendChild(el('div', 'bank-empty', live ? 'No trades yet.' : 'No practice trades yet.'));
+    for (const t of mine) list.appendChild(el('div', 'gx-row', `<img src="${itemIcon(t.item)}" alt=""><span>${t.bought ? 'Bought' : 'Sold'} ${fmt(t.qty)} ${name(t.item).toLowerCase()} @ ${fmt(t.price)} ${t.bought ? 'from' : 'to'} ${t.who}</span>`));
+    list.appendChild(el('div', 'gx-sub', live ? 'Recent market activity' : 'Recent market activity (simulated traders)'));
+    for (const t of this.src.market(25)) list.appendChild(el('div', 'gx-row dim', `<img src="${itemIcon(t.item)}" alt=""><span>${fmt(t.qty)} ${name(t.item).toLowerCase()} @ ${fmt(t.price)}</span>`));
     this.root.appendChild(list);
   }
 }

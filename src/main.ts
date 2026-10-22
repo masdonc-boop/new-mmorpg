@@ -1,4 +1,5 @@
 import './ui/styles.css';
+import { LiveSource } from './ui/marketsource';
 import { Controls } from './input/controls';
 import { GameRenderer } from './render/renderer';
 import { GameWorld, TICK_SECONDS, type SaveData } from './sim/world';
@@ -184,6 +185,7 @@ async function boot() {
   };
   let joyScreen = { x: 0, y: 0 };
 
+  let liveMarket: LiveSource | null = null;
   const hud = new Hud(app, world, {
     command: issue,
     setQuality: (q) => {
@@ -226,6 +228,7 @@ async function boot() {
     cameraYaw: () => renderer.camYaw,
     ...(net
       ? {
+          liveMarket: () => (net!.features.liveExchange ? (liveMarket ??= new LiveSource(world, net!)) : null),
           social: {
             say: (text: string, to?: string) => net!.say(text, to),
             block: (name: string, on: boolean) => net!.block(name, on),

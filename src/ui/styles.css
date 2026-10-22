@@ -2751,3 +2751,21 @@ button.danger {
   background: #7a2a2a;
   border-color: #ff8a8a;
 }
+
+/* ---------------------------------------------------------------- 3A.7 live Exchange */
+.gx-modes {
+  display: flex;
+  gap: 6px;
+}
+.gx-modes .bank-chip {
+  flex: 1;
+}
+.gx-modes .bank-chip.live.active {
+  background: #2f7a45;
+  border-color: #7dff8a;
+}
+.gx-banner.live {
+  background: rgba(80, 220, 120, 0.14);
+  border-color: rgba(125, 255, 138, 0.6);
+  color: #c9ffd2;
+}

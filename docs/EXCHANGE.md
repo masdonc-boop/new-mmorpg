@@ -2,7 +2,7 @@
 
 **Status:**
 - **Built:** the engine, a local **practice market** (simulated traders, practice balances), the Exchange plaza and the mobile interface.
-- **Not live:** player-to-player trading is **not** active. It needs the multiplayer backend (roadmap P3, on hold).
+- **Live Exchange built, switched off:** the development server can run a live Exchange between real accounts, with the bank bridge (docs/MULTIPLAYER.md 3A.7, `server/liveexchange.ts`). It only runs when the server is started with `liveExchange` on. Opening it to real players is still an owner decision (section 6, step 7).
 
 **Reference:** a centralized buy/sell order exchange modelled on the OSRS Grand Exchange, not an auction house. Players post offers with an item, a quantity and a unit price; compatible offers match automatically.
 
@@ -113,7 +113,7 @@ Nothing is ever created or destroyed by a trade.
 - `Exchange.toJSON()` and `Exchange.restore()` save and restore everything: balances, orders, supply, nonces, buy-limit history, recent trades, and audit log with checkpoint.
 - Restoring re-runs `verify()`.
 - **Practice market:** saved with the character under `exchangePractice` (local only).
-- **Live:** the server would persist the order book and ledger in a transactional database. Each `submit()` becomes one database transaction, plus an append-only audit table.
+- **Live (built, 3A.7):** the server saves the whole engine with every request, in one SQLite transaction with the character record it touched, plus append-only `exchange_audit` and `exchange_trades` tables. A saved market that fails `verify()` is refused at startup. Normalized order and balance tables come with PostgreSQL.
 
 ## 5. The practice market (what the game has now)
 
@@ -145,7 +145,8 @@ Nothing is ever created or destroyed by a trade.
 | Buy and sell offers, 6 slots, item search, price guide, history | ✅ | Same interface |
 | Matching by price and time, partial fills, cancel, collect | ✅ engine | Hosted engine |
 | Escrow accounting, audit chain, replay protection | ✅ engine | Plus database transactions |
-| Trading with other real players | ❌ simulated traders only | Required |
-| Real items and coins | ❌ practice stock only | Bank bridge |
-| Authenticated accounts | ❌ | Username and password (decided) |
-| Shared persistence across devices | ❌ saved on this device | Server database |
+| Trading with other real players | ❌ simulated traders only | ✅ built (3A.7), switched off by default |
+| Real items and coins | ❌ practice stock only | ✅ bank bridge (bank, then bag; proceeds to bag, then bank) |
+| Authenticated accounts | ❌ | ✅ username and password (3A.3) |
+| Shared persistence across devices | ❌ saved on this device | ✅ server database |
+| Price bands, rate limits, monitoring | n/a | Still to do before launch |

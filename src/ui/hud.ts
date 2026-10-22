@@ -12,6 +12,7 @@ import { BankView } from './bankview';
 import { CraftView } from './craftview';
 import { ShopView } from './shopview';
 import { ExchangeView } from './exchangeview';
+import { PracticeSource, type MarketSource } from './marketsource';
 import { SHOPS } from '../data/shops';
 import { RECIPES, STATION_INFO, isAnywhere, useCombo, usable, type AnywhereKind, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
@@ -54,6 +55,8 @@ export interface HudCallbacks {
   signOut?(): void;
   /** Network play: chat, blocking, reporting and trading with other players. */
   social?: SocialCallbacks;
+  /** Network play on a server with the live Exchange switched on. */
+  liveMarket?(): MarketSource | null;
   cameraYaw(): number;
 }
 
@@ -637,7 +640,7 @@ export class Hud {
         if (this.openPanel === 'exchange') this.toggle(null);
         break;
       case 'exchangeResult':
-        this.exchangeView?.onResult(e.nonce, e.result);
+        this.exchangeView?.onResult(e.nonce, e.result, !!e.live);
         break;
       case 'exchange':
         this.exchangeDirty = true;
@@ -906,7 +909,12 @@ export class Hud {
     }
     else if (id === 'exchange') {
       clearKeepingScroll(this.panelBody);
-      this.exchangeView = new ExchangeView(this.world, (c) => this.cb.command(c), (key, btn, prompt) => this.confirmTap(key, btn, prompt));
+      this.exchangeView = new ExchangeView(
+        new PracticeSource(this.world, (c) => this.cb.command(c)),
+        this.cb.liveMarket?.() ?? null,
+        (key, btn, prompt) => this.confirmTap(key, btn, prompt),
+        () => this.cb.command({ type: 'exchangeResetPractice' }),
+      );
       this.panelBody.appendChild(this.exchangeView.root);
     }
     else this.renderSettings();

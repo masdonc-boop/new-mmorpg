@@ -596,7 +596,73 @@ Acceptance:
 - A trade either completes fully or not at all, under disconnects at every step (chaos tests).
 - No items are created or lost; ledger rows are written for every trade.
 
-### 3A.7 Live Exchange (behind a flag)
+### 3A.7 Live Exchange (behind a flag): done
+
+**Switched off by default.**
+- The server opens the live Exchange only when started with `liveExchange: true` (`LIVE_EXCHANGE=1 npm run server`).
+- Opening it to real players remains an owner decision (section 6, "Activation").
+- The practice market on each device is unchanged and always available.
+
+How it works (`server/liveexchange.ts`):
+- **One engine for the whole world**, run by the server (not part of any zone, so it stays global when zones arrive in 3A.8). It is the same `Exchange` engine as the practice market, unchanged.
+- **Accounts** are `acct:<id>`, taken from the signed-in session. Guests can't use it. Players must be at an Exchange clerk and not in a player trade.
+- **Bank bridge:**
+  - **Placing** an offer moves exactly what it needs (coins for a buy, items for a sell) from exchange storage, then the bank, then the bag, into the engine as a deposit, then places it.
+  - **Collecting** moves the proceeds out: into the bag while there is room, then the bank. Whatever fits nowhere waits in exchange storage, and **Take out** (a `claim` request) moves it later.
+- **One request, one transaction:**
+  - Each request changes the engine and the character's bank and bag together. They are saved together in one SQLite transaction: the engine state, the character record (with its lease and version), and append-only copies of new audit entries and trades.
+  - If validation fails part way, or the save fails, the engine and the character are put back exactly as they were (from a deep copy taken first).
+  - A crash can therefore never leave a deposit without its offer, or a collection without its items.
+- **Safe retries:**
+  - Client requests carry their own numbers. An exact repeat returns the first result; an older number is refused.
+  - The engine keeps separate numbers for the server's internal requests. Client numbers are saved with the engine.
+- **Privacy:** players see their own offers, storage and trades, and the market's recent trades. Other players are never named ("another player").
+- **Startup check:** a saved market that fails `verify()` is refused at startup. A market that doesn't add up is better closed than wrong.
+- **Notifications:** players whose offers were filled are sent their new view and a note, if they are online.
+
+Delivered:
+- `server/liveexchange.ts` (`LiveExchange`, `liveAccount`).
+- **Database migration 4:**
+  - `exchange_state`: the engine and client numbers, saved whole with every request;
+  - `exchange_audit`: the full hash chain, beyond the engine's in-memory window;
+  - `exchange_trades`.
+- `Repos.commitExchange`, `exchangeState`, `exchangeAudit` and `exchangeTrades`.
+- **Protocol v5:**
+  - client messages `gx` (place, cancel, collect, claim), `gxGuide` and `gxOpen`;
+  - server messages `gxState`, `gxResult` and `gxGuide`;
+  - `features` in the welcome.
+- **Client:**
+  - `NetClient.gx`, `gxOpen`, `gxGuide`, `features`, `liveView` and `guides`;
+  - `src/ui/marketsource.ts` (`PracticeSource`, `LiveSource`), so the same Exchange interface runs either market;
+  - a Live/Practice switch and a green "Live market" banner. Both are shown **only** when connected to a server that has the live Exchange on; otherwise the interface is the practice market as before;
+  - live storage with "Take out";
+  - price guides fetched from the server.
+- **Tests:** `tests/net-exchange.test.ts` (7):
+  - off by default;
+  - a sale and a purchase between two accounts through the bank bridge, with the database, trades, audit chain and anonymity checked;
+  - proceeds with no room waiting in storage, then taken out;
+  - clerk, guest, retry and stale-request rules;
+  - a refused save changing nothing in memory or on disk, then retried successfully;
+  - a crash straight after placing and collecting, with character and market still in step after restart;
+  - **randomized:** four accounts, 210 requests with lost replies and retries, and a crash or clean restart after each of 3 rounds. After every request `verify()` holds; after every restart the stored audit chain checks out end to end, and every asset across characters plus the Exchange adds up to exactly what there was at the start.
+
+Checked in two browsers with the flag on:
+- the Live/Practice switch;
+- a sell offer taking bread from the bag;
+- a buy offer matching it;
+- collecting into the bag with the change in coins.
+
+With the flag off, the Exchange shows only the practice market.
+
+Left for later (before any real launch, section 6 and docs/EXCHANGE.md):
+- price bands;
+- per-account rate limits on Exchange requests;
+- monitoring of audit flows;
+- an admin view.
+
+Saving the whole engine with each request suits a test server. Normalized order and balance tables come with PostgreSQL.
+
+Planned scope (kept for reference):
 
 Goal: the Exchange as a world service with the bank bridge (section 6). Live mode stays off by default; the practice market remains.
 
