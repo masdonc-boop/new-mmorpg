@@ -11,7 +11,7 @@ import type { Asset, Exchange, Order, Result } from '../exchange/engine';
  * The network protocol between the browser and the development server (docs/MULTIPLAYER.md 3A.2).
  * JSON messages over a WebSocket. Clients send intents only; the server sends state and events.
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 /** Largest message a client may send (bytes); anything bigger is rejected unread. */
 export const MAX_CLIENT_MESSAGE = 8 * 1024;
 /** A save import (signed-in accounts only) may be larger. */
@@ -80,7 +80,7 @@ export type ChatChannel = 'local' | 'private';
 
 export type ServerMessage =
   /** `session`: a token to sign in again without the password (only after a password sign-in). */
-  | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string; features: Features }
+  | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string; features: Features; zone: string }
   /** What changed since the last state this connection was sent (the welcome is the first). */
   | { t: 'state'; delta: StateDelta; events: GameEvent[]; character?: CharacterRecord }
   | { t: 'error'; error: string; fatal?: boolean; code?: ErrorCode }
@@ -93,6 +93,8 @@ export type ServerMessage =
   | { t: 'social'; blocked: string[] }
   /** A note from the server for the message log (chat refused, report filed, …). */
   | { t: 'notice'; text: string; tone?: 'info' | 'warn' | 'good' }
+  /** The player moved to another zone (3A.8): a full state of it (deltas restart from here). */
+  | { t: 'zone'; zone: string; state: WorldState }
   | { t: 'gxState'; state: LiveView }
   | { t: 'gxResult'; nonce: number; result: LiveResult }
   | { t: 'gxGuide'; item: ItemId; guide: Guide };

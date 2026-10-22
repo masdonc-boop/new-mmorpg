@@ -1196,6 +1196,7 @@ export class Hud {
     if (!p.dead && p.stunTimer <= 0 && !this.openPanel && !p.action && !this.dialogueOpen) {
       for (const st of w.stations) consider(st.id, st.x, st.z, `${SKILL_INFO[STATION_INFO[st.kind].skill].glyph} ${st.name} · ${STATION_INFO[st.kind].prompt}`, 3);
       for (const n of w.npcs) {
+        if (w.offstage.has(n.id)) continue;
         if (n.def.service === 'bank') consider(n.id, n.x, n.z, '🏦 Bank · open your bank', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
         if (n.def.thieving && !n.def.service) consider(n.id, n.x, n.z, `🤏 ${n.def.name} · pickpocket (Thieving ${n.def.thieving.level})`, 2.4, { type: 'pickpocket', target: n.id });

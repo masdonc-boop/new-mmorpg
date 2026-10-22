@@ -13,6 +13,8 @@ import { Repos, StaleWriteError } from './repo';
 import { prepareImport, type ImportPolicy } from './import';
 import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat } from './chat';
 import { LiveExchange, liveAccount } from './liveexchange';
+import { BRIGHTWATER, HOLLOW_ZONE, zoneArea, zoneFor, zoneKind, type ZoneId } from '../src/sim/zones';
+import type { TradeCommit } from '../src/sim/trade';
 
 /**
  * Brightwater development server (docs/MULTIPLAYER.md 3A.2 and 3A.3).
@@ -56,8 +58,10 @@ export interface RunningServer {
   port: number;
   /** Loaded characters by key (`acct:<id>` or `guest:<name>`). */
   sessions: Map<string, Session>;
-  /** The shared world everyone plays in. */
+  /** Brightwater, the shared island zone (most players are here). */
   zone: GameWorld;
+  /** Every running zone: Brightwater, Glimmer Hollow and open house instances (3A.8). */
+  zones: Map<ZoneId, GameWorld>;
   repos: Repos;
   /** Load figures: whole server ticks (simulation, routing and snapshots) and bytes sent. */
   stats: ServerStats;
@@ -101,8 +105,10 @@ export interface Session {
   key: string;
   name: string;
   playerId: PlayerId;
-  /** This character in the shared world. */
+  /** This character, in the zone they are in. */
   player: Player;
+  zoneId: ZoneId;
+  world: GameWorld;
   ws: WebSocket | null;
   /** Persistence (null for guests). */
   accountId: number | null;
@@ -144,8 +150,28 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const map: WorldMap = generateWorld(1337);
   const content = contentVersion(map);
   const sessions = new Map<string, Session>();
-  // One shared world for everyone (docs/MULTIPLAYER.md 3A.5); it starts empty.
-  const zone = new GameWorld({ noPlayer: true, map, clock });
+  // Zones (docs/MULTIPLAYER.md 3A.8): Brightwater and Glimmer Hollow run all the time; house
+  // instances open when their owner walks in and close when empty. Where a player stands decides
+  // their zone (src/sim/zones.ts).
+  const zones = new Map<ZoneId, GameWorld>();
+  const openZone = (id: ZoneId): GameWorld => {
+    let w = zones.get(id);
+    if (!w) {
+      w = new GameWorld({ noPlayer: true, map, clock, area: zoneArea(id) });
+      w.trades.commitHook = (c) => commitTrade(c);
+      zones.set(id, w);
+      if (zoneKind(id) === 'instance') log(`opened ${id}`);
+    }
+    return w;
+  };
+  const closeIfEmpty = (id: ZoneId) => {
+    if (zoneKind(id) === 'instance' && zones.get(id)?.players.size === 0) {
+      zones.delete(id);
+      log(`closed ${id}`);
+    }
+  };
+  const zone = openZone(BRIGHTWATER);
+  openZone(HOLLOW_ZONE);
   // The live Exchange (off unless switched on): one for the whole world, restored from the database.
   const live = opts.liveExchange ? new LiveExchange(clock, repos.exchangeState()) : null;
   const features = { liveExchange: live !== null };
@@ -239,9 +265,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         session.ws = null;
         session.disconnectedAt = clock();
         session.inputs = [];
-        zone.issueFor(session.playerId, { type: 'joystick', dx: 0, dz: 0 });
+        session.world.issueFor(session.playerId, { type: 'joystick', dx: 0, dz: 0 });
         // A trade never waits on someone who has gone.
-        zone.trades.leave(session.playerId, session.name);
+        session.world.trades.leave(session.playerId, session.name);
         log(`${session.name} disconnected`);
       }
     });
@@ -322,7 +348,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (!s) {
       const playerId = nextGuestId++;
       const player = zone.addPlayer({ playerId, name, appearance });
-      s = newSession(key, name, playerId, player, null, null, 0, 0);
+      s = newSession(key, name, playerId, player, BRIGHTWATER, null, null, 0, 0);
       sessions.set(key, s);
       log(`new guest ${name} (#${playerId})`);
     }
@@ -339,9 +365,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       // Load the character and take its lease: any older writer can no longer save it.
       const row = repos.characterFor(accountId)!;
       const leased = repos.acquireLease(row.id, instance);
-      // Into the shared world, with their own wisps and loot piles.
-      const player = zone.addPlayer({ playerId: leased.playerId, save: mergeSave({ character: leased.record, zone: leased.zone }), worldItems: true });
-      s = newSession(key, leased.name, leased.playerId, player, accountId, leased.id, leased.leaseEpoch, leased.version);
+      // Into the zone where they were standing, with their own wisps and loot piles.
+      const zoneId = zoneFor(Number(leased.record.x), Number(leased.record.z), leased.playerId);
+      const player = openZone(zoneId).addPlayer({ playerId: leased.playerId, save: mergeSave({ character: leased.record, zone: leased.zone }), worldItems: true });
+      s = newSession(key, leased.name, leased.playerId, player, zoneId, accountId, leased.id, leased.leaseEpoch, leased.version);
       s.lastSaved = persisted(s);
       sessions.set(key, s);
       log(`${s.name} signed in`);
@@ -351,8 +378,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     return s;
   }
 
-  function newSession(key: string, name: string, playerId: PlayerId, player: Player, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
-    return { key, name, playerId, player, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, pace: new ChatPace(clock), blocked: new Set(accountId === null ? [] : repos.blockedBy(accountId).map((n) => n.toLowerCase())), heard: [], mutedUntil: 0, lastReport: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
+  function newSession(key: string, name: string, playerId: PlayerId, player: Player, zoneId: ZoneId, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
+    return { key, name, playerId, player, zoneId, world: zones.get(zoneId)!, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, pace: new ChatPace(clock), blocked: new Set(accountId === null ? [] : repos.blockedBy(accountId).map((n) => n.toLowerCase())), heard: [], mutedUntil: 0, lastReport: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
   }
 
   /** Points a session at a connection (taking over from any older one) and sends the welcome. */
@@ -368,17 +395,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.lastSeq = 0;
     s.ack = 0;
     s.strikes = 0;
-    const character = zone.act(s.player, () => zone.characterRecord());
+    const character = s.world.act(s.player, () => s.world.characterRecord());
     s.lastCharacter = characterKey(character);
     s.lastState = stateFor(s);
-    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: s.lastState, features, ...(issued ? { session: issued } : {}) });
+    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: s.lastState, features, zone: s.zoneId, ...(issued ? { session: issued } : {}) });
     send(ws, { t: 'social', blocked: [...s.blocked] });
   }
 
   /** The character and their own things in the world (wisps, private loot), as saved. */
-  const persisted = (s: Session) => zone.act(s.player, () => JSON.stringify([zone.characterRecord(), zone.zoneState({ ownedOnly: true })]));
+  const persisted = (s: Session) => s.world.act(s.player, () => JSON.stringify([s.world.characterRecord(), s.world.zoneState({ ownedOnly: true })]));
   /** A snapshot as this player sees it (their own state, and what is near them). */
-  const stateFor = (s: Session) => zone.act(s.player, () => captureState(zone, tick, s.ack));
+  const stateFor = (s: Session) => s.world.act(s.player, () => captureState(s.world, tick, s.ack));
 
   /** Saves a character if it changed. A stale lease ends the session without writing anything. */
   function save(s: Session, why: string): boolean {
@@ -410,8 +437,37 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   /** Takes a character out of the shared world (their wisps and private loot leave with them). */
   function remove(s: Session) {
-    zone.removePlayer(s.playerId);
+    s.world.removePlayer(s.playerId);
     sessions.delete(s.key);
+    closeIfEmpty(s.zoneId);
+  }
+
+  /** Player fields that aren't saved but should survive walking into another zone. */
+  const CARRIED = ['prayers', 'facing', 'attackTimer', 'eatTimer', 'combatTimer', 'regenTimer', 'stunTimer', 'darkWarned'] as const;
+
+  /**
+   * Hands a character over to another zone (3A.8): out of one world with their own wisps and loot,
+   * into the other through the save path, in one synchronous step (so never in both, never in
+   * neither), then saved. Their client gets a full state of the new zone.
+   */
+  function transfer(s: Session, to: ZoneId) {
+    const from = s.world;
+    const fromId = s.zoneId;
+    const old = s.player;
+    const record = from.act(old, () => from.characterRecord());
+    const left = from.removePlayer(s.playerId)!;
+    const target = openZone(to);
+    const p = target.addPlayer({ playerId: s.playerId, save: mergeSave({ character: record, zone: left.zone }), worldItems: true });
+    for (const k of CARRIED) (p as unknown as Record<string, unknown>)[k] = (old as unknown as Record<string, unknown>)[k];
+    s.player = p;
+    s.world = target;
+    s.zoneId = to;
+    closeIfEmpty(fromId);
+    if (s.ws) {
+      s.lastState = stateFor(s);
+      send(s.ws, { t: 'zone', zone: to, state: s.lastState }, s);
+    }
+    save(s, 'transfer');
   }
 
   /** Saves and unloads a character, giving up its lease. */
@@ -440,7 +496,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (repos.importBlocked(s.accountId, '') === 'account') return fail('This account has already brought a character over.');
     if (clock() - s.lastImportTry < 5000) return fail('Please wait a moment before trying again.');
     s.lastImportTry = clock();
-    const prepared = prepareImport(raw, { map, clock, playerId: s.playerId, name: s.name, current: zone.act(s.player, () => zone.characterRecord()), policy: opts.importPolicy ?? 'full' });
+    const prepared = prepareImport(raw, { map, clock, playerId: s.playerId, name: s.name, current: s.world.act(s.player, () => s.world.characterRecord()), policy: opts.importPolicy ?? 'full' });
     if (!prepared.ok) return fail(prepared.error);
     const blocked = repos.importBlocked(s.accountId, prepared.hash);
     if (blocked) return fail(blocked === 'account' ? 'This account has already brought a character over.' : 'That save has already been brought over to an account.');
@@ -451,8 +507,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       throw err;
     }
     // The old character leaves the world and the imported one takes its place.
-    zone.removePlayer(s.playerId);
-    s.player = zone.addPlayer({ playerId: s.playerId, save: mergeSave({ character: prepared.record }) });
+    // (If the imported character stands in another zone, the next tick hands them over.)
+    s.world.removePlayer(s.playerId);
+    s.player = s.world.addPlayer({ playerId: s.playerId, save: mergeSave({ character: prepared.record }) });
     s.lastSaved = persisted(s);
     s.events = [];
     log(`${s.name} imported a browser save (${prepared.report.length} changes)`);
@@ -473,7 +530,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           if (s.accountId === null) return notice(s, 'Guests can’t trade. Create an account to trade.', 'warn');
           if (other && other.accountId === null) return notice(s, `${other.name} is a guest and can’t trade.`, 'warn');
         }
-        zone.issueFor(s.playerId, msg.cmd);
+        s.world.issueFor(s.playerId, msg.cmd);
         return;
       case 'chat':
         return chat(s, msg.channel, msg.text, msg.to);
@@ -525,8 +582,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (!live) return notice(s, 'The live Exchange isn’t open on this server.', 'warn');
     const reply = (result: LiveResult) => send(s.ws, { t: 'gxResult', nonce: req.nonce, result }, s);
     if (s.accountId === null || s.characterId === null) return reply({ ok: false, error: 'Sign in to an account to trade on the Exchange.' });
-    if (!zone.act(s.player, () => zone.activeClerk())) return reply({ ok: false, error: 'You need to be at an Exchange clerk to do that.' });
-    if (zone.trades.trading(s.playerId)) return reply({ ok: false, error: 'Finish or decline your trade first.' });
+    if (!s.world.act(s.player, () => s.world.activeClerk())) return reply({ ok: false, error: 'You need to be at an Exchange clerk to do that.' });
+    if (s.world.trades.trading(s.playerId)) return reply({ ok: false, error: 'Finish or decline your trade first.' });
     const account = liveAccount(s.accountId);
     const result = live.handle(account, s.player, req, () => {
       const json = persisted(s);
@@ -572,7 +629,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     };
     if (channel === 'local') {
       for (const r of sessions.values()) {
-        if (!r.ws || r.blocked.has(s.name.toLowerCase())) continue;
+        if (!r.ws || r.zoneId !== s.zoneId || r.blocked.has(s.name.toLowerCase())) continue;
         if (Math.abs(r.player.x - s.player.x) > CHAT_RADIUS || Math.abs(r.player.z - s.player.z) > CHAT_RADIUS) continue;
         deliver(r, { t: 'chat', channel, from: s.name, text: clean.text });
       }
@@ -590,7 +647,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
    * A finished trade is saved for both players, with its ledger rows, in one transaction before
    * either is told. If that fails, the simulation undoes the swap (src/sim/trade.ts).
    */
-  zone.trades.commitHook = (c) => {
+  function commitTrade(c: TradeCommit) {
     const a = sessionOf(c.a);
     const b = sessionOf(c.b);
     if (!a || !b || a.characterId === null || b.characterId === null) throw new Error('trade between unsaved characters');
@@ -620,11 +677,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     repos.audit(a.accountId, 'trade', `${ref} with ${b.name}`);
     repos.audit(b.accountId, 'trade', `${ref} with ${a.name}`);
     log(`${a.name} and ${b.name} traded (${ref}, ${moves.length} stacks)`);
-  };
+  }
 
   /** Applies at most one movement input for a session this tick. */
   function applyInput(s: Session) {
-    const w = zone;
+    const w = s.world;
     if (s.inputs.length > MAX_INPUT_QUEUE) {
       const dropped = s.inputs.splice(0, s.inputs.length - MAX_INPUT_QUEUE);
       s.ack = dropped[dropped.length - 1].seq;
@@ -642,12 +699,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
 
   /** Sends each event to the players who should see it (docs/MULTIPLAYER.md 3A.5). */
-  function routeTickEvents() {
-    const events = zone.drainEventsWithActors().filter((e) => !SERVER_ONLY_EVENTS.has(e.event.type));
+  /** Delivers a zone's events this tick to the players in that zone who should see them. */
+  function routeTickEvents(zoneId: ZoneId, world: GameWorld) {
+    const events = world.drainEventsWithActors().filter((e) => !SERVER_ONLY_EVENTS.has(e.event.type));
     if (!events.length) return;
     const byPlayer = new Map<PlayerId, Session>();
-    for (const s of sessions.values()) if (s.ws) byPlayer.set(s.playerId, s);
-    for (const { event, audience } of routeEvents(zone, events)) {
+    for (const s of sessions.values()) if (s.ws && s.zoneId === zoneId) byPlayer.set(s.playerId, s);
+    for (const { event, audience } of routeEvents(world, events)) {
       if (audience.kind === 'self') byPlayer.get(audience.player)?.events.push(event);
       else
         for (const s of byPlayer.values()) {
@@ -696,8 +754,15 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         s.tokens = Math.min(MESSAGE_RATE, s.tokens + MESSAGE_RATE * TICK_SECONDS);
         applyInput(s);
       }
-      zone.tick(TICK_SECONDS);
-      routeTickEvents();
+      for (const [id, w] of [...zones]) {
+        w.tick(TICK_SECONDS);
+        routeTickEvents(id, w);
+      }
+      // Anyone now standing in another zone's area (through a passage or a door) moves over.
+      for (const s of [...sessions.values()]) {
+        const to = zoneFor(s.player.x, s.player.z, s.playerId);
+        if (to !== s.zoneId) transfer(s, to);
+      }
       if (tick % every === 0) for (const s of sessions.values()) if (s.ws) snapshot(s);
       const took = performance.now() - started;
       stats.ticks++;
@@ -720,6 +785,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     port,
     sessions,
     zone,
+    zones,
     repos,
     stats,
     live,

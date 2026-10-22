@@ -390,7 +390,7 @@ export class GameRenderer {
       const ez = lerp(e.prevZ, e.z, alpha);
       const dead = !e.alive;
       const hideAfter = 1.6;
-      v.root.visible = !(dead && e.deadAge > hideAfter);
+      v.root.visible = !(dead && e.deadAge > hideAfter) && !this.world.offstage.has(e.id);
       if (!v.root.visible) continue;
       v.root.position.set(ex, groundHeight(map, ex, ez), ez);
       v.root.rotation.y = smoothAngle(v.root.rotation.y, e.facing, dt * 10);
@@ -407,6 +407,8 @@ export class GameRenderer {
     // NPCs
     for (const v of this.npcViews) {
       const n = v.npc;
+      v.model.root.visible = !this.world.offstage.has(n.id);
+      if (!v.model.root.visible) continue;
       const nx = lerp(n.prevX, n.x, alpha);
       const nz = lerp(n.prevZ, n.z, alpha);
       v.model.root.position.set(nx, groundHeight(map, nx, nz), nz);
@@ -984,7 +986,7 @@ export class GameRenderer {
     for (const v of this.npcViews) {
       const n = v.npc;
       const a = this.project(n.x, groundHeight(w.map, n.x, n.z) + 2.25, n.z);
-      const near = Math.hypot(n.x - w.player.x, n.z - w.player.z) < 14;
+      const near = Math.hypot(n.x - w.player.x, n.z - w.player.z) < 14 && !w.offstage.has(n.id);
       this.overlay.plate(n.id, a, { name: n.def.service === 'bank' ? `${n.def.name} · Bank` : n.def.name, kind: 'npc', show: near, marker: w.npcMarker(n.def.id) });
     }
     this.overlay.update(dt);
@@ -1185,13 +1187,14 @@ export class GameRenderer {
     };
     const map = w.map;
     for (const v of this.enemyViews.values()) {
-      if (!v.enemy.alive) continue;
+      if (!v.enemy.alive || !v.root.visible) continue;
       const r = v.root.position;
       const h = enemyHeight(v.enemy);
       consider(v.enemy.id, r.x, r.y + h * 0.45, r.z, 0.8);
       consider(v.enemy.id, r.x, r.y + 0.1, r.z, 0.9);
     }
     for (const n of w.npcs) {
+      if (w.offstage.has(n.id)) continue;
       const y = groundHeight(map, n.x, n.z);
       consider(n.id, n.x, y + 1, n.z);
       // Tapping the bank counter means the banker behind it.

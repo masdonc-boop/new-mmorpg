@@ -785,12 +785,17 @@ export class GameWorld {
   time = 0;
   private events: GameEvent[] = [];
   private eventActors: PlayerId[] = [];
+  /**
+   * Network play: creatures and NPCs the last snapshot didn't include (out of sight, or in another
+   * zone). The client hides them instead of showing them frozen where they were last seen.
+   */
+  offstage = new Set<number>();
   /** Trades between players in this world. */
   readonly trades: TradeDesk = new TradeDesk(this);
   private pending: PendingHit[] = [];
   private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
-  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket; noPlayer?: boolean } = {}) {
+  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket; noPlayer?: boolean; area?: (x: number, z: number) => boolean } = {}) {
     const playerId = opts.playerId ?? LOCAL_PLAYER_ID;
     if (!isValidPlayerId(playerId)) throw new Error(`invalid player id ${playerId}`);
     this.clock = opts.clock ?? (() => Date.now());
@@ -806,7 +811,11 @@ export class GameWorld {
       this.player = new Player('Nobody', DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, ZONE_PLACEHOLDER_ID);
     } else this.player = this.addPlayer({ playerId, save: s ?? null, name: opts.name, appearance: opts.appearance });
 
+    // A zone (docs/MULTIPLAYER.md 3A.8) only runs the people and creatures in its own area. Ids
+    // still follow the map, so they are the same in every zone.
+    const here = (x: number, z: number) => !opts.area || opts.area(x, z);
     this.map.npcs.forEach((n, i) => {
+      if (!here(n.x, n.z)) return;
       const npc = new Npc(100 + i, NPCS[n.id], n.x, n.z, n.facing, n.patrol ?? null);
       this.npcs.push(npc);
       this.byId.set(npc.id, npc);
@@ -842,6 +851,7 @@ export class GameWorld {
       this.byId.set(node.id, node);
     });
     this.map.enemySpawns.forEach((e, i) => {
+      if (!here(e.x, e.z)) return;
       const enemy = new Enemy(5000 + i, ENEMIES[e.type], e.x, e.z, this.rng);
       this.enemies.push(enemy);
       this.byId.set(enemy.id, enemy);

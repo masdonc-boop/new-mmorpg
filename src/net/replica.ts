@@ -190,6 +190,7 @@ export function applyState(world: GameWorld, state: WorldState) {
     const s = npcs.get(n.id);
     if (s) Object.assign(n, restoreAges(s.f, state.time));
   }
+  world.offstage = new Set([...world.enemies.filter((e) => !enemies.has(e.id)), ...world.npcs.filter((n) => !npcs.has(n.id))].map((e) => e.id));
   const depleted = new Set(state.depleted);
   const hits = new Map(state.hits);
   for (const n of world.nodes) {

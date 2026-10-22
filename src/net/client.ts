@@ -76,6 +76,8 @@ export class NetClient {
   blocked: string[] = [];
   /** What the server has switched on (from the welcome). */
   features: Features = { liveExchange: false };
+  /** The zone this player is in (Brightwater until told otherwise). */
+  zone = 'brightwater';
   /** The live Exchange as this account sees it (after `gxOpen`), and price guides asked for. */
   liveView: LiveView | null = null;
   readonly guides = new Map<ItemId, Guide>();
@@ -181,6 +183,7 @@ export class NetClient {
   private welcome(msg: Extract<ServerMessage, { t: 'welcome' }>): GameWorld {
     if (msg.session) this.session = msg.session;
     this.features = msg.features;
+    this.zone = msg.zone;
     if (this.world && msg.playerId !== this.playerId) {
       // A different character answered (the server was reset): start over.
       this.fatal = true;
@@ -227,6 +230,13 @@ export class NetClient {
     }
     if (msg.t === 'chat') {
       this.chat.push({ channel: msg.channel, from: msg.from, to: msg.to, text: msg.text });
+      return;
+    }
+    if (msg.t === 'zone' && this.world) {
+      // Into another zone: a fresh full state (deltas continue from it).
+      this.zone = msg.zone;
+      this.last = msg.state;
+      this.applySnapshot(msg.state, true);
       return;
     }
     if (msg.t === 'gxState') {

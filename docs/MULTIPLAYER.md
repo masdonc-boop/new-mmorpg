@@ -368,7 +368,7 @@ How to run it:
 Delivered:
 - **Database** (`server/db.ts`): SQLite via `better-sqlite3` 13.0.3, with WAL and numbered migrations (`user_version`).
   - Tables: `accounts`, `sessions`, `characters` (with `record`, `zone`, `version`, `lease_owner`, `lease_epoch`) and `audit`.
-  - Each character's zone state (dropped loot and wisps) is stored with it while every character has its own world. Since 3A.5 that is the loot and wisps the character owns; unowned piles move to per-zone storage in 3A.8.
+  - Each character's zone state (dropped loot and wisps) is stored with it while every character has its own world. Since 3A.5 that is the loot and wisps the character owns; unowned piles live in their zone while the server runs.
 - **Accounts** (`server/auth.ts`, `server/repo.ts`):
   - Passwords are hashed with Node's built-in scrypt (N=16384, r=8, p=1, 16-byte salt), compared in constant time.
   - Session tokens are 256-bit, stored as SHA-256 hashes, expire after 30 days unused, and are revoked on sign-out.
@@ -502,8 +502,8 @@ Measured (50 bots in one place, in the development container while the rest of t
 Checked in two browsers: each sees the other, named and in their gear, and watches them walk.
 
 Left for later:
-- Dropped piles that nobody owns are not stored when the server stops (owned piles and wisps travel with their owner's record). They move to per-zone storage in 3A.8.
-- A player can't yet visit another player's house (an instanced house belongs to 3A.8).
+- Dropped piles that nobody owns are not stored when the server stops (owned piles and wisps travel with their owner's record).
+- A player can't yet visit another player's house (houses became personal instances in 3A.8; visiting comes later).
 - Chat and trading arrived in 3A.6.
 
 Planned scope (kept for reference):
@@ -585,7 +585,7 @@ Left for later:
 - The admin role, kick, ban and the moderation queue (5.4).
 - A word list that moderators can edit.
 - Friends lists.
-- Chat across zones (3A.8).
+- Local chat across zones (private messages already reach any zone).
 - Trading coins from the bank (today only bag items can be offered).
 
 Planned scope (kept for reference):
@@ -671,7 +671,61 @@ Acceptance:
 - `verify()` and the audit chain hold after randomized multi-account sessions.
 - The interface shows "Live" only when connected to a live server with the flag on.
 
-### 3A.8 Zones and instancing (single process)
+### 3A.8 Zones and instancing (single process): done
+
+How it works (`src/sim/zones.ts`, `server/server.ts`):
+- **Several worlds in one process:**
+  - `brightwater`: the island, shared and always running;
+  - `hollow`: Glimmer Hollow, shared and always running;
+  - `house:<player>`: a personal **instance**, opened when its owner walks in and closed as soon as it is empty.
+- **Where a player stands decides their zone** (`zoneFor`). Inside the Hollow means the Hollow, inside the house walls means your own house, anywhere else means Brightwater.
+  - Passages and the house door need nothing new: walking through one puts the player in another zone's area.
+  - After every tick the server hands such players over.
+- **A transfer** is one synchronous step, so a character is never in two zones and never in none:
+  1. The character's record and their own wisps and loot are taken out of one world (`removePlayer`).
+  2. They are added to the other through the save path (`addPlayer`), the same path the 3A.5 conservation tests cover.
+  3. Runtime state that isn't saved but should carry over (active vows, heading, timers) is copied across.
+  4. The character is saved, and their client gets a full state of the new zone (a `zone` message; deltas restart from it).
+- **Each zone runs only its own creatures and people:**
+  - the island has no Hollow slimes;
+  - the Hollow has only its own;
+  - a house has none.
+  - Ids still follow the map, so they are the same everywhere.
+  - On the client, creatures and villagers missing from the latest snapshot are now hidden (`offstage`) instead of standing frozen where they were last seen.
+- **Signing in** puts a character in the zone where they were saved. A crash after a transfer keeps them there.
+- **A wisp travels with its owner**, as their private loot already did in 3A.5: owned things always live in the owner's current zone.
+- **Per zone:** event routing, snapshots and local chat (players in the same zone and near each other). A trade needs both players in the same zone.
+- **World-wide:** the live Exchange, accounts, blocks and private messages.
+
+Delivered:
+- `src/sim/zones.ts`: `zoneFor`, `inHouse`, `zoneKind` and `zoneArea`.
+- `GameWorld` option `area` (which creatures and people a zone runs) and `offstage`.
+- **Server:**
+  - `zones` (Brightwater, Hollow, open houses);
+  - a session's `zoneId` and `world`;
+  - `transfer`;
+  - instances opened on demand and closed when empty;
+  - per-zone ticking and routing;
+  - `RunningServer.zones`.
+- **Protocol v6:** a `zone` message (full state of the new zone) and `zone` in the welcome; `NetClient.zone`.
+- **Tests:** `tests/net-zones.test.ts` (6):
+  - which zone a position belongs to;
+  - each zone running only its own creatures;
+  - **the house as a personal instance:** opened on the way in and closed on the way out; Ash and Brindle each in their own house, unseen by each other or by anyone outside;
+  - the Hollow passage handing the player over, with the transfer saved so a crash and sign-in keep them in the Hollow;
+  - a wisp moving with its owner;
+  - **under load:** 30 players (10 accounts, 20 guests) moved between the island, their houses, the doorstep and the Hollow at random for 40 rounds, with accounts dropping out and coming back. After every round, every character is in exactly one zone (the one their position says), no instance is left open empty, and every account owns exactly what it started with.
+- **Load:** the 50-bot test still runs at about 5 ms a tick and 8 KB/s per client with the Hollow zone running alongside.
+
+Checked in two browsers: Ash walked into the house and got a private instance (the server logged it opening). Ash vanished from Brindle's view outside, while Ash's own view showed the empty house ready to build in.
+
+Left for later:
+- **Visiting** another player's house (by invitation): the instance id already names its owner, so a visitor just joins it.
+- **Party instances of the Hollow** if it gets crowded, and **layers** of a busy region (4.2).
+- **Dropped piles nobody owns** stay in their zone while the server runs. They are not saved when it stops (as before).
+- **Regional servers** (several processes, a zone directory, transfer tickets, PostgreSQL) remain design only (4.2). They need an owner decision on hosting.
+
+Planned scope (kept for reference):
 
 Goal: several zones in one process. Glimmer Hollow as its own zone; personal instances (house).
 - Passages between zones become in-process transfers.
