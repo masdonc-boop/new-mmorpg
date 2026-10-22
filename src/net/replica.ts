@@ -73,7 +73,7 @@ const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow
 /** Never copied by snapshots: identity, and positions handled by interpolation and prediction. */
 const PLAYER_SKIP = new Set<string>(['id', 'x', 'z', 'prevX', 'prevZ', 'joy', 'prayers', 'patches', 'remote', ...CHARACTER_FIELDS]);
 /** Creature and NPC fields only their AI uses (the client never runs it). */
-const ENEMY_SKIP = new Set(['id', 'def', 'spawnX', 'spawnZ', 'x', 'z', 'prevX', 'prevZ', 'attackTimer', 'idleTimer', 'wander']);
+const ENEMY_SKIP = new Set(['id', 'def', 'spawnX', 'spawnZ', 'x', 'z', 'prevX', 'prevZ', 'attackTimer', 'idleTimer', 'wander', 'hitBy']);
 const NPC_SKIP = new Set(['id', 'def', 'baseFacing', 'patrol', 'x', 'z', 'prevX', 'prevZ', 'waitTimer', 'waypoint']);
 
 const NO_SKIP = new Set<string>();

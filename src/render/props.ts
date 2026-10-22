@@ -848,8 +848,9 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
   const lanternGeo = new THREE.BoxGeometry(0.16, 0.2, 0.16);
   const glowcapGeo = new THREE.SphereGeometry(0.11, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
   const glowcapMat = new THREE.MeshBasicMaterial({ color: '#b8ffa0' });
-  const poolGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.04, 8);
-  const poolMat = new THREE.MeshBasicMaterial({ color: '#5fe8d0', transparent: true, opacity: 0.85 });
+  // Wide enough that neighbouring pool tiles merge into one sheet of glowing water.
+  const poolGeo = new THREE.CylinderGeometry(0.66, 0.66, 0.04, 8);
+  const poolMat = new THREE.MeshBasicMaterial({ color: '#4fd0bc' });
   const shaftGeo = new THREE.CylinderGeometry(0.35, 0.9, 4.4, 10, 1, true);
   const shaftMat = new THREE.MeshBasicMaterial({ color: '#fff4c8', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
 

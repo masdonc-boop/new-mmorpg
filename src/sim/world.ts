@@ -607,6 +607,10 @@ export class Enemy implements Mover {
   swingAge = 99;
   hurtAge = 99;
   deadAge = 0;
+  /** A boss below its enrage threshold attacks faster (cleared when it respawns). */
+  enraged = false;
+  /** Players who have hurt it since it last respawned (a boss's kill credits each of them). */
+  hitBy = new Set<PlayerId>();
 
   constructor(public id: number, public def: EnemyDef, public spawnX: number, public spawnZ: number, rng: Rng) {
     this.x = this.prevX = spawnX;
@@ -686,6 +690,15 @@ export class Npc {
     this.prevX = x;
     this.prevZ = z;
   }
+}
+
+/** A creature's missile (arrow or bolt) on its way to a player: the damage lands when it arrives. */
+interface IncomingHit {
+  at: number;
+  enemy: number;
+  player: PlayerId;
+  damage: number;
+  hit: boolean;
 }
 
 interface PendingHit {
@@ -799,6 +812,7 @@ export class GameWorld {
   /** Trades between players in this world. */
   readonly trades: TradeDesk = new TradeDesk(this);
   private pending: PendingHit[] = [];
+  private incoming: IncomingHit[] = [];
   private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket; noPlayer?: boolean; area?: (x: number, z: number) => boolean } = {}) {
@@ -939,6 +953,7 @@ export class GameWorld {
       }
     }
     this.pending = this.pending.filter((h) => h.attacker !== id);
+    this.incoming = this.incoming.filter((h) => h.player !== id);
     this.trades.leave(id, p.name);
     this.players.delete(id);
     if (this.player === p) this.player = this.players.values().next().value ?? new Player('Nobody', DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, ZONE_PLACEHOLDER_ID);
@@ -1540,6 +1555,14 @@ export class GameWorld {
       const a = this.players.get(h.attacker);
       if (a && e instanceof Enemy && e.alive) this.act(a, () => this.damageEnemy(e, h.damage, h.hit, h.style));
     }
+    for (let i = this.incoming.length - 1; i >= 0; i--) {
+      const h = this.incoming[i];
+      if (h.at > this.time) continue;
+      this.incoming.splice(i, 1);
+      const e = this.byId.get(h.enemy);
+      const q = this.players.get(h.player);
+      if (q && !q.dead && e instanceof Enemy) this.act(q, () => this.landEnemyHit(e, h.damage, h.hit));
+    }
   }
 
   /** One player's part of a tick: movement and actions, their lantern, and closing out-of-reach interfaces. */
@@ -1909,10 +1932,12 @@ export class GameWorld {
     e.hurtAge = 0;
     this.emit({ type: 'damage', target: e.id, source: p.id, amount: dealt, hit });
     if (dealt > 0) for (const x of combatXp(style, dealt, p.focus)) this.grantXp(x.skill, x.amount);
+    if (dealt > 0) e.hitBy.add(p.id);
     if (e.state !== 'chase' && !p.dead) {
       e.state = 'chase';
       e.target = p.id;
       e.attackTimer = Math.max(e.attackTimer, 0.6);
+      this.rally(e, p.id);
     }
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -3420,6 +3445,8 @@ export class GameWorld {
       if (e.respawnTimer <= 0) {
         e.state = 'idle';
         e.hp = def.maxHp;
+        e.enraged = false;
+        e.hitBy.clear();
         e.x = e.prevX = e.spawnX;
         e.z = e.prevZ = e.spawnZ;
         this.emit({ type: 'respawn', id: e.id });
@@ -3445,6 +3472,7 @@ export class GameWorld {
         e.state = 'chase';
         e.target = pick.id;
         e.attackTimer = Math.max(e.attackTimer, 0.8);
+        this.rally(e, pick.id);
       }
     }
 
@@ -3525,25 +3553,60 @@ export class GameWorld {
   private enemyAttack(e: Enemy) {
     const p = this.player;
     const def = e.def;
-    e.attackTimer = def.attackSeconds;
+    const style = def.attackStyle ?? 'melee';
+    // A boss below its threshold enrages: faster attacks, and everyone near is told.
+    if (def.enrage && !e.enraged && e.hp < def.maxHp * def.enrage.below) {
+      e.enraged = true;
+      this.message(`${def.name} is enraged!`, 'bad');
+    }
+    e.attackTimer = def.attackSeconds / (e.enraged ? def.enrage!.speed : 1);
     e.swingAge = 0;
     p.combatTimer = 6;
-    this.emit({ type: 'attack', source: e.id, target: p.id, style: 'melee' });
+    this.emit({ type: 'attack', source: e.id, target: p.id, style });
+    // Magic is resisted with Defence and Magic together, and armour counts for half (robes are light,
+    // but a mage knows how to turn a spell; docs/DUNGEONS.md).
+    const magic = style === 'magic';
+    const defenceLevel = (magic ? (p.skills.level('defence') + p.skills.level('magic')) / 2 : p.skills.level('defence')) * this.prayerBoost('defence');
     const r = rollHit(
       this.rng,
       { attackLevel: def.attack, strengthLevel: def.strength, accuracyBonus: 0, powerBonus: 0 },
-      { defenceLevel: p.skills.level('defence') * this.prayerBoost('defence'), armour: this.playerBonuses().armour },
+      { defenceLevel, armour: this.playerBonuses().armour * (magic ? 0.5 : 1) },
       def.maxHit,
     );
+    if (style === 'melee') {
+      this.landEnemyHit(e, r.damage, r.hit);
+      return;
+    }
+    // Arrows and bolts fly: the hit lands when the missile arrives.
+    const flight = Math.max(0.15, dist(e.x, e.z, p.x, p.z) / (style === 'magic' ? 10 : 15));
+    this.emit({ type: 'projectile', source: e.id, target: p.id, style, flight });
+    this.incoming.push({ at: this.time + flight, enemy: e.id, player: p.id, damage: r.damage, hit: r.hit });
+  }
+
+  /** A creature's hit reaching the current player. */
+  private landEnemyHit(e: Enemy, damage: number, hit: boolean) {
+    const p = this.player;
     // Hearth's Bulwark halves creatures' hits (it softens blows; it never makes you untouchable).
-    if (p.prayers.has('hearth_bulwark') && r.damage > 0) r.damage = Math.max(1, Math.round(r.damage * BULWARK_DAMAGE));
-    const dealt = Math.min(r.damage, p.hp);
+    if (p.prayers.has('hearth_bulwark') && damage > 0) damage = Math.max(1, Math.round(damage * BULWARK_DAMAGE));
+    const dealt = Math.min(damage, p.hp);
     p.hp -= dealt;
-    this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit: r.hit });
+    this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit });
     // Auto-retaliate: idle or gathering players fight back (but never override manual movement or a chosen target).
     const steering = Math.hypot(p.joy.x, p.joy.z) > 0.15 || p.path.length > 0;
     if ((!p.action || p.action.type === 'gather' || p.action.type === 'craft') && !steering && p.hp > 0) p.action = { type: 'attack', target: e.id };
     if (p.hp <= 0) this.killPlayer();
+  }
+
+  /** A boss with `rally` calls the creatures round it to join the fight against this player. */
+  private rally(e: Enemy, target: PlayerId) {
+    const r = e.def.rally;
+    if (!r) return;
+    for (const o of this.enemies) {
+      if (o === e || !o.alive || o.state === 'chase' || dist(o.x, o.z, e.x, e.z) > r) continue;
+      o.state = 'chase';
+      o.target = target;
+      o.attackTimer = Math.max(o.attackTimer, 0.8);
+    }
   }
 
   private killPlayer() {
@@ -3554,6 +3617,7 @@ export class GameWorld {
     p.path = [];
     p.joy.x = p.joy.z = 0;
     this.pending = this.pending.filter((h) => h.attacker !== p.id);
+    this.incoming = this.incoming.filter((h) => h.player !== p.id);
     this.emit({ type: 'death', id: p.id });
     p.stationAt = null;
     const keep = KEEP_ON_DEATH + (p.prayers.has('keepsake') ? 1 : 0);

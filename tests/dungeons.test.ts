@@ -6,6 +6,7 @@ import { zoneArea, zoneFor } from '../src/sim/zones';
 import { findPath } from '../src/sim/pathfinding';
 import { DUNGEONS } from '../src/data/dungeons';
 import { xpForLevel } from '../src/data/skills';
+import { ENEMIES } from '../src/data/enemies';
 
 const map = generateWorld(1337);
 const run = (w: GameWorld, s: number) => {
@@ -132,3 +133,93 @@ describe('4C.1 doors, zones and the way in and out', () => {
     expect(dungeonAt(w2.player.x, w2.player.z)).toBe('sunken_shrine');
   });
 });
+
+describe('4C.2 dungeon creatures', () => {
+  const inside = (id: DungeonId) => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    goThrough(w, `${id}_door`);
+    return w;
+  };
+  const hurt = (w: GameWorld, e: import('../src/sim/world').Enemy, dmg: number) =>
+    (w as unknown as { damageEnemy: (e: unknown, d: number, hit: boolean, s: string) => void }).damageEnemy(e, dmg, true, 'melee');
+
+  it('acolytes cast from range: a bolt flies, and the damage lands when it arrives', () => {
+    const w = inside('sunken_shrine');
+    const p = w.player;
+    const a = w.enemies.find((e) => e.def.id === 'drowned_acolyte')!;
+    (w as unknown as { rng: () => number }).rng = () => 0.01;
+    stand(w, a.x + 4, a.z);
+    const tile = map.blocked[Math.floor(a.z) * map.width + Math.floor(a.x + 4)];
+    if (tile) stand(w, a.x, a.z + 1.2);
+    p.hp = p.skills.level('hitpoints');
+    w.drainEvents();
+    let shot: { flight: number } | undefined;
+    for (let t = 0; t < 30 * 4 && !shot; t++) {
+      w.tick();
+      const ev = w.drainEvents().find((e) => e.type === 'projectile' && e.source === a.id);
+      if (ev && ev.type === 'projectile') shot = ev;
+    }
+    expect(shot).toBeTruthy();
+    expect(ENEMIES_STYLE('drowned_acolyte')).toBe('magic');
+    const before = p.hp;
+    run(w, shot!.flight + 0.2);
+    expect(p.hp).toBeLessThan(before);
+  });
+
+  it('magic is resisted with Defence and Magic together: a trained mage takes less from acolytes', () => {
+    const avg = (magic: number) => {
+      const w = inside('sunken_shrine');
+      const p = w.player;
+      p.skills.addXp('magic', xpForLevel(magic));
+      let seed = 7;
+      (w as unknown as { rng: () => number }).rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+      const a = w.enemies.find((e) => e.def.id === 'drowned_acolyte')!;
+      let total = 0;
+      for (let i = 0; i < 400; i++) {
+        p.hp = 500;
+        (w as unknown as { act: (q: unknown, f: () => void) => void }).act(p, () => (w as unknown as { enemyAttack: (e: unknown) => void }).enemyAttack(a));
+        run(w, 1.2);
+        total += 500 - p.hp;
+      }
+      return total / 400;
+    };
+    expect(avg(70)).toBeLessThan(avg(1) * 0.9);
+  });
+
+  it('striking a boss rallies its guards; wounded, it enrages and attacks faster', () => {
+    const w = inside('sunken_shrine');
+    const boss = w.enemies.find((e) => e.def.id === 'shrinekeeper')!;
+    const guards = w.enemies.filter((e) => e.def.id === 'drowned_guardian');
+    expect(guards.length).toBe(4);
+    stand(w, boss.x - 2, boss.z);
+    hurt(w, boss, 10);
+    expect(guards.filter((g) => g.state === 'chase').length).toBeGreaterThanOrEqual(2);
+    hurt(w, boss, boss.hp - Math.floor(boss.def.maxHp * 0.3));
+    w.drainEvents();
+    (w as unknown as { act: (q: unknown, f: () => void) => void }).act(w.player, () => (w as unknown as { enemyAttack: (e: unknown) => void }).enemyAttack(boss));
+    expect(boss.enraged).toBe(true);
+    expect(boss.attackTimer).toBeCloseTo(boss.def.attackSeconds / boss.def.enrage!.speed);
+    expect(w.drainEvents().some((e) => e.type === 'message' && /enraged/.test(e.text))).toBe(true);
+  });
+
+  it('a boss that respawns is calm again and forgets who hurt it', () => {
+    const w = inside('old_watchtower');
+    const boss = w.enemies.find((e) => e.def.id === 'watchcaptain')!;
+    stand(w, boss.x - 2, boss.z);
+    hurt(w, boss, boss.hp - 10);
+    (w as unknown as { act: (q: unknown, f: () => void) => void }).act(w.player, () => (w as unknown as { enemyAttack: (e: unknown) => void }).enemyAttack(boss));
+    expect(boss.enraged).toBe(true);
+    expect(boss.hitBy.has(w.player.id)).toBe(true);
+    hurt(w, boss, 10);
+    expect(boss.alive).toBe(false);
+    stand(w, boss.spawnX - 30, boss.spawnZ);
+    run(w, boss.def.respawnSeconds + 1);
+    expect(boss.alive).toBe(true);
+    expect(boss.enraged).toBe(false);
+    expect(boss.hitBy.size).toBe(0);
+  });
+});
+
+function ENEMIES_STYLE(id: string) {
+  return (ENEMIES as Record<string, { attackStyle?: string }>)[id].attackStyle;
+}

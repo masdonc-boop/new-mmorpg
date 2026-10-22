@@ -263,7 +263,13 @@ export class GameRenderer {
     else if (d.model === 'toad') model = new ToadModel(d.color, d.accent, d.scale);
     else if (d.model === 'leech') model = new LeechModel(d.color, d.accent, d.scale);
     else if (d.model === 'boar') model = new BoarModel(d.color, d.accent, d.scale);
-    else {
+    else if (d.model === 'humanoid' && d.look) {
+      // Dungeon folk (Phase 4C): drowned acolytes, sentinels, archers and their masters.
+      const l = d.look;
+      model = new Humanoid({ skin: l.skin, hair: l.hair, hairStyle: l.helmet ? 4 : 2, tunic: l.tunic, trousers: l.trousers, robe: l.robe, helmet: l.helmet, cape: l.cape, beard: l.beard }, true);
+      model.setTool(d.tool === 'wand' ? 'staff' : d.tool ?? 'none');
+      model.root.scale.setScalar(d.scale);
+    } else {
       const boss = d.id === 'goblin_warlord';
       model = new Humanoid(
         { skin: d.color, hair: '#222', hairStyle: 4, tunic: boss ? '#5a3a2a' : '#7a5232', trousers: '#4a3326', goblin: true, helmet: boss, cape: boss ? d.accent : undefined },
@@ -1062,6 +1068,16 @@ export class GameRenderer {
         break;
       }
       case 'projectile': {
+        // From a creature (Phase 4C): an arrow or a bolt of water at the local player or another player.
+        const fromEnemy = this.enemyViews.get(e.source);
+        if (fromEnemy) {
+          const target = e.target === p.id ? this.playerModel.root : this.otherViews.get(e.target)?.model.root;
+          if (!target) break;
+          const f = fromEnemy.root.position.clone().add(new THREE.Vector3(Math.sin(fromEnemy.enemy.facing) * 0.4, 1.3 * fromEnemy.enemy.def.scale, Math.cos(fromEnemy.enemy.facing) * 0.4));
+          this.projectiles.spawn(e.style === 'magic' ? 'magic' : 'arrow', f, () => target.position.clone().add(new THREE.Vector3(0, 1, 0)), e.flight);
+          if (e.style === 'magic') this.particles.emit({ x: f.x, y: f.y, z: f.z, count: 8, color: ['#5fe8d0', '#ffffff'], speed: 1, up: 1, gravity: 0, life: 0.4, size: 0.07 });
+          break;
+        }
         // From the local player, or another player nearby (network play).
         const shooter = e.source === p.id ? { model: this.playerModel, facing: p.facing } : this.otherViews.has(e.source) ? { model: this.otherViews.get(e.source)!.model, facing: this.otherViews.get(e.source)!.player.facing } : null;
         if (!shooter) break;
