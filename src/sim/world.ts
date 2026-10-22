@@ -40,6 +40,8 @@ export const TICK_SECONDS = 1 / 30;
 export type PlayerId = number;
 /** The id of the one player in local (single-player) mode. */
 export const LOCAL_PLAYER_ID: PlayerId = 1;
+/** The placeholder `player` of a shared zone with nobody in it (never a real player). */
+export const ZONE_PLACEHOLDER_ID: PlayerId = 99;
 export function isValidPlayerId(id: unknown): id is PlayerId {
   return typeof id === 'number' && Number.isInteger(id) && ((id >= 1 && id < 100) || (id >= 1_000_000 && id <= 2_147_483_647));
 }
@@ -433,6 +435,8 @@ export interface SavedGrave {
   z: number;
   age: number;
   items: ItemStack[];
+  /** Whose wisp it is (optional: older saves only had their own). */
+  owner?: PlayerId;
 }
 
 export interface SavedGroundItem {
@@ -537,6 +541,8 @@ export class Player implements Mover {
   quests: Record<string, QuestProgress> = {};
   checkpoints = new Set<string>(['home']);
   regionId: string | null = null;
+  /** This player's own allotments (everyone tends their own patches at the same plot). */
+  patches: FarmPatch[] = [];
 
   constructor(public name: string, public appearance: Appearance, x: number, z: number, id: PlayerId = LOCAL_PLAYER_ID) {
     this.id = id;
@@ -659,6 +665,8 @@ export class Npc {
 
 interface PendingHit {
   at: number;
+  /** The player who made the attack (gets the xp and the kill). */
+  attacker: PlayerId;
   target: number;
   style: CombatStyle;
   damage: number;
@@ -729,14 +737,20 @@ export interface SaveData {
 
 export class GameWorld {
   readonly map: WorldMap;
-  readonly player: Player;
+  /**
+   * The player whose turn it is. Outside `act()` this is the local player (the only one in local
+   * play); while a player's commands and updates run, it is that player, so the game rules can keep
+   * saying "the player" (docs/MULTIPLAYER.md 3A.5).
+   */
+  player: Player;
+  /** Everyone in this world. */
+  readonly players = new Map<PlayerId, Player>();
   readonly enemies: Enemy[] = [];
   readonly nodes: ResourceNode[] = [];
   readonly npcs: Npc[] = [];
   readonly stations: Station[] = [];
   readonly obstacles: Obstacle[] = [];
   readonly doorways: Doorway[] = [];
-  readonly patches: FarmPatch[] = [];
   readonly hotspots: Hotspot[] = [];
   /** The PRACTICE market: simulated traders and practice balances, separate from real wealth. */
   market: PracticeMarket;
@@ -751,10 +765,11 @@ export class GameWorld {
   readonly rng: Rng;
   time = 0;
   private events: GameEvent[] = [];
+  private eventActors: PlayerId[] = [];
   private pending: PendingHit[] = [];
   private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
-  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket } = {}) {
+  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket; noPlayer?: boolean } = {}) {
     const playerId = opts.playerId ?? LOCAL_PLAYER_ID;
     if (!isValidPlayerId(playerId)) throw new Error(`invalid player id ${playerId}`);
     this.clock = opts.clock ?? (() => Date.now());
@@ -765,9 +780,10 @@ export class GameWorld {
     this.market = opts.market ?? PracticeMarket.restore(opts.save?.exchangePractice, this.clock) ?? new PracticeMarket(undefined, (opts.seed ?? 1337) ^ 0xe7c, this.clock);
     this.rng = mulberry32((opts.seed ?? 1337) ^ 0x5eed);
     const s = opts.save;
-    this.player = new Player(s?.name ?? opts.name ?? 'Adventurer', s?.appearance ?? opts.appearance ?? DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, playerId);
-    if (s) this.loadPlayer(s);
-    else this.giveStarterKit();
+    if (opts.noPlayer) {
+      // A shared zone starts empty: `player` points at a placeholder that is never in `players`.
+      this.player = new Player('Nobody', DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, ZONE_PLACEHOLDER_ID);
+    } else this.player = this.addPlayer({ playerId, save: s ?? null, name: opts.name, appearance: opts.appearance });
 
     this.map.npcs.forEach((n, i) => {
       const npc = new Npc(100 + i, NPCS[n.id], n.x, n.z, n.facing, n.patrol ?? null);
@@ -778,20 +794,6 @@ export class GameWorld {
       const station = new Station(3000 + i, st.kind, st.x, st.z);
       this.stations.push(station);
       this.byId.set(station.id, station);
-    });
-    this.map.patches.forEach((pt, i) => {
-      const f = new FarmPatch(4100 + i, i, pt.x, pt.z);
-      const sp = s?.patches?.[i];
-      if (sp && typeof sp === 'object') {
-        f.weeds = Number.isInteger(sp.weeds) ? Math.max(0, Math.min(MAX_WEEDS, sp.weeds)) : MAX_WEEDS;
-        f.crop = sp.crop && sp.crop in CROPS ? sp.crop : null;
-        f.plantedAt = Number.isFinite(sp.plantedAt) ? sp.plantedAt : 0;
-        f.lives = Number.isInteger(sp.lives) ? Math.max(0, Math.min(PATCH_LIVES, sp.lives)) : 0;
-        f.bareSince = Number.isFinite(sp.bareSince) ? sp.bareSince : 0;
-        if (f.crop) f.weeds = 0;
-      }
-      this.patches.push(f);
-      this.byId.set(f.id, f);
     });
     HOTSPOTS.forEach((def, i) => {
       const h = new Hotspot(4200 + i, def);
@@ -823,20 +825,105 @@ export class GameWorld {
       this.enemies.push(enemy);
       this.byId.set(enemy.id, enemy);
     });
-    if (s && Array.isArray(s.ground)) {
+    if (s && !opts.noPlayer) this.restoreWorldItems(s, this.player);
+  }
+
+  /** Runs `fn` as `p`'s turn: "the player" in the game rules means `p` until it returns. */
+  act<T>(p: Player, fn: () => T): T {
+    const prev = this.player;
+    this.player = p;
+    try {
+      return fn();
+    } finally {
+      this.player = prev;
+    }
+  }
+
+  /** A player in this world by id. */
+  playerById(id: PlayerId): Player | undefined {
+    return this.players.get(id);
+  }
+
+  /**
+   * Adds a player: from a save (restored through the usual path: aliases, grants, overflow) or new
+   * with the starter kit. `worldItems`: also place the save's own ground piles and wisps.
+   */
+  addPlayer(o: { playerId: PlayerId; save?: SaveData | null; name?: string; appearance?: Appearance; worldItems?: boolean }): Player {
+    if (!isValidPlayerId(o.playerId) || o.playerId === ZONE_PLACEHOLDER_ID) throw new Error(`invalid player id ${o.playerId}`);
+    if (this.players.has(o.playerId)) throw new Error(`player ${o.playerId} is already here`);
+    const s = o.save ? remapItemIds(o.save) : null;
+    const p = new Player(s?.name ?? o.name ?? 'Adventurer', s?.appearance ?? o.appearance ?? DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, o.playerId);
+    p.patches = this.map.patches.map((pt, i) => {
+      const f = new FarmPatch(4100 + i, i, pt.x, pt.z);
+      const sp = s?.patches?.[i];
+      if (sp && typeof sp === 'object') {
+        f.weeds = Number.isInteger(sp.weeds) ? Math.max(0, Math.min(MAX_WEEDS, sp.weeds)) : MAX_WEEDS;
+        f.crop = sp.crop && sp.crop in CROPS ? sp.crop : null;
+        f.plantedAt = Number.isFinite(sp.plantedAt) ? sp.plantedAt : 0;
+        f.lives = Number.isInteger(sp.lives) ? Math.max(0, Math.min(PATCH_LIVES, sp.lives)) : 0;
+        f.bareSince = Number.isFinite(sp.bareSince) ? sp.bareSince : 0;
+        if (f.crop) f.weeds = 0;
+      }
+      return f;
+    });
+    this.players.set(p.id, p);
+    this.act(p, () => {
+      if (s) this.loadPlayer(s);
+      else this.giveStarterKit();
+      if (s && Number.isFinite(s.lanternBurn) && s.lanternBurn! > 0) p.lanternBurn = Math.min(LANTERN_SECONDS, s.lanternBurn!);
+      if (s && Array.isArray(s.shrineHeld)) {
+        for (const it of s.shrineHeld) {
+          const qty = Math.floor(Number(it?.qty));
+          if (it && typeof it.item === 'string' && isItemId(it.item) && qty > 0) addTo(p.shrineHeld, it.item, qty);
+        }
+      }
+    });
+    if (s && o.worldItems) this.restoreWorldItems(s, p);
+    return p;
+  }
+
+  /**
+   * Removes a player. Their own things in the world (wisps, and loot piles still private to them)
+   * leave with them and are returned with the player, to be saved with the character.
+   */
+  removePlayer(id: PlayerId): { player: Player; zone: ZoneState } | null {
+    const p = this.players.get(id);
+    if (!p) return null;
+    const zone = this.act(p, () => this.zoneState({ ownedOnly: true }));
+    for (const g of this.graves) if (g.owner === id) this.byId.delete(g.id);
+    this.graves = this.graves.filter((g) => g.owner !== id);
+    const mine = (g: GroundItem) => g.owner === id && g.isPrivate;
+    for (const g of this.groundItems) if (mine(g)) this.byId.delete(g.id);
+    this.groundItems = this.groundItems.filter((g) => !mine(g));
+    for (const e of this.enemies) {
+      if (e.target === id) {
+        e.target = null;
+        if (e.alive) e.state = 'return';
+      }
+    }
+    this.pending = this.pending.filter((h) => h.attacker !== id);
+    this.players.delete(id);
+    if (this.player === p) this.player = this.players.values().next().value ?? new Player('Nobody', DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, ZONE_PLACEHOLDER_ID);
+    return { player: p, zone };
+  }
+
+  /** Places a save's ground piles and wisps, keeping the saving player's ownership with `p`. */
+  private restoreWorldItems(s: SaveData, p: Player) {
+    const savedId = s.playerId ?? 1;
+    if (Array.isArray(s.ground)) {
       for (const g of s.ground) {
         const qty = Math.floor(Number(g?.qty));
         const age = Number(g?.age);
         if (!g || typeof g.item !== 'string' || !isItemId(g.item) || !(qty > 0) || !Number.isFinite(g.x) || !Number.isFinite(g.z)) continue;
         // Piles the saving player owned stay theirs even if their id has changed (saves without an
         // id are from before ids could change, when the player was always 1).
-        const owner = typeof g.owner !== 'number' ? null : g.owner === (s.playerId ?? 1) ? this.player.id : g.owner;
+        const owner = typeof g.owner !== 'number' ? null : g.owner === savedId ? p.id : g.owner;
         const pile = this.spawnGroundItem(g.item, qty, g.x, g.z, owner);
         pile.age = Number.isFinite(age) && age > 0 ? age : 0;
       }
       this.groundItems = this.groundItems.filter((g) => !g.expired);
     }
-    if (s && Array.isArray(s.graves)) {
+    if (Array.isArray(s.graves)) {
       for (const g of s.graves) {
         if (!g || !Number.isFinite(g.x) || !Number.isFinite(g.z) || !Array.isArray(g.items)) continue;
         const items: ItemStack[] = [];
@@ -844,17 +931,11 @@ export class GameWorld {
           const qty = Math.floor(Number(it?.qty));
           if (it && typeof it.item === 'string' && isItemId(it.item) && qty > 0) addTo(items, it.item, qty);
         }
-        const grave = this.spawnGrave(g.x, g.z, items);
+        const owner = typeof g.owner === 'number' && g.owner !== savedId ? g.owner : p.id;
+        const grave = this.spawnGrave(g.x, g.z, items, owner);
         grave.age = Number.isFinite(g.age) && g.age > 0 ? g.age : 0;
       }
       this.graves = this.graves.filter((g) => !g.expired);
-    }
-    if (s && Number.isFinite(s.lanternBurn) && s.lanternBurn! > 0) this.player.lanternBurn = Math.min(LANTERN_SECONDS, s.lanternBurn!);
-    if (s && Array.isArray(s.shrineHeld)) {
-      for (const it of s.shrineHeld) {
-        const qty = Math.floor(Number(it?.qty));
-        if (it && typeof it.item === 'string' && isItemId(it.item) && qty > 0) addTo(this.player.shrineHeld, it.item, qty);
-      }
     }
   }
 
@@ -986,8 +1067,20 @@ export class GameWorld {
   }
 
   /** The zone part of the save: ground piles and shrine wisps. */
-  zoneState(): ZoneState {
-    return splitSave(this.save()).zone;
+  zoneState(opts: { ownedOnly?: boolean } = {}): ZoneState {
+    const zone = splitSave(this.save()).zone;
+    if (!opts.ownedOnly) return zone;
+    // Only this player's own things: wisps, and loot piles still private to them.
+    const id = this.player.id;
+    return {
+      ground: this.groundItems.filter((g) => !g.expired && g.owner === id && g.isPrivate).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
+      graves: this.graves.filter((g) => !g.expired && g.owner === id).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })), owner: g.owner })),
+    };
+  }
+
+  /** The local player's allotments (each player has their own). */
+  get patches(): FarmPatch[] {
+    return this.player.patches;
   }
 
   /** The whole save. `practice: false` leaves out the practice market (it is large and device-local). */
@@ -1015,7 +1108,7 @@ export class GameWorld {
       ...(opts.practice === false ? {} : { exchangePractice: this.market.toJSON() }),
       patches: this.patches.map((f) => ({ weeds: f.weeds, crop: f.crop, plantedAt: f.plantedAt, lives: f.lives, bareSince: f.bareSince })),
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
-      graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
+      graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })), owner: g.owner })),
       shrineHeld: this.player.shrineHeld.map((i) => ({ ...i })),
       lanternBurn: this.player.lanternBurn,
       grants: [...p.grants],
@@ -1082,11 +1175,21 @@ export class GameWorld {
   drainEvents(): GameEvent[] {
     const e = this.events;
     this.events = [];
+    this.eventActors = [];
     return e;
+  }
+
+  /** Events with the player whose turn produced each one (a server routes them by this). */
+  drainEventsWithActors(): { event: GameEvent; actor: PlayerId }[] {
+    const out = this.events.map((event, i) => ({ event, actor: this.eventActors[i] }));
+    this.events = [];
+    this.eventActors = [];
+    return out;
   }
 
   emit(e: GameEvent) {
     this.events.push(e);
+    this.eventActors.push(this.player.id);
   }
 
   message(text: string, tone: MessageTone = 'info') {
@@ -1094,11 +1197,14 @@ export class GameWorld {
   }
 
   get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway | undefined {
+    // Allotments are each player's own: the same id means the acting player's patch.
+    const patch = this.player.patches[id - 4100];
+    if (patch && patch.id === id) return patch;
     return this.byId.get(id);
   }
 
   interactable(id: number): Interactable | null {
-    const e = this.byId.get(id);
+    const e = this.get(id);
     if (e instanceof Enemy) return { kind: 'enemy', entity: e };
     if (e instanceof ResourceNode) return { kind: 'node', entity: e };
     if (e instanceof Npc) return { kind: 'npc', entity: e };
@@ -1115,11 +1221,11 @@ export class GameWorld {
   /**
    * A command from a specific player (a server passes the player bound to the connection, never one
    * named in the message). Returns false, changing nothing, if that player isn't in this world.
-   * Only one player per world for now; shared worlds come in docs/MULTIPLAYER.md 3A.5.
    */
   issueFor(playerId: PlayerId, cmd: Command): boolean {
-    if (playerId !== this.player.id) return false;
-    this.issue(cmd);
+    const p = this.players.get(playerId);
+    if (!p) return false;
+    this.act(p, () => this.issue(cmd));
     return true;
   }
 
@@ -1331,39 +1437,19 @@ export class GameWorld {
 
   tick(dt = TICK_SECONDS) {
     this.time += dt;
-    const p = this.player;
-    p.prevX = p.x;
-    p.prevZ = p.z;
+    for (const p of this.players.values()) {
+      p.prevX = p.x;
+      p.prevZ = p.z;
+    }
     for (const e of this.enemies) {
       e.prevX = e.x;
       e.prevZ = e.z;
     }
-    this.updatePlayer(dt);
+    for (const p of this.players.values()) this.act(p, () => this.tickPlayer(dt));
     this.updateGroundItems(dt);
     this.updateGraves(dt);
-    this.updateLantern(dt);
     this.updateFires(dt);
-    if (p.shopAt !== null && !this.activeShop()) {
-      p.shopAt = null;
-      this.emit({ type: 'shopClose' });
-    }
-    if (p.exchangeAt !== null && !this.activeClerk()) {
-      p.exchangeAt = null;
-      this.emit({ type: 'exchangeClose' });
-    }
     this.tickPracticeMarket(dt);
-    if (p.tannerAt !== null && !this.activeTanner()) {
-      p.tannerAt = null;
-      this.emit({ type: 'tannerClose' });
-    }
-    if (p.stationAt !== null && !this.activeStation()) {
-      p.stationAt = null;
-      this.emit({ type: 'productionClose' });
-    }
-    if (p.bankAt !== null && !this.activeBanker()) {
-      p.bankAt = null;
-      this.emit({ type: 'bankClose' });
-    }
     for (const e of this.enemies) this.updateEnemy(e, dt);
     for (const n of this.nodes) {
       n.hitAge += dt;
@@ -1376,19 +1462,56 @@ export class GameWorld {
       }
     }
     for (const n of this.npcs) this.updateNpc(n, dt);
-    // Resolve projectile hits.
+    // Resolve projectile hits (as the attacker's turn: they get the xp and the kill).
     for (let i = this.pending.length - 1; i >= 0; i--) {
       const h = this.pending[i];
       if (h.at > this.time) continue;
       this.pending.splice(i, 1);
       const e = this.byId.get(h.target);
-      if (e instanceof Enemy && e.alive) this.damageEnemy(e, h.damage, h.hit, h.style);
+      const a = this.players.get(h.attacker);
+      if (a && e instanceof Enemy && e.alive) this.act(a, () => this.damageEnemy(e, h.damage, h.hit, h.style));
+    }
+  }
+
+  /** One player's part of a tick: movement and actions, their lantern, and closing out-of-reach interfaces. */
+  private tickPlayer(dt: number) {
+    const p = this.player;
+    this.updatePlayer(dt);
+    this.updateLantern(dt);
+    if (p.shopAt !== null && !this.activeShop()) {
+      p.shopAt = null;
+      this.emit({ type: 'shopClose' });
+    }
+    if (p.exchangeAt !== null && !this.activeClerk()) {
+      p.exchangeAt = null;
+      this.emit({ type: 'exchangeClose' });
+    }
+    if (p.tannerAt !== null && !this.activeTanner()) {
+      p.tannerAt = null;
+      this.emit({ type: 'tannerClose' });
+    }
+    if (p.stationAt !== null && !this.activeStation()) {
+      p.stationAt = null;
+      this.emit({ type: 'productionClose' });
+    }
+    if (p.bankAt !== null && !this.activeBanker()) {
+      p.bankAt = null;
+      this.emit({ type: 'bankClose' });
     }
   }
 
   /** Idle NPCs turn to face a nearby player; patrolling NPCs walk their route, pausing to chat. */
   private updateNpc(n: Npc, dt: number) {
-    const p = this.player;
+    // Turns toward (and pauses for) the nearest player.
+    let p = this.player;
+    let best = Infinity;
+    for (const q of this.players.values()) {
+      const d = dist(n.x, n.z, q.x, q.z);
+      if (d < best) {
+        best = d;
+        p = q;
+      }
+    }
     n.talkAge += dt;
     n.prevX = n.x;
     n.prevZ = n.z;
@@ -1651,9 +1774,9 @@ export class GameWorld {
     if (style.projectileSpeed) {
       const flight = Math.max(0.12, dist(p.x, p.z, e.x, e.z) / style.projectileSpeed);
       this.emit({ type: 'projectile', source: p.id, target: e.id, style: p.style, flight });
-      this.pending.push({ at: this.time + flight, target: e.id, style: p.style, damage: result.damage, hit: result.hit });
+      this.pending.push({ at: this.time + flight, attacker: p.id, target: e.id, style: p.style, damage: result.damage, hit: result.hit });
     } else {
-      this.pending.push({ at: this.time + 0.22, target: e.id, style: p.style, damage: result.damage, hit: result.hit });
+      this.pending.push({ at: this.time + 0.22, attacker: p.id, target: e.id, style: p.style, damage: result.damage, hit: result.hit });
     }
   }
 
@@ -1790,8 +1913,8 @@ export class GameWorld {
     if (removed) this.groundItems = this.groundItems.filter((g) => !g.expired);
   }
 
-  spawnGrave(x: number, z: number, items: ItemStack[]): Gravestone {
-    const g = new Gravestone(this.nextGroundId++, x, z, this.player.id, items);
+  spawnGrave(x: number, z: number, items: ItemStack[], owner: PlayerId = this.player.id): Gravestone {
+    const g = new Gravestone(this.nextGroundId++, x, z, owner, items);
     this.graves.push(g);
     this.byId.set(g.id, g);
     return g;
@@ -1800,11 +1923,16 @@ export class GameWorld {
   private updateGraves(dt: number) {
     let removed = false;
     for (const g of this.graves) {
+      // A wisp only counts down while its owner is here (play time, as for one player).
+      const owner = this.players.get(g.owner);
+      if (!owner) continue;
       g.age += dt;
       if (g.expired) {
         if (g.items.length) {
-          for (const s of g.items) addTo(this.player.shrineHeld, s.item, s.qty);
-          this.message('Your shrine wisp has faded and carried your things to the shrines. Reclaim them at the shrine or any waystone, for a small offering.', 'warn');
+          this.act(owner, () => {
+            for (const s of g.items) addTo(owner.shrineHeld, s.item, s.qty);
+            this.message('Your shrine wisp has faded and carried your things to the shrines. Reclaim them at the shrine or any waystone, for a small offering.', 'warn');
+          });
         }
         this.byId.delete(g.id);
         removed = true;
@@ -2822,7 +2950,7 @@ export class GameWorld {
 
   private updateFarming(id: number, dt: number) {
     const p = this.player;
-    const f = this.byId.get(id);
+    const f = this.get(id);
     if (!(f instanceof FarmPatch)) {
       p.action = null;
       return;
@@ -3197,7 +3325,6 @@ export class GameWorld {
   // ---------------------------------------------------------------- enemies
 
   private updateEnemy(e: Enemy, dt: number) {
-    const p = this.player;
     e.swingAge += dt;
     e.hurtAge += dt;
     e.attackTimer -= dt;
@@ -3217,14 +3344,23 @@ export class GameWorld {
       return;
     }
 
-    const dPlayer = dist(e.x, e.z, p.x, p.z);
     const dSpawn = dist(e.x, e.z, e.spawnX, e.spawnZ);
 
-    if ((e.state === 'idle' || e.state === 'wander') && def.aggressive && !p.dead && dPlayer < def.aggroRange) {
-      // Aggression fades once the player greatly out-levels the creature.
-      if (p.skills.combatLevel() < def.level * 2 + 2 || def.id === 'goblin_warlord') {
+    if ((e.state === 'idle' || e.state === 'wander') && def.aggressive) {
+      // The nearest player in range draws it (aggression fades once a player greatly out-levels it).
+      let pick: Player | null = null;
+      let best: number = def.aggroRange;
+      for (const q of this.players.values()) {
+        const d = dist(e.x, e.z, q.x, q.z);
+        if (q.dead || d >= best) continue;
+        if (q.skills.combatLevel() < def.level * 2 + 2 || def.id === 'goblin_warlord') {
+          pick = q;
+          best = d;
+        }
+      }
+      if (pick) {
         e.state = 'chase';
-        e.target = p.id;
+        e.target = pick.id;
         e.attackTimer = Math.max(e.attackTimer, 0.8);
       }
     }
@@ -3267,18 +3403,20 @@ export class GameWorld {
         break;
       }
       case 'chase': {
-        if (p.dead || dSpawn > def.leashRange) {
+        const p = e.target !== null ? this.players.get(e.target) : undefined;
+        if (!p || p.dead || dSpawn > def.leashRange) {
           e.state = 'return';
           e.target = null;
           break;
         }
+        const dPlayer = dist(e.x, e.z, p.x, p.z);
         this.turnToward(e, p.x, p.z, dt);
         if (dPlayer > def.attackRange * 0.9) {
           const step = def.speed * dt;
           this.moveEntity(e, (p.x - e.x) / dPlayer, (p.z - e.z) / dPlayer, step);
           e.moving = true;
         }
-        if (dPlayer <= def.attackRange && e.attackTimer <= 0) this.enemyAttack(e);
+        if (dPlayer <= def.attackRange && e.attackTimer <= 0) this.act(p, () => this.enemyAttack(e));
         break;
       }
       case 'return': {
@@ -3332,7 +3470,7 @@ export class GameWorld {
     p.action = null;
     p.path = [];
     p.joy.x = p.joy.z = 0;
-    this.pending.length = 0;
+    this.pending = this.pending.filter((h) => h.attacker !== p.id);
     this.emit({ type: 'death', id: p.id });
     p.stationAt = null;
     const keep = KEEP_ON_DEATH + (p.prayers.has('keepsake') ? 1 : 0);
