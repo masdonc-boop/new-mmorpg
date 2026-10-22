@@ -16,17 +16,17 @@ export interface ObstacleDef {
 
 /**
  * The Brightwater Village course (Agility 1), east of the smithy. Laps run in order; finishing the
- * last obstacle after all the others gives the lap bonus, as on an OSRS course.
+ * last obstacle after all the others gives the lap bonus.
  */
 export const VILLAGE_COURSE: ObstacleDef[] = [
-  { id: 'log', name: 'Log balance', verb: 'Walk across', kind: 'log', level: 1, xp: 7.5, x1: 80.5, z1: 74.5, x2: 85.5, z2: 74.5 },
-  { id: 'wall', name: 'Low wall', verb: 'Climb over', kind: 'wall', level: 1, xp: 8, x1: 86.5, z1: 74.5, x2: 88.5, z2: 74.5 },
-  { id: 'rope', name: 'Rope swing', verb: 'Swing across', kind: 'rope', level: 1, xp: 7.5, x1: 89.5, z1: 75.5, x2: 89.5, z2: 78.5 },
-  { id: 'beam', name: 'Balance beam', verb: 'Balance along', kind: 'beam', level: 1, xp: 7.5, x1: 88.5, z1: 79.5, x2: 83.5, z2: 79.5, fail: 0.15 },
-  { id: 'hedge', name: 'Hedge tunnel', verb: 'Squeeze through', kind: 'hedge', level: 1, xp: 7.5, x1: 81.5, z1: 78.5, x2: 81.5, z2: 75.5 },
+  { id: 'log', name: 'Log balance', verb: 'Walk across', kind: 'log', level: 1, xp: 6, x1: 80.5, z1: 74.5, x2: 85.5, z2: 74.5 },
+  { id: 'wall', name: 'Low wall', verb: 'Climb over', kind: 'wall', level: 1, xp: 9, x1: 86.5, z1: 74.5, x2: 88.5, z2: 74.5 },
+  { id: 'rope', name: 'Rope swing', verb: 'Swing across', kind: 'rope', level: 1, xp: 8, x1: 89.5, z1: 75.5, x2: 89.5, z2: 78.5 },
+  { id: 'beam', name: 'Balance beam', verb: 'Balance along', kind: 'beam', level: 1, xp: 10, x1: 88.5, z1: 79.5, x2: 83.5, z2: 79.5, fail: 0.15 },
+  { id: 'hedge', name: 'Hedge tunnel', verb: 'Squeeze through', kind: 'hedge', level: 1, xp: 7, x1: 81.5, z1: 78.5, x2: 81.5, z2: 75.5 },
 ];
 
-export const LAP_BONUS = 40;
+export const LAP_BONUS = 30;
 /** Crossing speed in tiles per second. */
 export const CROSS_SPEED = 1.6;
 /** Damage taken when slipping off an obstacle. */

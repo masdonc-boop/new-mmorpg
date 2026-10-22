@@ -875,7 +875,7 @@ export class Hud {
     body.appendChild(el('div', 'ii-desc tb-intro', `Construction level <b>${lvl}</b> · ${p.inventory.count('plank')} planks, ${p.inventory.count('oak_plank')} oak planks, ${w.nailCount()} nails. Building needs a hammer and a saw.`));
     if (built) {
       const f = furnitureDef(built)!;
-      const box = el('div', 'inv-info', `<div class="ii-name">${f.name}</div><div class="ii-desc">Removing it gives nothing back (as in OSRS), but frees the space to build again for more experience.</div>`);
+      const box = el('div', 'inv-info', `<div class="ii-name">${f.name}</div><div class="ii-desc">Removing it gives nothing back, but frees the space to build again for more experience.</div>`);
       const btns = el('div', 'ii-btns');
       const rm = el('button', 'danger', 'Remove');
       rm.addEventListener('click', () => {

@@ -1,3 +1,4 @@
+import { FIRE_LOGS } from '../src/data/firemaking';
 import { describe, expect, it } from 'vitest';
 import { GameWorld } from '../src/sim/world';
 import { Inventory } from '../src/sim/inventory';
@@ -29,15 +30,15 @@ const lastMessage = (w: GameWorld) => {
 };
 
 describe('Steel tier', () => {
-  it('coal rocks stand in the Ironcrag Hills and need Mining 30', () => {
+  it('coal rocks stand in the Ironcrag Hills and need Mining 24', () => {
     const w = new GameWorld();
     const coal = w.nodes.filter((n) => n.def.id === 'coal_rock');
     expect(coal.length).toBeGreaterThanOrEqual(3);
     stand(w, coal[0].x + 1, coal[0].z);
     w.drainEvents();
     w.issue({ type: 'interact', target: coal[0].id });
-    expect(lastMessage(w)).toContain('Mining level 30');
-    w.player.skills.addXp('mining', xpForLevel(30));
+    expect(lastMessage(w)).toContain('Mining level 24');
+    w.player.skills.addXp('mining', xpForLevel(24));
     setRng(w, 0);
     w.issue({ type: 'interact', target: coal[0].id });
     run(w, 3);
@@ -52,13 +53,13 @@ describe('Steel tier', () => {
     expect(w.nodes.findIndex((n) => n.def.id === 'coal_rock')).toBeGreaterThan(w.nodes.findIndex((n) => n.def.id === 'net_spot'));
   });
 
-  it('smelts steel from 1 iron ore and 2 coal at Smithing 30, then forges steel gear', () => {
+  it('refines steel from an iron bar and a coal at Smithing 26, then forges steel gear', () => {
     const w = new GameWorld();
     const p = w.player;
-    p.inventory.add('iron_ore', 2);
-    p.inventory.add('coal_ore', 4);
+    p.inventory.add('iron_bar', 2);
+    p.inventory.add('coal_ore', 2);
     openStation(w, 'furnace');
-    expect(w.craftBlocker('steel_bar')).toContain('Smithing level 30');
+    expect(w.craftBlocker('steel_bar')).toContain('Smithing level 26');
     p.skills.addXp('smithing', xpForLevel(35));
     w.issue({ type: 'craft', recipe: 'steel_bar', count: 2 });
     run(w, 5);
@@ -138,7 +139,7 @@ describe('Firemaking', () => {
     expect(w.fires[0]).toMatchObject(at);
     expect(w.stations).toContain(w.fires[0]);
     expect(p.inventory.count('logs')).toBe(1);
-    expect(p.skills.xp.firemaking).toBe(40);
+    expect(p.skills.xp.firemaking).toBe(FIRE_LOGS.logs!.xp);
     run(w, 1);
     expect(Math.hypot(p.x - at.x, p.z - at.z)).toBeGreaterThan(0.8);
   });
@@ -165,7 +166,7 @@ describe('Firemaking', () => {
     p.inventory.add('logs', 2);
     w.drainEvents();
     light(w, 'oak_logs');
-    expect(lastMessage(w)).toContain('Firemaking level 15');
+    expect(lastMessage(w)).toContain('Firemaking level 12');
     w.issue({ type: 'beltRemove', category: 'tinderbox' });
     w.issue({ type: 'dropItem', slot: slotOf(p.inventory, 'tinderbox') });
     light(w);
@@ -349,8 +350,8 @@ describe('Crafting', () => {
     stand(w, wheel.x, wheel.z + 1.2);
     w.issue({ type: 'interact', target: wheel.id });
     run(w, 0.5);
-    expect(w.craftBlocker('bowstring')).toContain('Crafting level 10');
-    p.skills.addXp('crafting', xpForLevel(10));
+    expect(w.craftBlocker('bowstring')).toContain('Crafting level 6');
+    p.skills.addXp('crafting', xpForLevel(6));
     const before = p.inventory.count('bowstring');
     w.issue({ type: 'craft', recipe: 'bowstring', count: 1 });
     run(w, 2.5);

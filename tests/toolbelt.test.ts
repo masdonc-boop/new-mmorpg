@@ -143,7 +143,7 @@ describe('Toolbelt in play', () => {
     expect(p.inventory.count('bronze_dagger')).toBe(1);
     w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
     run(w, 2);
-    expect(p.inventory.count('arrow_shafts')).toBe(15);
+    expect(p.inventory.count('arrow_shafts')).toBe(12);
     // Tools never took a slot.
     expect(Object.values(ITEMS).filter((d) => d.tool).every((d) => p.inventory.count(d.id as ItemId) === 0)).toBe(true);
   });

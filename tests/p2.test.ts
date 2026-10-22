@@ -1,3 +1,4 @@
+import { LAP_BONUS } from '../src/data/agility';
 import { describe, expect, it } from 'vitest';
 import { GameWorld, type SaveData } from '../src/sim/world';
 import { Inventory } from '../src/sim/inventory';
@@ -283,7 +284,7 @@ describe('Agility', () => {
     w.issue({ type: 'moveTo', x: p.x, z: p.z + 5 });
     run(w, 4);
     expect(Math.hypot(p.x - o.def.x2, p.z - o.def.z2)).toBeLessThan(0.05);
-    expect(p.skills.xp.agility).toBe(7.5);
+    expect(p.skills.xp.agility).toBe(o.def.xp);
   });
 
   it('a full lap in order gives the lap bonus; skipping an obstacle does not', () => {
@@ -293,7 +294,7 @@ describe('Agility', () => {
     stand(w, w.obstacles[0].def.x1, w.obstacles[0].def.z1);
     for (let i = 0; i < 5; i++) cross(w, i);
     expect(p.laps).toBe(1);
-    expect(p.skills.xp.agility).toBe(7.5 + 8 + 7.5 + 7.5 + 7.5 + 40);
+    expect(p.skills.xp.agility).toBe(w.obstacles.reduce((a, o) => a + o.def.xp, 0) + LAP_BONUS);
     // Second lap skipping the beam: no bonus.
     for (const i of [0, 1, 2, 4]) cross(w, i);
     expect(p.laps).toBe(1);
@@ -315,7 +316,7 @@ describe('Agility', () => {
     const before = p.skills.xp.agility;
     stand(w, beam.def.x1, beam.def.z1);
     cross(w, 3);
-    expect(p.skills.xp.agility).toBe(before + 7.5);
+    expect(p.skills.xp.agility).toBe(before + beam.def.xp);
   });
 });
 

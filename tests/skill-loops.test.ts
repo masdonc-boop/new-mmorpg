@@ -176,7 +176,7 @@ describe('Tools', () => {
     p.inventory.add('knife');
     w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
     run(w, 2);
-    expect(p.inventory.count('arrow_shafts')).toBe(15);
+    expect(p.inventory.count('arrow_shafts')).toBe(12);
     p.skills.addXp('fletching', xpForLevel(5));
     w.issue({ type: 'craft', recipe: 'shortbow_u', count: 1 });
     run(w, 2);

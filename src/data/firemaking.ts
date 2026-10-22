@@ -2,11 +2,11 @@ import type { ItemId } from './items';
 
 /** Logs that can be lit, with the Firemaking level needed and the experience for each fire. */
 export const FIRE_LOGS: Partial<Record<ItemId, { level: number; xp: number }>> = {
-  logs: { level: 1, xp: 40 },
-  oak_logs: { level: 15, xp: 60 },
+  logs: { level: 1, xp: 30 },
+  oak_logs: { level: 12, xp: 48 },
 };
 
-/** Seconds per attempt to light (OSRS-style: keep trying until it catches). */
+/** Seconds per attempt to light (keep trying until it catches). */
 export const LIGHT_SECONDS = 1.2;
 
 /** A fire burns for a random time in this range (seconds), then leaves ashes. */

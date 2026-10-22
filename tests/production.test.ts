@@ -112,11 +112,11 @@ describe('Vertical slice: mine, bank, smelt, forge, equip', () => {
     // 4. Forge a bronze dagger and (after levelling) a sword at the anvil.
     openStation(w, 'anvil');
     w.issue({ type: 'craft', recipe: 'bronze_sword', count: 1 });
-    expect(p.action).toBeNull(); // level 4 needed
+    expect(p.action).toBeNull(); // level 5 needed
     w.issue({ type: 'craft', recipe: 'bronze_dagger', count: 1 });
     run(w, 3);
     expect(p.inventory.count('bronze_dagger')).toBe(1);
-    p.skills.addXp('smithing', xpForLevel(4));
+    p.skills.addXp('smithing', xpForLevel(5));
     w.issue({ type: 'craft', recipe: 'bronze_sword', count: 1 });
     run(w, 3);
     expect(p.inventory.count('bronze_sword')).toBe(1);
@@ -194,7 +194,7 @@ describe('Production rules', () => {
       expect(p.inventory.isFull()).toBe(true);
       w.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
       run(w, 2);
-      expect(p.inventory.count('arrow_shafts')).toBe(15);
+      expect(p.inventory.count('arrow_shafts')).toBe(12);
     } finally {
       delete RECIPES.__test;
     }
@@ -258,7 +258,7 @@ describe('Production rules', () => {
     run(w, 2);
     expect(p.inventory.count('shortbow')).toBe(1);
     expect(p.inventory.count('arrow_shafts')).toBe(0);
-    expect(p.inventory.count('bronze_arrow')).toBe(15);
+    expect(p.inventory.count('bronze_arrow')).toBe(12);
     expect(p.equipment.count('bronze_arrow')).toBe(60);
     w.issue({ type: 'equip', slot: slotOf(p.inventory, 'shortbow') });
     expect(p.style).toBe('ranged');
