@@ -63,6 +63,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   steel_bar: r({ id: 'steel_bar', station: 'furnace', skill: 'smithing', level: 30, xp: 35, inputs: [{ item: 'iron_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }], output: { item: 'steel_bar', qty: 1 }, seconds: 1.8 }),
   // Glimsteel: smelt a hot bloom, then quench it in running water (see GameWorld.quench).
   glimsteel_bloom: r({ id: 'glimsteel_bloom', station: 'furnace', skill: 'smithing', level: 40, xp: 30, inputs: [{ item: 'glimmerite_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }], output: { item: 'glimsteel_bloom', qty: 1 }, seconds: 1.8 }),
+  // Duskiron only runs clean with a flux: slime gel from the meadow.
+  duskiron_bar: r({ id: 'duskiron_bar', station: 'furnace', skill: 'smithing', level: 55, xp: 45, inputs: [{ item: 'duskiron_ore', qty: 1 }, { item: 'coal_ore', qty: 2 }, { item: 'slime_gel', qty: 1 }], output: { item: 'duskiron_bar', qty: 1 }, seconds: 1.8 }),
   // ---- Smithing: anvil
   bronze_dagger: r({ id: 'bronze_dagger', station: 'anvil', skill: 'smithing', level: 1, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_dagger', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   bronze_helm: r({ id: 'bronze_helm', station: 'anvil', skill: 'smithing', level: 3, xp: 12, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
@@ -98,11 +100,17 @@ export const RECIPES: Record<string, RecipeDef> = {
   glimsteel_shield: r({ id: 'glimsteel_shield', station: 'anvil', skill: 'smithing', level: 50, xp: 100, inputs: [{ item: 'glimsteel_bar', qty: 2 }], output: { item: 'glimsteel_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   glimsteel_platelegs: r({ id: 'glimsteel_platelegs', station: 'anvil', skill: 'smithing', level: 54, xp: 100, inputs: [{ item: 'glimsteel_bar', qty: 2 }], output: { item: 'glimsteel_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   glimsteel_platebody: r({ id: 'glimsteel_platebody', station: 'anvil', skill: 'smithing', level: 58, xp: 150, inputs: [{ item: 'glimsteel_bar', qty: 3 }], output: { item: 'glimsteel_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_helm: r({ id: 'duskiron_helm', station: 'anvil', skill: 'smithing', level: 56, xp: 70, inputs: [{ item: 'duskiron_bar', qty: 1 }], output: { item: 'duskiron_helm', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_warhammer: r({ id: 'duskiron_warhammer', station: 'anvil', skill: 'smithing', level: 60, xp: 140, inputs: [{ item: 'duskiron_bar', qty: 2 }], output: { item: 'duskiron_warhammer', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_shield: r({ id: 'duskiron_shield', station: 'anvil', skill: 'smithing', level: 63, xp: 140, inputs: [{ item: 'duskiron_bar', qty: 2 }], output: { item: 'duskiron_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_platelegs: r({ id: 'duskiron_platelegs', station: 'anvil', skill: 'smithing', level: 67, xp: 140, inputs: [{ item: 'duskiron_bar', qty: 2 }], output: { item: 'duskiron_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_platebody: r({ id: 'duskiron_platebody', station: 'anvil', skill: 'smithing', level: 72, xp: 210, inputs: [{ item: 'duskiron_bar', qty: 3 }], output: { item: 'duskiron_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   // ---- Fletching (knife on logs, anywhere)
   arrow_shafts: r({ id: 'arrow_shafts', station: 'fletching', skill: 'fletching', level: 1, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'arrow_shafts', qty: 15 }, seconds: 1.5, tool: 'knife' }),
   bronze_arrow: r({ id: 'bronze_arrow', station: 'fletching', skill: 'fletching', level: 3, xp: 20, inputs: [{ item: 'arrow_shafts', qty: 15 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_arrow', qty: 15 }, seconds: 1.5 }),
   shortbow_u: r({ id: 'shortbow_u', station: 'fletching', skill: 'fletching', level: 5, xp: 5, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   shortbow: r({ id: 'shortbow', station: 'fletching', skill: 'fletching', level: 5, xp: 5, inputs: [{ item: 'shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'shortbow', qty: 1 }, seconds: 1.2 }),
+  riverwood_wand: r({ id: 'riverwood_wand', station: 'fletching', skill: 'fletching', level: 10, xp: 20, inputs: [{ item: 'logs', qty: 1 }, { item: 'dull_spark', qty: 4 }], output: { item: 'riverwood_wand', qty: 1 }, seconds: 1.8, tool: 'knife' }),
   wooden_shield: r({ id: 'wooden_shield', station: 'fletching', skill: 'fletching', level: 8, xp: 16, inputs: [{ item: 'logs', qty: 2 }], output: { item: 'wooden_shield', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow_u: r({ id: 'oak_shortbow_u', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.2 }),
@@ -116,6 +124,7 @@ export const RECIPES: Record<string, RecipeDef> = {
   leather_body: r({ id: 'leather_body', station: 'crafting', skill: 'crafting', level: 14, xp: 25, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   leather_chaps: r({ id: 'leather_chaps', station: 'crafting', skill: 'crafting', level: 18, xp: 27, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   dull_spark: r({ id: 'dull_spark', station: 'crafting', skill: 'crafting', level: 1, xp: 6, inputs: [{ item: 'spark_quartz', qty: 1 }], output: { item: 'dull_spark', qty: 8 }, seconds: 1.5, tool: 'chisel' }),
+  emberglass_wand: r({ id: 'emberglass_wand', station: 'crafting', skill: 'crafting', level: 35, xp: 70, inputs: [{ item: 'emberglass_shard', qty: 2 }, { item: 'oak_logs', qty: 1 }], output: { item: 'emberglass_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 20, xp: 50, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking
   shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 18, output: 'burnt_fish' } }),
@@ -143,7 +152,7 @@ export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
   { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
   { a: 'needle', b: ['leather', 'wolf_fang'], opens: 'crafting' },
-  { a: 'chisel', b: ['sapphire', 'spark_quartz'], opens: 'crafting' },
+  { a: 'chisel', b: ['sapphire', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },
 ];
 
 export function useCombo(x: ItemId, y: ItemId): AnywhereKind | null {

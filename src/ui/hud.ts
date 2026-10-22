@@ -1023,7 +1023,8 @@ export class Hud {
       const btns = el('div', 'ii-btns');
       if (d.equip) {
         const req = Object.entries(d.equip.req ?? {}).map(([sk, l]) => `${SKILL_INFO[sk as SkillId].name} ${l}`).join(', ');
-        const stats = [d.equip.accuracy ? `+${d.equip.accuracy} accuracy` : '', d.equip.power ? `+${d.equip.power} power` : '', d.equip.armour ? `+${d.equip.armour} armour` : ''].filter(Boolean).join(' · ');
+        const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
+        const stats = [d.equip.accuracy ? `${signed(d.equip.accuracy)} accuracy` : '', d.equip.power ? `${signed(d.equip.power)} power` : '', d.equip.armour ? `${signed(d.equip.armour)} armour` : ''].filter(Boolean).join(' · ');
         info.innerHTML += `<div class="ii-stats">${stats}${d.equip.twoHanded ? ' · two-handed' : ''}${req ? ` · needs ${req}` : ''}</div>`;
         const wear = el('button', 'primary', d.equip.slot === 'weapon' ? 'Wield' : 'Wear');
         wear.addEventListener('click', () => {

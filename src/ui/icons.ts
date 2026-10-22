@@ -1106,6 +1106,36 @@ export function itemIcon(id: string): string {
       }
       break;
     }
+    case 'wand': {
+      g.save();
+      g.translate(32, 34);
+      g.rotate(-0.7);
+      g.fillStyle = color;
+      g.beginPath();
+      g.roundRect(-3, -14, 6, 36, 3);
+      g.fill();
+      outline(2);
+      g.fillStyle = '#e0b545';
+      g.fillRect(-4, 10, 8, 3);
+      const glow = g.createRadialGradient(0, -20, 1, 0, -20, 12);
+      glow.addColorStop(0, accent);
+      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = glow;
+      g.beginPath();
+      g.arc(0, -20, 12, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = accent;
+      g.beginPath();
+      g.moveTo(0, -28);
+      g.lineTo(5, -20);
+      g.lineTo(0, -13);
+      g.lineTo(-5, -20);
+      g.closePath();
+      g.fill();
+      outline(1.5);
+      g.restore();
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

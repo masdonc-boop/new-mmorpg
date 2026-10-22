@@ -41,7 +41,7 @@ export interface HeroLook extends HumanoidLook {
 }
 
 export interface HeroGear {
-  weapon?: { kind: 'sword' | 'dagger' | 'bow'; tint: string };
+  weapon?: { kind: 'sword' | 'dagger' | 'bow' | 'warhammer' | 'wand'; tint: string };
   head?: string;
   body?: string;
   legs?: string;
@@ -597,7 +597,7 @@ export class HeroModel {
     const steel = '#d6dbe2';
     // Forged weapons show their metal; a dagger has a shorter blade.
     const gw = this.look.gear?.weapon;
-    const blade = gw && gw.kind !== 'bow' ? shade(gw.tint, 1.25) : steel;
+    const blade = gw && gw.kind !== 'bow' && gw.kind !== 'wand' ? shade(gw.tint, 1.25) : steel;
     const bladeLen = gw?.kind === 'dagger' ? 0.32 : 0.62;
     this.tools.set(
       'sword',
@@ -609,6 +609,18 @@ export class HeroModel {
         cpart(new THREE.ConeGeometry(0.012, 0.09, 4), blade, { y: 0.155 + bladeLen, sz: 0.35, sx: 3.7 }),
       ]),
     );
+    // A warhammer replaces the sword in the melee hand: oak haft, heavy dark head.
+    if (gw?.kind === 'warhammer') {
+      this.tools.set(
+        'sword',
+        this.toolMesh([
+          cpart(Cyl(0.02, 0.024, 0.78, 7), '#6e472c', { y: 0.3 }),
+          cpart(Box(0.24, 0.12, 0.12), blade, { y: 0.68 }),
+          cpart(Box(0.06, 0.14, 0.14), shade(blade, 0.8), { x: 0.14, y: 0.68 }),
+          cpart(Sph(0.03, 8, 6), PALETTE.gold, { y: -0.08 }),
+        ]),
+      );
+    }
     this.buildBow(gw?.kind === 'bow' ? gw.tint : wood);
     this.tools.set(
       'hammer',
@@ -633,14 +645,16 @@ export class HeroModel {
       this.toolMesh([cpart(Cyl(0.016, 0.018, 0.1, 6), PALETTE.leatherDark, { y: 0.02 }), cpart(Cyl(0.004, 0.022, 0.13, 4), steel, { y: 0.135, sz: 0.3 })]),
     );
     // Wand: forearm-length, gripped at the base, crystal at the tip.
-    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.032, 1), new THREE.MeshBasicMaterial({ color: '#b39cff' }));
+    // A wielded wand shows its own wood and crystal colour (riverwood: spark blue; emberglass: ember).
+    const wandCrystal = gw?.kind === 'wand' ? (gw.tint === '#e8642a' ? '#ff8a3a' : '#8fe8ff') : '#b39cff';
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(gw?.kind === 'wand' ? 0.04 : 0.032, 1), new THREE.MeshBasicMaterial({ color: wandCrystal }));
     orb.position.y = 0.4;
     this.wandTip = orb;
     this.tools.set(
       'staff',
       this.toolMesh(
         [
-          cpart(Cyl(0.011, 0.019, 0.42, 7), '#6b4426', { y: 0.16 }),
+          cpart(Cyl(0.011, 0.019, 0.42, 7), gw?.kind === 'wand' ? shade(gw.tint, 0.8) : '#6b4426', { y: 0.16 }),
           cpart(Cyl(0.022, 0.022, 0.03, 8), PALETTE.gold, { y: -0.03 }),
           cpart(Cyl(0.017, 0.017, 0.025, 8), PALETTE.gold, { y: 0.07 }),
           cpart(Cyl(0.016, 0.011, 0.03, 8), PALETTE.gold, { y: 0.375 }),

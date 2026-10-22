@@ -2,7 +2,7 @@ import type { ItemId } from './items';
 import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
-export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall';
+export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall';
 
 export interface ResourceDef {
   id: ResourceType;
@@ -32,6 +32,10 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   coal_rock: { id: 'coal_rock', name: 'Coal rock', skill: 'mining', levelReq: 30, xp: 50, item: 'coal_ore', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
   // Glimmerite: Brightwater's own metal, from the deepest Ironcrag veins (Mining 40).
   glimmerite_rock: { id: 'glimmerite_rock', name: 'Glimmerite vein', skill: 'mining', levelReq: 40, xp: 65, item: 'glimmerite_ore', tool: 'pickaxe', baseChance: 0.25, depleteChance: 0.7, respawnSeconds: 45, actionSeconds: 1.8 },
+  // Duskiron: picked from the slag heaps of the Goblin Encampment (dangerous ground; Mining 55).
+  duskiron_slag: { id: 'duskiron_slag', name: 'Duskiron slag heap', skill: 'mining', levelReq: 55, xp: 90, item: 'duskiron_ore', tool: 'pickaxe', baseChance: 0.2, depleteChance: 0.75, respawnSeconds: 60, actionSeconds: 1.8 },
+  // Emberglass: cooled glass at the encampment's old fire-vents (Mining 35).
+  ember_vent: { id: 'ember_vent', name: 'Ember vent', skill: 'mining', levelReq: 35, xp: 45, item: 'emberglass_shard', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8 },
   // Spark quartz: the crystal behind Brightwater's magic (chipped, then charged at a shrine).
   spark_quartz_rock: { id: 'spark_quartz_rock', name: 'Spark quartz', skill: 'mining', levelReq: 5, xp: 14, item: 'spark_quartz', tool: 'pickaxe', baseChance: 0.5, depleteChance: 0.45, respawnSeconds: 7, actionSeconds: 1.8 },
   // Picking flax needs no tool and gives no experience (as in OSRS); Crafting turns it into bowstrings.

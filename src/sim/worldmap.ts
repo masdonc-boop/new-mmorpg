@@ -512,6 +512,9 @@ export function generateWorld(seed = 1337): WorldMap {
   placeLater('coal_rock', 99, 70, 5, 3.5, 0xc0a1);
   // Glimmerite veins in the deepest part of the Ironcrag Hills, beyond the coal (Mining 40).
   placeLater('glimmerite_rock', 101, 62, 4, 3, 0x611e);
+  // Duskiron slag heaps and old ember vents in the Goblin Encampment (dangerous ground).
+  placeLater('duskiron_slag', 82, 31, 4, 3.5, 0xd05c);
+  placeLater('ember_vent', 91, 24, 4, 3.5, 0xe3b7);
   // Spark quartz on the Ironcrag slopes, near the first copper (Mining 5).
   placeLater('spark_quartz_rock', 86, 56, 5, 3, 0x5a4c);
   // A flax patch south-east of the wheat fields (Crafting: spin into bowstrings).

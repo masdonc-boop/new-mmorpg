@@ -155,7 +155,10 @@ export class GameRenderer {
     };
     const gear: HeroGear = { head: tint('head'), body: tint('body'), legs: tint('legs') };
     const w = eq.get('weapon');
-    if (w) gear.weapon = { kind: itemDef(w).equip?.style === 'ranged' ? 'bow' : w.endsWith('dagger') ? 'dagger' : 'sword', tint: tint('weapon')! };
+    if (w) {
+      const style = itemDef(w).equip?.style;
+      gear.weapon = { kind: style === 'ranged' ? 'bow' : style === 'magic' ? 'wand' : w.endsWith('dagger') ? 'dagger' : w.endsWith('warhammer') ? 'warhammer' : 'sword', tint: tint('weapon')! };
+    }
     const sh = eq.get('shield');
     if (sh) gear.shield = { tint: tint('shield')!, wooden: sh.startsWith('wooden') };
     return gear;
@@ -696,6 +699,12 @@ export class GameRenderer {
     if (this.fireEmit >= 0.08) {
       this.fireEmit = 0;
       for (const v of this.fireViews.values()) this.particles.emit({ x: v.x, y: v.y + 0.6, z: v.z, count: 2, color: ['#ffb340', '#ff7a1a', '#fff2a8'], speed: 0.3, up: 1.4, gravity: -0.5, life: 0.8, size: 0.06, spread: 0.3 });
+      // Ember vents breathe out sparks (sets them apart from ordinary ore rocks).
+      const p = w.player;
+      for (const n of w.nodes) {
+        if (n.def.id !== 'ember_vent' || n.depleted || Math.abs(n.x - p.x) > 20 || Math.abs(n.z - p.z) > 20 || Math.random() > 0.35) continue;
+        this.particles.emit({ x: n.x, y: groundHeight(w.map, n.x, n.z) + 0.6, z: n.z, count: 1, color: ['#ff6a2a', '#ffb340', '#ffd27a'], speed: 0.2, up: 1.1, gravity: -0.3, life: 1.1, size: 0.05, spread: 0.25 });
+      }
     }
     for (const [id, v] of this.fireViews) {
       if (seen.has(id)) continue;

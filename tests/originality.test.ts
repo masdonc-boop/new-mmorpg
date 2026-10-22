@@ -176,3 +176,76 @@ describe('Batch 4a: glimmerite and glimsteel', () => {
     expect(ITEMS.glimsteel_pickaxe.tool).toMatchObject({ tier: 4, req: { skill: 'mining', level: 21 } });
   });
 });
+
+describe('Batch 4b: duskiron and emberglass', () => {
+  const run = (w: GameWorld, seconds: number) => {
+    for (let t = 0; t < seconds * 30; t++) w.tick();
+  };
+  const stand = (w: GameWorld, x: number, z: number) => {
+    w.player.x = w.player.prevX = x;
+    w.player.z = w.player.prevZ = z;
+  };
+  const slotOf = (w: GameWorld, item: string) => w.player.inventory.slots.findIndex((s) => s?.item === item);
+
+  it('duskiron slag and ember vents lie in the Goblin Encampment (Mining 55 and 35)', () => {
+    const w = new GameWorld();
+    const slag = w.nodes.filter((n) => n.def.id === 'duskiron_slag');
+    const vents = w.nodes.filter((n) => n.def.id === 'ember_vent');
+    expect(slag.length).toBeGreaterThanOrEqual(3);
+    expect(vents.length).toBeGreaterThanOrEqual(3);
+    expect(slag[0].def.levelReq).toBe(55);
+    expect(vents[0].def.levelReq).toBe(35);
+    for (const n of [...slag, ...vents]) expect(Math.hypot(n.x - 86, n.z - 28)).toBeLessThan(10);
+  });
+
+  it('duskiron only smelts with slime gel as a flux; its armour is heavy but costs accuracy', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('smithing', xpForLevel(72));
+    p.inventory.add('duskiron_ore', 2);
+    p.inventory.add('coal_ore', 4);
+    const furnace = w.stations.find((s) => s.kind === 'furnace')!;
+    stand(w, furnace.x - 1, furnace.z);
+    w.issue({ type: 'interact', target: furnace.id });
+    run(w, 0.3);
+    expect(w.craftBlocker('duskiron_bar')).toContain('slime gel');
+    p.inventory.add('slime_gel', 2);
+    w.issue({ type: 'craft', recipe: 'duskiron_bar', count: 2 });
+    run(w, 5);
+    expect(p.inventory.count('duskiron_bar')).toBe(2);
+    expect(p.inventory.count('slime_gel')).toBe(0);
+    expect(ITEMS.duskiron_platebody.equip!.armour!).toBeGreaterThan(ITEMS.glimsteel_platebody.equip!.armour!);
+    p.skills.addXp('defence', xpForLevel(45));
+    p.inventory.add('duskiron_platebody');
+    const acc = w.playerBonuses().accuracy;
+    w.issue({ type: 'equip', slot: slotOf(w, 'duskiron_platebody') });
+    expect(w.playerBonuses().accuracy).toBe(acc - 3);
+  });
+
+  it('wands: a riverwood wand (Fletching 10, spark chips) and an emberglass wand (Crafting 35)', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('fletching', xpForLevel(10));
+    p.skills.addXp('crafting', xpForLevel(35));
+    p.inventory.add('logs', 1);
+    p.inventory.add('dull_spark', 4);
+    p.inventory.add('emberglass_shard', 2);
+    p.inventory.add('oak_logs', 1);
+    w.issue({ type: 'craft', recipe: 'riverwood_wand', count: 1 });
+    run(w, 2.5);
+    w.issue({ type: 'craft', recipe: 'emberglass_wand', count: 1 });
+    run(w, 3);
+    expect(p.inventory.count('riverwood_wand')).toBe(1);
+    expect(p.inventory.count('emberglass_wand')).toBe(1);
+    // Wielding a wand switches to Magic and replaces the apprentice wand's bonuses.
+    w.issue({ type: 'equip', slot: slotOf(w, 'riverwood_wand') });
+    expect(p.style).toBe('magic');
+    expect(w.playerBonuses()).toMatchObject({ weapon: 'riverwood_wand', accuracy: 22 });
+    w.drainEvents();
+    w.issue({ type: 'equip', slot: slotOf(w, 'emberglass_wand') });
+    expect(p.equipment.get('weapon')).toBe('riverwood_wand');
+    p.skills.addXp('magic', xpForLevel(25));
+    w.issue({ type: 'equip', slot: slotOf(w, 'emberglass_wand') });
+    expect(w.playerBonuses()).toMatchObject({ weapon: 'emberglass_wand', power: 26 });
+  });
+});
