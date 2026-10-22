@@ -2,7 +2,7 @@ import type { ItemId } from './items';
 import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
-export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall';
+export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall' | 'ice_chest';
 
 export interface ResourceDef {
   id: ResourceType;
@@ -41,8 +41,11 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   // Wild bluebell flax: picking needs no tool and gives no experience; Crafting turns it into bowstrings.
   flax: { id: 'flax', name: 'Bluebell flax', skill: 'crafting', levelReq: 1, xp: 0, item: 'flax', baseChance: 1, depleteChance: 0.17, respawnSeconds: 6, actionSeconds: 1.2 },
   // Market stalls (Thieving): taking from one always works and empties it until it restocks.
-  bakery_stall: { id: 'bakery_stall', name: 'Bakery stall', skill: 'thieving', levelReq: 5, xp: 16, item: 'bread', baseChance: 1, depleteChance: 1, respawnSeconds: 2.5, actionSeconds: 1.2 },
-  seed_stall: { id: 'seed_stall', name: 'Seed stall', skill: 'thieving', levelReq: 27, xp: 10, item: 'potato_seed', baseChance: 1, depleteChance: 1, respawnSeconds: 6, actionSeconds: 1.2, catches: [{ item: 'onion_seed', level: 27, xp: 10, chance: 0.35 }, { item: 'cabbage_seed', level: 27, xp: 10, chance: 0.25 }, { item: 'bluebell_seed', level: 27, xp: 10, chance: 0.2 }] },
+  // Thieving stalls (ids kept so world state carries over: docs/ORIGINALITY.md H9).
+  bakery_stall: { id: 'bakery_stall', name: 'Baker’s cart', skill: 'thieving', levelReq: 4, xp: 14, item: 'bread', baseChance: 1, depleteChance: 1, respawnSeconds: 3, actionSeconds: 1.2, catches: [{ item: 'baked_potato', level: 12, xp: 14, chance: 0.25 }] },
+  seed_stall: { id: 'seed_stall', name: 'Seed barrow', skill: 'thieving', levelReq: 20, xp: 18, item: 'potato_seed', baseChance: 1, depleteChance: 1, respawnSeconds: 7, actionSeconds: 1.2, catches: [{ item: 'onion_seed', level: 20, xp: 18, chance: 0.35 }, { item: 'cabbage_seed', level: 20, xp: 18, chance: 0.25 }, { item: 'bluebell_seed', level: 20, xp: 18, chance: 0.2 }] },
+  // The fishmonger's ice chest by the river: brightfin, and eels for the more practised hand.
+  ice_chest: { id: 'ice_chest', name: 'Fishmonger’s ice chest', skill: 'thieving', levelReq: 14, xp: 24, item: 'raw_shrimps', baseChance: 1, depleteChance: 1, respawnSeconds: 5, actionSeconds: 1.2, catches: [{ item: 'raw_anchovies', level: 18, xp: 24, chance: 0.35 }] },
   // Shallows: brightfin from level 1; mudskipper eels from the muddy edges from level 12.
   net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 12, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, catches: [{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }] },
   iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 15, xp: 35, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },

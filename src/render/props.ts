@@ -259,6 +259,17 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
       for (let i = 0; i < 6; i++) parts.push(part(blob(0.1), goods[i % 4], { x: -0.55 + (i % 3) * 0.5, y: 0.88, z: i < 3 ? -0.2 : 0.2 }));
       return merge(parts);
     }
+    case 'icechest': {
+      // A wooden chest packed with ice and fish, with a little awning.
+      const parts: THREE.BufferGeometry[] = [];
+      parts.push(part(Box(1.2, 0.6, 0.8), '#8b5e34', { y: 0.3 }));
+      parts.push(part(Box(1.24, 0.08, 0.84), '#5a3a20', { y: 0.62 }));
+      parts.push(part(Box(1.08, 0.08, 0.68), '#d8f0ff', { y: 0.64, jitter: 0 }));
+      for (let i = 0; i < 4; i++) parts.push(part(blob(0.09, 0, 0.1, i * 0.21), i % 2 ? '#d8dfe6' : '#e0b060', { x: -0.36 + i * 0.24, y: 0.7, z: (i % 2 ? 0.1 : -0.1), sx: 2, sy: 0.6, jitter: 0 }));
+      for (const x of [-0.55, 0.55]) parts.push(part(Box(0.08, 1.4, 0.08), '#8b5e34', { x, y: 0.7, z: -0.38 }));
+      parts.push(part(Box(1.3, 0.06, 0.7), '#4f8fe0', { y: 1.42, z: -0.12, rx: 0.3 }));
+      return merge(parts);
+    }
     case 'crate':
       return merge([part(Box(0.7, 0.7, 0.7), '#b07a45', { y: 0.35 }), part(Box(0.74, 0.1, 0.74), '#7a5230', { y: 0.6 }), part(Box(0.74, 0.1, 0.74), '#7a5230', { y: 0.1 })]);
     case 'barrel':
@@ -551,27 +562,49 @@ export function exchangePrefab(radius: number, booth: { x: number; z: number }):
 }
 
 /** House furniture (plain wood or oak). */
-export function furniturePrefab(model: 'chair' | 'table' | 'bookcase' | 'bed', oak: boolean): THREE.BufferGeometry {
+export function furniturePrefab(model: 'stool' | 'chair' | 'table' | 'bookcase' | 'bed', oak: boolean): THREE.BufferGeometry {
   const wood = oak ? '#7a4f2a' : '#b8865a';
   const dark = oak ? '#5a3a20' : '#8a6238';
   const parts: THREE.BufferGeometry[] = [];
   const legs = (w: number, d: number, h: number, r = 0.035) => {
     for (const [x, z] of [[-w, -d], [w, -d], [-w, d], [w, d]]) parts.push(part(Box(r * 2, h, r * 2), dark, { x, y: h / 2, z }));
   };
-  if (model === 'chair') {
+  if (model === 'stool') {
+    // Settler's stool: three splayed legs under a round seat.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      parts.push(part(Cyl(0.03, 0.035, 0.42, 5), dark, { x: Math.cos(a) * 0.12, y: 0.21, z: Math.sin(a) * 0.12, rx: Math.sin(a) * 0.18, rz: -Math.cos(a) * 0.18 }));
+    }
+    parts.push(part(Cyl(0.2, 0.2, 0.06, 10), wood, { y: 0.44 }));
+  } else if (model === 'chair') {
     legs(0.17, 0.17, 0.42);
     parts.push(part(Box(0.42, 0.06, 0.42), wood, { y: 0.44 }));
     parts.push(part(Box(0.42, 0.5, 0.06), wood, { y: 0.72, z: -0.19 }));
+    // The oak rocker sits on curved runners.
+    if (oak) for (const x of [-0.17, 0.17]) parts.push(part(Box(0.05, 0.05, 0.62), dark, { x, y: 0.02, rx: 0.05 }));
   } else if (model === 'table') {
     legs(0.62, 0.32, 0.62, 0.045);
     parts.push(part(Box(1.4, 0.08, 0.8), wood, { y: 0.66 }));
-  } else if (model === 'bookcase') {
-    parts.push(part(Box(0.9, 1.5, 0.32), dark, { y: 0.75 }));
-    const colors = ['#b8322b', '#2f5d8a', '#3f7f34', '#c9a06a', '#6a3a8a'];
+  } else if (model === 'bookcase' && !oak) {
+    // Lantern shelf: open shelves of jars, with a spark-stone lamp on top.
+    parts.push(part(Box(0.9, 1.1, 0.06), dark, { y: 0.55, z: -0.13 }));
+    for (const x of [-0.42, 0.42]) parts.push(part(Box(0.06, 1.1, 0.3), dark, { x, y: 0.55 }));
+    const jars = ['#7fa8e8', '#c9a06a', '#9ae87a', '#e8d6a0'];
     for (let s = 0; s < 3; s++) {
-      parts.push(part(Box(0.82, 0.05, 0.3), wood, { y: 0.25 + s * 0.45, z: 0.02 }));
-      for (let b = 0; b < 6; b++) parts.push(part(Box(0.1, 0.32, 0.22), colors[(b + s) % colors.length], { x: -0.32 + b * 0.13, y: 0.43 + s * 0.45, z: 0.04, jitter: 0 }));
+      parts.push(part(Box(0.82, 0.05, 0.3), wood, { y: 0.08 + s * 0.42, z: 0.02 }));
+      if (s < 2) for (let b = 0; b < 4; b++) parts.push(part(Cyl(0.06, 0.06, 0.16, 6), jars[(b + s) % jars.length], { x: -0.27 + b * 0.18, y: 0.19 + s * 0.42, z: 0.03, jitter: 0 }));
     }
+    parts.push(part(Box(0.16, 0.24, 0.16), '#3a2e24', { y: 1.0 }));
+    parts.push(part(Box(0.11, 0.16, 0.11), '#ffe08a', { y: 1.0, jitter: 0 }));
+    parts.push(part(Cone(0.12, 0.1, 4), '#3a2e24', { y: 1.17, ry: Math.PI / 4 }));
+  } else if (model === 'bookcase') {
+    // Oak map cabinet: shallow drawers, with rolled maps on top.
+    parts.push(part(Box(0.9, 1.0, 0.42), dark, { y: 0.5 }));
+    for (let s = 0; s < 4; s++) {
+      parts.push(part(Box(0.82, 0.18, 0.04), wood, { y: 0.16 + s * 0.23, z: 0.21 }));
+      parts.push(part(Box(0.12, 0.03, 0.03), '#c9a06a', { y: 0.16 + s * 0.23, z: 0.24, jitter: 0 }));
+    }
+    for (let m = 0; m < 3; m++) parts.push(part(Cyl(0.04, 0.04, 0.6, 6), m === 1 ? '#e8dcc0' : '#d8c8a0', { x: -0.2 + m * 0.2, y: 1.04, z: (m - 1) * 0.05, rz: Math.PI / 2, ry: (m - 1) * 0.2, jitter: 0 }));
   } else {
     legs(0.45, 0.85, 0.3, 0.05);
     parts.push(part(Box(1.0, 0.16, 1.9), wood, { y: 0.32 }));
@@ -871,7 +904,7 @@ export class ResourceView {
         continue;
       }
       // Market stalls are scenery already; the resource only makes them interactive.
-      if (type === 'bakery_stall' || type === 'seed_stall') continue;
+      if (type === 'bakery_stall' || type === 'seed_stall' || type === 'ice_chest') continue;
       if (ART.v2 && type === 'copper_rock') {
         this.addCopperV2(list, material);
         continue;

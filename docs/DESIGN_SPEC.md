@@ -37,11 +37,11 @@
 | Fletching | Knife on logs: shafts, unstrung bows; bowstring stringing; arrows | Same pattern | Feathers and headless arrows, longbows, more log tiers |
 | Firemaking | Tinderbox on logs (normal 1, oak 15), lights where you stand and steps you aside; fires cook and leave ashes | Same | Willow and above; fires are not saved (they burn out) |
 | Devotion (prayer-style skill) | Bury bones (5) and warlord's bones (18); 16 original vows of the five shrine spirits, to Hearth's Bulwark (40); per-minute devotion drain; restore at the shrine or a waystone | A prayer skill with altars | Vows above 40; devotion bonus on gear |
-| Thieving | Pickpocket townsfolk (1), farmer (10), guard (40); bakery (5) and seed (27) stalls; stun on failure | Same pattern | Stall owners and guards don't catch you yet; no auto-repeat |
+| Thieving | Pickpocket townsfolk (1), farmer (8), guard (35); baker's cart (4), fishmonger's ice chest (14) and seed barrow (20); stun on failure | Same pattern | Stall owners and guards don't catch you yet; no auto-repeat |
 | Agility | Village course (5 obstacles, lap bonus); slips on the beam at low level | Many courses, shortcuts, run energy | One course; no shortcuts; no run energy to restore |
 | Farming | 4 allotments: rake, plant 2 seeds, real-time growth (36–48 min), harvest with lives; sunroot, wardleaf (shrine incense), glowcaps, bluebell flax | Same, plus herbs, trees, disease, compost, watering | Disease, compost, watering, other patch types |
 | Construction | House north of the village with 4 spaces (chair, bookcase, table, bed); planks from the sawmill, nails from the anvil; build, remove, rebuild | Instanced house, rooms, many hotspots, estate agent | Rooms, buying the house, more furniture; nails are one per plank |
-| Crafting | Tanner (2 coins a pelt), needle and thread on leather (gloves to chaps), fang amulet, chisel on sapphires, flax spun into bowstrings | Same pattern (cowhide, thread used 1 per 5 items) | Pottery, glass, jewellery; thread is used one per item (simplification) |
+| Crafting | Tanner (2 coins a pelt), needle and thread on tanned wolfhide (the wolfhide set, plus a gel-sealed jerkin), fang amulet, chisel on sapphires, flax spun into bowstrings | Same pattern (cowhide, thread used 1 per 5 items) | Pottery, glass, jewellery; thread is used one per item (simplification) |
 | Cooking | Range and fire; burn chance falls with level; food heals | Same | More foods, multi-step food (bread, pies), stop-burn by level per food |
 | Shops | Fixed price, unlimited stock, buy and sell | Stock levels that restock; price changes with stock | Stock and restock, dynamic pricing |
 | Ground items | Drops on the ground, owner-only then public, then despawn | Same structure (shorter timers) | Timers differ (approved, 4.2) |
@@ -100,7 +100,7 @@ Each step is a separate development pass with its own tests and an Android check
 
 **P1: complete existing loops the OSRS way (done)**
 4. **Firemaking:** tinderbox (new toolbelt slot) on logs, fires anywhere that cook and leave ashes.
-5. **Crafting:** Rook the tanner, leather armour, fang amulet, gem cutting, flax spun into bowstrings at the spinning wheel. Needle and chisel are new toolbelt slots.
+5. **Crafting:** Rook the tanner, the wolfhide set, fang amulet, gem cutting, flax spun into bowstrings at the spinning wheel. Needle and chisel are new toolbelt slots.
 6. **Equipment slots:** all 11. Ring slot is empty until jewellery arrives.
 7. **Steel tier:** coal rocks (Mining 30), steel bars (Smithing 30), steel tools (tier 3, need level 6 to use) and gear (level 20).
 8. **Bank tabs and placeholders:** up to 9 tabs plus main; placeholders as a bank setting (off by default).
@@ -112,7 +112,7 @@ Owner notes on P1 choices:
 
 **P2: new OSRS skills (done)**
 9. **Prayer → Devotion:** bury bones; vows to the shrine spirits raise effective levels in the custom hit formula. Replaced in originality batch 3 (`docs/ORIGINALITY.md`).
-10. **Thieving and Agility:** pickpocketing (townsfolk, farmer, guard), bakery and seed stalls; the village obstacle course east of the smithy.
+10. **Thieving and Agility:** pickpocketing (townsfolk, farmer, guard), the baker's cart, ice chest and seed barrow; the village obstacle course east of the smithy.
 11. **Farming:** four allotments, real-time growth that continues while away; rake, seed dibber and spade toolbelt slots.
 12. **Construction:** a house north of the village with four furniture spaces; Bertram's sawmill; nails from the anvil; saw toolbelt slot.
 

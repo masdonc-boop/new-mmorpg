@@ -9,7 +9,7 @@ import { RECIPES } from '../src/data/recipes';
 import { CROPS, SEEDS_PER_PATCH } from '../src/data/farming';
 
 /** RuneScape-specific names that must not appear in item names (grows with each originality batch). */
-const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i, /potato/i, /onion/i, /cabbage/i];
+const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i, /potato/i, /onion/i, /cabbage/i, /\bcowl\b/i, /\bchaps\b/i, /vambraces/i, /crude wooden/i];
 
 describe('Originality guard', () => {
   it('no item uses a banned RuneScape-specific name', () => {
@@ -319,5 +319,73 @@ describe('Batch 5b: crops', () => {
     expect(p.inventory.count('onion')).toBe(0);
     expect(p.skills.xp.prayer - xp).toBe(12);
     expect(p.prayerPoints).toBe(5);
+  });
+});
+
+describe('Batch 6: wolfhide, furniture and thieving', () => {
+  it('an old save’s leather armour, worn and banked, carries over as the wolfhide set', () => {
+    const w = new GameWorld();
+    w.player.inventory.add('leather_cowl', 1);
+    w.player.equipment.slots.body = 'leather_body';
+    w.player.bank.add('leather_chaps', 2);
+    w.player.furniture.chair = 'crude_chair';
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    const p = new GameWorld({ save }).player;
+    expect(p.inventory.count('leather_cowl')).toBe(1);
+    expect(p.equipment.get('body')).toBe('leather_body');
+    expect(p.bank.count('leather_chaps')).toBe(2);
+    expect(p.furniture.chair).toBe('crude_chair');
+    expect(['leather_gloves', 'leather_boots', 'leather_cowl', 'leather_vambraces', 'leather_body', 'leather_chaps'].map((id) => ITEMS[id as keyof typeof ITEMS].name))
+      .toEqual(['Wolfhide wraps', 'Wolfhide boots', 'Wolfhide hood', 'Wolfhide bracers', 'Wolfhide jerkin', 'Wolfhide breeches']);
+  });
+
+  it('the jerkin and breeches take two hides; a jerkin can be sealed with slime gel at Crafting 20', () => {
+    expect(RECIPES.leather_body.inputs[0]).toEqual({ item: 'leather', qty: 2 });
+    expect(RECIPES.leather_chaps).toMatchObject({ level: 9, inputs: [{ item: 'leather', qty: 2 }, { item: 'thread', qty: 2 }] });
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('crafting', xpForLevel(20));
+    p.inventory.add('leather_body', 1);
+    p.inventory.add('slime_gel', 3);
+    w.issue({ type: 'openAnywhere', kind: 'crafting' });
+    w.issue({ type: 'craft', recipe: 'sealed_jerkin', count: 1 });
+    for (let t = 0; t < 30 * 3; t++) w.tick();
+    expect(p.inventory.count('sealed_jerkin')).toBe(1);
+    expect(p.inventory.count('leather_body')).toBe(0);
+    expect(ITEMS.sealed_jerkin.equip?.armour).toBeGreaterThan(ITEMS.leather_body.equip!.armour!);
+  });
+
+  it('furniture has Brightwater names, and finishing materials are checked and used', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const h = w.hotspots.find((x) => x.def.id === 'bookcase')!;
+    p.x = p.prevX = h.x + 1;
+    p.z = p.prevZ = h.z;
+    p.skills.addXp('construction', xpForLevel(5));
+    p.inventory.add('plank', 3);
+    p.inventory.add('bronze_nails', 3);
+    const sparks = p.inventory.count('air_rune');
+    p.inventory.remove('air_rune', sparks);
+    expect(w.buildBlocker('bookcase', 'wooden_bookcase')).toBe('You need 2 spark stones.');
+    p.inventory.add('air_rune', 2);
+    expect(w.buildBlocker('bookcase', 'wooden_bookcase')).toBeNull();
+    w.issue({ type: 'build', hotspot: 'bookcase', furniture: 'wooden_bookcase' });
+    for (let t = 0; t < 30 * 3; t++) w.tick();
+    expect(p.furniture.bookcase).toBe('wooden_bookcase');
+    expect(p.inventory.count('air_rune')).toBe(0);
+  });
+
+  it('a new fishmonger’s ice chest by the river can be reached and stolen from (Thieving 14)', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const chest = w.nodes.find((n) => n.def.id === 'ice_chest')!;
+    expect(isBlocked(w.map, chest.x + 0.5, chest.z + 1.5)).toBe(false);
+    p.skills.addXp('thieving', xpForLevel(14));
+    p.x = p.prevX = chest.x + 0.5;
+    p.z = p.prevZ = chest.z + 1.5;
+    w.issue({ type: 'interact', target: chest.id });
+    for (let t = 0; t < 30 * 2; t++) w.tick();
+    expect(p.inventory.count('raw_shrimps')).toBe(1);
+    expect(p.skills.xp.thieving).toBeGreaterThan(xpForLevel(14));
   });
 });

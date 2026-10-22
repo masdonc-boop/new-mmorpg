@@ -890,7 +890,7 @@ export class Hud {
     for (const f of h.options) {
       const why = w.buildBlocker(h.id, f.id);
       const box = el('div', `inv-info build-opt${lvl < f.level ? ' locked' : ''}`);
-      box.innerHTML = `<div class="ii-name">${f.name}</div><div class="ii-desc">Level ${f.level} · ${f.xp} xp · ${f.planks} ${f.plank === 'oak_plank' ? 'oak planks' : 'planks'} + ${f.nails} nails</div>${why ? `<div class="ii-desc miss">${why}</div>` : ''}`;
+      box.innerHTML = `<div class="ii-name">${f.name}</div><div class="ii-desc">Level ${f.level} · ${f.xp} xp · ${f.planks} ${f.plank === 'oak_plank' ? 'oak planks' : 'planks'} + ${f.nails} nails${f.extra ? ` + ${f.extra.qty} ${itemDef(f.extra.item).name.toLowerCase()}` : ''}</div>${why ? `<div class="ii-desc miss">${why}</div>` : ''}`;
       const btns = el('div', 'ii-btns');
       const b = el('button', 'primary', '🔨 Build');
       b.disabled = !!why;

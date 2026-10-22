@@ -2451,6 +2451,7 @@ export class GameWorld {
     }
     if (p.inventory.count(f.plank) < f.planks) return `You need ${f.planks} ${plural(itemDef(f.plank).name.toLowerCase(), f.planks)}.`;
     if (this.nailCount() < f.nails) return `You need ${f.nails} nails.`;
+    if (f.extra && p.inventory.count(f.extra.item) < f.extra.qty) return `You need ${f.extra.qty} ${plural(itemDef(f.extra.item).name.toLowerCase(), f.extra.qty)}.`;
     return null;
   }
 
@@ -2483,6 +2484,7 @@ export class GameWorld {
     p.inventory.remove(f.plank, f.planks);
     let nails = f.nails;
     for (const n of NAILS) nails -= p.inventory.remove(n, nails);
+    if (f.extra) p.inventory.remove(f.extra.item, f.extra.qty);
     p.furniture[a.hotspot] = f.id;
     this.grantXp('construction', f.xp);
     this.emit({ type: 'house' });

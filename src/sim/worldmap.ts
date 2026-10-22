@@ -47,7 +47,8 @@ export type DecorKind =
   | 'signpost'
   | 'waystone'
   | 'furnace'
-  | 'range';
+  | 'range'
+  | 'icechest';
 
 export interface Decor {
   kind: DecorKind;
@@ -522,10 +523,13 @@ export function generateWorld(seed = 1337): WorldMap {
   // The crafting corner beside the smithy: a spinning wheel (the tanner stands just south).
   addDecor('spinning_wheel', 70.5, 73.5, true, -S / 2, 1, 0);
   stations.push({ kind: 'spinning_wheel', x: 70.5, z: 73.5, facing: -S / 2 });
-  // Thieving: the west plaza stall is the bakery stall; a seed stall stands by the fields.
+  // Thieving: the west plaza stall is the baker's cart; a seed barrow stands by the fields.
   resources.push({ type: 'bakery_stall', x: 52, z: 62 });
   addDecor('stall', 66.5, 80.5, true, 0, 1, 2);
   resources.push({ type: 'seed_stall', x: 66, z: 80 });
+  // The fishmonger's ice chest on the riverbank, by the fishing spots.
+  addDecor('icechest', 41.5, 60.5, true, S / 4, 1, 0);
+  resources.push({ type: 'ice_chest', x: 41, z: 60 });
 
   // --- NPCs ---
   const npcs: WorldMap['npcs'] = [

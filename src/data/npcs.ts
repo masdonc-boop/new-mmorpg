@@ -18,9 +18,9 @@ export interface NpcDef {
   thieving?: { level: number; xp: number; loot: { item: ItemId; min: number; max: number; weight: number }[]; stunDamage: number };
 }
 
-/** Pickpocket success: about 60% at the NPC's level, rising to 95% (OSRS-like curve). */
+/** Pickpocket success: 58% at the target's level, rising with skill to 94%. */
 export function pickpocketChance(level: number, req: number): number {
-  return Math.min(0.95, 0.6 + Math.max(0, level - req) * 0.0125);
+  return Math.min(0.94, 0.58 + Math.max(0, level - req) * 0.014);
 }
 
 export const NPCS: Record<NpcId, NpcDef> = {
@@ -46,7 +46,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
   guard: {
     id: 'guard', name: 'Captain Bram', title: 'Village Guard',
     look: { skin: '#8d5a3b', hair: '#2b1d14', hairStyle: 0, tunic: '#3b6fb6', trousers: '#2c3a4f', beard: true },
-    thieving: { level: 40, xp: 46.8, loot: [{ item: 'coins', min: 30, max: 30, weight: 1 }], stunDamage: 20 },
+    thieving: { level: 35, xp: 52, loot: [{ item: 'coins', min: 18, max: 32, weight: 4 }, { item: 'bronze_arrow', min: 4, max: 10, weight: 2 }], stunDamage: 18 },
     idleLines: [
       'Slimes in the western meadow are harmless enough. Wolves in the Whispering Woods bite back.',
       'Switch combat styles with the big button: blade, bow, or staff. Bows need arrows, wands burn spark stones.',
@@ -71,19 +71,19 @@ export const NPCS: Record<NpcId, NpcDef> = {
     id: 'townsman', name: 'Osric', title: 'Townsman',
     look: { skin: '#d9a77c', hair: '#6b4a2c', hairStyle: 0, tunic: '#7a8a4a', trousers: '#4a3a2a' },
     idleLines: ['Lovely day for a stroll round the fountain.', 'Mind your purse in the plaza, friend.'],
-    thieving: { level: 1, xp: 8, loot: [{ item: 'coins', min: 3, max: 3, weight: 1 }], stunDamage: 10 },
+    thieving: { level: 1, xp: 7, loot: [{ item: 'coins', min: 2, max: 4, weight: 4 }, { item: 'bronze_nails', min: 2, max: 4, weight: 1 }], stunDamage: 8 },
   },
   townswoman: {
     id: 'townswoman', name: 'Maud', title: 'Townswoman',
     look: { skin: '#c98e62', hair: '#2b1d14', hairStyle: 3, tunic: '#a0465a', trousers: '#4a3a46' },
-    idleLines: ['The bakery stall has the best bread in the valley.', 'Have you seen the flax by the fields? Pretty blue flowers.'],
-    thieving: { level: 1, xp: 8, loot: [{ item: 'coins', min: 3, max: 3, weight: 1 }], stunDamage: 10 },
+    idleLines: ['The baker’s cart has the best bread in the valley.', 'Have you seen the flax by the fields? Pretty blue flowers.'],
+    thieving: { level: 1, xp: 7, loot: [{ item: 'coins', min: 2, max: 4, weight: 4 }, { item: 'thread', min: 1, max: 3, weight: 1 }], stunDamage: 8 },
   },
   farmer: {
     id: 'farmer', name: 'Farmer Wren', title: 'Farmer',
     look: { skin: '#e2b48c', hair: '#c4a060', hairStyle: 1, tunic: '#6a7a3a', trousers: '#5a4632' },
     idleLines: ['Rake the weeds, plant your seeds, water and wait. That is farming.', 'Sunroot first. Everyone starts with sunroot.', 'Burn a wardleaf at the shrine. The spirits like the smell.'],
-    thieving: { level: 10, xp: 14.5, loot: [{ item: 'coins', min: 9, max: 9, weight: 3 }, { item: 'potato_seed', min: 1, max: 1, weight: 1 }], stunDamage: 10 },
+    thieving: { level: 8, xp: 16, loot: [{ item: 'coins', min: 5, max: 10, weight: 3 }, { item: 'potato_seed', min: 1, max: 2, weight: 2 }, { item: 'onion_seed', min: 1, max: 1, weight: 1 }], stunDamage: 10 },
   },
   sawyer: {
     id: 'sawyer', name: 'Bertram Ashby', title: 'Sawmill',

@@ -181,8 +181,10 @@ describe('Thieving', () => {
     const coins = p.inventory.count('coins');
     setRng(w, 0.1);
     pick(w, 'townsman');
-    expect(p.inventory.count('coins')).toBe(coins + 3);
-    expect(p.skills.xp.thieving).toBe(8);
+    const got = p.inventory.count('coins') - coins;
+    expect(got).toBeGreaterThanOrEqual(2);
+    expect(got).toBeLessThanOrEqual(4);
+    expect(p.skills.xp.thieving).toBe(7);
   });
 
   it('getting caught hurts and stuns you for 5 seconds: you cannot move', () => {
@@ -191,7 +193,7 @@ describe('Thieving', () => {
     setRng(w, 0.99);
     pick(w, 'townswoman');
     expect(p.stunTimer).toBeGreaterThan(4);
-    expect(p.hp).toBe(p.maxHp - 10);
+    expect(p.hp).toBe(p.maxHp - 8);
     const at = { x: p.x, z: p.z };
     w.issue({ type: 'moveTo', x: p.x + 4, z: p.z });
     run(w, 2);
@@ -203,25 +205,25 @@ describe('Thieving', () => {
     expect(p.stunTimer).toBeLessThanOrEqual(0);
   });
 
-  it('Farmer Wren needs Thieving 10 and sometimes has potato seeds; the guard needs 40', () => {
+  it('Farmer Wren needs Thieving 8 and sometimes has sunroot seeds; the guard needs 35', () => {
     const w = new GameWorld();
     const p = w.player;
     setRng(w, 0.1);
     w.drainEvents();
     pick(w, 'farmer');
-    expect(lastMessage(w)).toContain('Thieving level 10');
+    expect(lastMessage(w)).toContain('Thieving level 8');
     pick(w, 'guard');
-    expect(lastMessage(w)).toContain('Thieving level 40');
-    p.skills.addXp('thieving', xpForLevel(10));
-    // Rolls: success (0.1), then the loot pick lands on the seed (0.9 of the weight), then quantity.
-    const seq = [0.1, 0.9, 0.5];
+    expect(lastMessage(w)).toContain('Thieving level 35');
+    p.skills.addXp('thieving', xpForLevel(8));
+    // Rolls: success (0.1), then the loot pick lands on the sunroot seeds (0.7 of the weight), then quantity.
+    const seq = [0.1, 0.7, 0.1];
     let i = 0;
     (w as unknown as { rng: () => number }).rng = () => seq[i++ % seq.length];
     pick(w, 'farmer');
     expect(p.inventory.count('potato_seed')).toBe(1);
   });
 
-  it('steals from the bakery stall (Thieving 5); it empties and restocks', () => {
+  it('steals from the baker’s cart (Thieving 4); it empties and restocks', () => {
     const w = new GameWorld();
     const p = w.player;
     const stall = w.nodes.find((n) => n.def.id === 'bakery_stall')!;
@@ -229,21 +231,21 @@ describe('Thieving', () => {
     stand(w, stall.x, stall.z + 1.2);
     w.drainEvents();
     w.issue({ type: 'interact', target: stall.id });
-    expect(lastMessage(w)).toContain('Thieving level 5 to steal from this bakery stall');
-    p.skills.addXp('thieving', xpForLevel(5));
+    expect(lastMessage(w)).toContain('Thieving level 4 to steal from this baker’s cart');
+    p.skills.addXp('thieving', xpForLevel(4));
     const bread = p.inventory.count('bread');
     w.issue({ type: 'interact', target: stall.id });
     run(w, 1.5);
     expect(p.inventory.count('bread')).toBe(bread + 1);
     expect(stall.depleted).toBe(true);
-    run(w, 3);
+    run(w, 3.5);
     expect(stall.depleted).toBe(false);
   });
 
-  it('the seed stall (27) gives seeds; townsfolk patrol without walking through the fountain', () => {
+  it('the seed barrow (20) gives seeds; townsfolk patrol without walking through the fountain', () => {
     const w = new GameWorld();
     const stall = w.nodes.find((n) => n.def.id === 'seed_stall')!;
-    expect(stall.def.levelReq).toBe(27);
+    expect(stall.def.levelReq).toBe(20);
     for (const id of ['townsman', 'townswoman', 'farmer']) {
       const n = npc(w, id);
       for (let t = 0; t < 30 * 60; t++) {
@@ -468,7 +470,7 @@ describe('Construction', () => {
     expect(p.inventory.count('bronze_nails')).toBe(15);
   });
 
-  it('builds a crude chair with planks, nails, a hammer and a saw; remove and rebuild for more xp', () => {
+  it('builds a settler’s stool with planks, nails, a hammer and a saw; remove and rebuild for more xp', () => {
     const w = new GameWorld();
     const p = w.player;
     p.inventory.add('plank', 4);
@@ -478,7 +480,7 @@ describe('Construction', () => {
     w.issue({ type: 'build', hotspot: 'chair', furniture: 'crude_chair' });
     run(w, 3);
     expect(p.furniture.chair).toBe('crude_chair');
-    expect(p.skills.xp.construction).toBe(58);
+    expect(p.skills.xp.construction).toBe(40);
     expect(p.inventory.count('plank')).toBe(2);
     // Bronze nails are used first.
     expect(p.inventory.count('bronze_nails')).toBe(1);
@@ -487,7 +489,7 @@ describe('Construction', () => {
     expect(p.furniture.chair).toBeUndefined();
     w.issue({ type: 'build', hotspot: 'chair', furniture: 'crude_chair' });
     run(w, 3);
-    expect(p.skills.xp.construction).toBe(116);
+    expect(p.skills.xp.construction).toBe(80);
     expect(p.inventory.count('bronze_nails')).toBe(0);
     expect(p.inventory.count('iron_nails')).toBe(4);
   });
@@ -499,13 +501,13 @@ describe('Construction', () => {
     p.inventory.add('bronze_nails', 10);
     expect(w.buildBlocker('table', 'wood_table')).toBe('You need to be beside that space.');
     at(w, 'table');
-    expect(w.buildBlocker('table', 'wood_table')).toContain('Construction level 10');
-    p.skills.addXp('construction', xpForLevel(10));
+    expect(w.buildBlocker('table', 'wood_table')).toContain('Construction level 11');
+    p.skills.addXp('construction', xpForLevel(11));
     delete p.toolbelt.slots.saw;
     expect(w.buildBlocker('table', 'wood_table')).toContain('saw');
     p.toolbelt.slots.saw = 'saw';
     expect(w.buildBlocker('table', 'wood_table')).toBeNull();
-    expect(w.buildBlocker('table', 'oak_table')).toContain('Construction level 22');
+    expect(w.buildBlocker('table', 'oak_table')).toContain('Construction level 23');
     expect(w.buildBlocker('table', 'crude_chair')).toBe('You can’t build that there.');
   });
 });

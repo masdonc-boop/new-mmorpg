@@ -310,11 +310,11 @@ describe('Crafting', () => {
     p.inventory.add('thread', 3);
     w.issue({ type: 'openAnywhere', kind: 'crafting' });
     expect(w.drainEvents().some((e) => e.type === 'productionOpen' && e.station === 'crafting')).toBe(true);
-    expect(w.craftBlocker('leather_body')).toContain('Crafting level 14');
+    expect(w.craftBlocker('leather_body')).toContain('Crafting level 15');
     w.issue({ type: 'craft', recipe: 'leather_gloves', count: 1 });
     run(w, 2.5);
     expect(p.inventory.count('leather_gloves')).toBe(1);
-    expect(p.skills.xp.crafting).toBe(14);
+    expect(p.skills.xp.crafting).toBe(12);
     expect(p.inventory.count('thread')).toBe(2);
     // Without a needle anywhere, nothing can be sewn.
     delete p.toolbelt.slots.needle;

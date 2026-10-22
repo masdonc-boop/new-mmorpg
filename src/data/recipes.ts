@@ -115,14 +115,17 @@ export const RECIPES: Record<string, RecipeDef> = {
   oak_shortbow_u: r({ id: 'oak_shortbow_u', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 20, xp: 17, inputs: [{ item: 'oak_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.2 }),
   // ---- Crafting (needle and thread on leather; chisel on gems; flax at the spinning wheel)
-  leather_gloves: r({ id: 'leather_gloves', station: 'crafting', skill: 'crafting', level: 1, xp: 14, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_gloves', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  // Wolfhide set (recipe ids kept). The jerkin and breeches take two hides.
+  leather_gloves: r({ id: 'leather_gloves', station: 'crafting', skill: 'crafting', level: 1, xp: 12, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_gloves', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_boots: r({ id: 'leather_boots', station: 'crafting', skill: 'crafting', level: 3, xp: 15, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_boots', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   fang_amulet: r({ id: 'fang_amulet', station: 'crafting', skill: 'crafting', level: 4, xp: 15, inputs: [{ item: 'wolf_fang', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'fang_amulet', qty: 1 }, seconds: 1.8, tool: 'needle' }),
-  leather_boots: r({ id: 'leather_boots', station: 'crafting', skill: 'crafting', level: 7, xp: 16, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_boots', qty: 1 }, seconds: 1.8, tool: 'needle' }),
-  leather_cowl: r({ id: 'leather_cowl', station: 'crafting', skill: 'crafting', level: 9, xp: 18, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_cowl', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_cowl: r({ id: 'leather_cowl', station: 'crafting', skill: 'crafting', level: 6, xp: 18, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_cowl', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_chaps: r({ id: 'leather_chaps', station: 'crafting', skill: 'crafting', level: 9, xp: 34, inputs: [{ item: 'leather', qty: 2 }, { item: 'thread', qty: 2 }], output: { item: 'leather_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   bowstring: r({ id: 'bowstring', station: 'spinning_wheel', skill: 'crafting', level: 10, xp: 15, inputs: [{ item: 'flax', qty: 1 }], output: { item: 'bowstring', qty: 1 }, seconds: 1.8 }),
-  leather_vambraces: r({ id: 'leather_vambraces', station: 'crafting', skill: 'crafting', level: 11, xp: 22, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_vambraces', qty: 1 }, seconds: 1.8, tool: 'needle' }),
-  leather_body: r({ id: 'leather_body', station: 'crafting', skill: 'crafting', level: 14, xp: 25, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
-  leather_chaps: r({ id: 'leather_chaps', station: 'crafting', skill: 'crafting', level: 18, xp: 27, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_vambraces: r({ id: 'leather_vambraces', station: 'crafting', skill: 'crafting', level: 12, xp: 22, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_vambraces', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  leather_body: r({ id: 'leather_body', station: 'crafting', skill: 'crafting', level: 15, xp: 44, inputs: [{ item: 'leather', qty: 2 }, { item: 'thread', qty: 2 }], output: { item: 'leather_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  // Seal a jerkin with slime gel (the slimes' one gift to the village).
+  sealed_jerkin: r({ id: 'sealed_jerkin', station: 'crafting', skill: 'crafting', level: 20, xp: 38, inputs: [{ item: 'leather_body', qty: 1 }, { item: 'slime_gel', qty: 3 }], output: { item: 'sealed_jerkin', qty: 1 }, seconds: 2.2, tool: 'needle' }),
   dull_spark: r({ id: 'dull_spark', station: 'crafting', skill: 'crafting', level: 1, xp: 6, inputs: [{ item: 'spark_quartz', qty: 1 }], output: { item: 'dull_spark', qty: 8 }, seconds: 1.5, tool: 'chisel' }),
   emberglass_wand: r({ id: 'emberglass_wand', station: 'crafting', skill: 'crafting', level: 35, xp: 70, inputs: [{ item: 'emberglass_shard', qty: 2 }, { item: 'oak_logs', qty: 1 }], output: { item: 'emberglass_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 20, xp: 50, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
@@ -154,7 +157,7 @@ export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
   { a: 'knife', b: ['logs', 'oak_logs'], opens: 'fletching' },
   { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
-  { a: 'needle', b: ['leather', 'wolf_fang'], opens: 'crafting' },
+  { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body'], opens: 'crafting' },
   { a: 'chisel', b: ['sapphire', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },
 ];
 
