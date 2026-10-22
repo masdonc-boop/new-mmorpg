@@ -446,6 +446,43 @@ export function obstaclePrefab(kind: 'log' | 'wall' | 'rope' | 'beam' | 'hedge',
   return merge(parts);
 }
 
+/**
+ * A farming patch: a soil bed with a wooden edge, plus weeds (1-3) or a crop at a growth stage
+ * (0..stages; the last stage is ready to harvest).
+ */
+export function patchPrefab(weeds: number, crop: 'potato' | 'onion' | 'cabbage' | null, stage: number, stages: number, seed: number): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [part(Box(1.5, 0.12, 1.5), '#5a3f28', { y: 0.06, jitter: 0.05 })];
+  for (const [x, z, w, d] of [[0, 0.78, 1.66, 0.08], [0, -0.78, 1.66, 0.08], [0.78, 0, 0.08, 1.5], [-0.78, 0, 0.08, 1.5]]) parts.push(part(Box(w, 0.16, d), '#8a5a34', { x, y: 0.08, z }));
+  // Furrows.
+  for (const x of [-0.45, 0, 0.45]) parts.push(part(Box(0.16, 0.05, 1.3), '#4a3220', { x, y: 0.14 }));
+  if (!crop) {
+    const n = weeds * 6;
+    for (let i = 0; i < n; i++) {
+      const x = (rng() - 0.5) * 1.3;
+      const z = (rng() - 0.5) * 1.3;
+      const h = 0.15 + rng() * 0.2 * weeds;
+      parts.push(part(Cone(0.06 + rng() * 0.05, h, 4), rng() < 0.5 ? '#6f9e3c' : '#8a9a3a', { x, y: 0.12 + h / 2, z, rz: (rng() - 0.5) * 0.6, jitter: 0.06 }));
+    }
+  } else {
+    const k = Math.max(0.2, (stage + 1) / (stages + 1));
+    for (const x of [-0.45, 0, 0.45]) {
+      for (const z of [-0.45, 0, 0.45]) {
+        if (crop === 'cabbage') {
+          parts.push(part(blob(0.17 * k + 0.04, 0, 0.12, rng()), '#8fc45a', { x, y: 0.15 + 0.12 * k, z, sy: 0.85, jitter: 0.06 }));
+        } else if (crop === 'onion') {
+          for (let i = 0; i < 3; i++) parts.push(part(Cyl(0.015, 0.02, 0.5 * k, 4), '#7fae4a', { x: x + (i - 1) * 0.04, y: 0.14 + 0.25 * k, z, rz: (i - 1) * 0.2 }));
+          if (stage >= stages) parts.push(part(blob(0.07, 0, 0.1, rng()), '#e8d6a0', { x, y: 0.16, z }));
+        } else {
+          parts.push(part(blob(0.2 * k + 0.05, 0, 0.18, rng()), '#4f8f3a', { x, y: 0.16 + 0.15 * k, z, sy: 0.7, jitter: 0.08 }));
+          if (stage >= stages) parts.push(part(blob(0.05, 0, 0.1, rng()), '#f2f2d0', { x: x + 0.08, y: 0.32, z }));
+        }
+      }
+    }
+  }
+  return merge(parts);
+}
+
 /** The ring of stones and crossed logs of a campfire (for fires players light). */
 export function campfireGeometry(): THREE.BufferGeometry {
   return decorPrefab('campfire', 0, 1)!;

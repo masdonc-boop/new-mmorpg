@@ -43,7 +43,14 @@ export type IconShape =
   | 'cutgem'
   | 'cowl'
   | 'vambraces'
-  | 'seed';
+  | 'seed'
+  | 'rake'
+  | 'dibber'
+  | 'spade'
+  | 'potato'
+  | 'onion'
+  | 'cabbage'
+  | 'weeds';
 
 export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo' | 'cape' | 'neck' | 'hands' | 'feet' | 'ring';
 /** Display order (two rows of the equipment box). */
@@ -172,6 +179,15 @@ export const ITEMS = {
   leather_chaps: def({ id: 'leather_chaps', name: 'Leather chaps', examine: 'Tough leather leggings.', stackable: false, kind: 'armour', value: 26, equip: { slot: 'legs', armour: 5, tint: '#a8743f' }, icon: { shape: 'platelegs', color: '#a8743f', accent: '#5e3d1f' } }),
   fang_amulet: def({ id: 'fang_amulet', name: 'Fang amulet', examine: 'A wolf fang on a cord. Its wearer strikes a little truer.', stackable: false, kind: 'armour', value: 30, equip: { slot: 'neck', accuracy: 3, power: 1, armour: 1 }, icon: { shape: 'amulet', color: '#f1ecd9', accent: '#8a5a34' } }),
   travellers_cape: def({ id: 'travellers_cape', name: "Traveller's cape", examine: 'A warm woollen cape for the road.', stackable: false, kind: 'armour', value: 20, equip: { slot: 'cape', armour: 1 }, icon: { shape: 'cape', color: '#2f6f8a', accent: '#c9a06a' } }),
+  rake: def({ id: 'rake', name: 'Rake', examine: 'Clears weeds from a farming patch.', stackable: false, kind: 'tool', tool: { category: 'rake', tier: 1 }, value: 6, icon: { shape: 'rake', color: '#8a5a34', accent: '#a3aab3' } }),
+  seed_dibber: def({ id: 'seed_dibber', name: 'Seed dibber', examine: 'Makes holes for planting seeds.', stackable: false, kind: 'tool', tool: { category: 'seed_dibber', tier: 1 }, value: 6, icon: { shape: 'dibber', color: '#8a5a34', accent: '#a3aab3' } }),
+  spade: def({ id: 'spade', name: 'Spade', examine: 'For digging up crops.', stackable: false, kind: 'tool', tool: { category: 'spade', tier: 1 }, value: 6, icon: { shape: 'spade', color: '#8a5a34', accent: '#a3aab3' } }),
+  weeds: def({ id: 'weeds', name: 'Weeds', examine: 'Raked from a farming patch.', stackable: false, kind: 'material', value: 1, icon: { shape: 'weeds', color: '#5a8a3a', accent: '#3a5a24' } }),
+  potato: def({ id: 'potato', name: 'Potato', examine: 'A fresh potato. Bake it on a range to eat.', stackable: false, kind: 'material', value: 4, icon: { shape: 'potato', color: '#c9a06a', accent: '#8a6238' } }),
+  onion: def({ id: 'onion', name: 'Onion', examine: 'Makes your eyes water.', stackable: false, kind: 'material', value: 5, icon: { shape: 'onion', color: '#e8d6a0', accent: '#a07a3a' } }),
+  cabbage: def({ id: 'cabbage', name: 'Cabbage', examine: 'Crunchy and green. Heals 10 HP.', stackable: false, kind: 'food', value: 6, heal: 10, icon: { shape: 'cabbage', color: '#8fc45a', accent: '#5a7a34' } }),
+  baked_potato: def({ id: 'baked_potato', name: 'Baked potato', examine: 'Hot and fluffy. Heals 40 HP.', stackable: false, kind: 'food', value: 12, heal: 40, icon: { shape: 'potato', color: '#a8743f', accent: '#f6e2a0' } }),
+  burnt_potato: def({ id: 'burnt_potato', name: 'Burnt potato', examine: 'A lump of charcoal.', stackable: false, kind: 'material', value: 0, icon: { shape: 'potato', color: '#2e2622', accent: '#6a5a50' } }),
   small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),

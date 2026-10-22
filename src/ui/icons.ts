@@ -937,6 +937,98 @@ export function itemIcon(id: string): string {
       }
       break;
     }
+    case 'rake':
+    case 'dibber':
+    case 'spade': {
+      g.save();
+      g.translate(32, 32);
+      g.rotate(-0.7);
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 6;
+      g.beginPath();
+      g.moveTo(0, 26);
+      g.lineTo(0, shape === 'dibber' ? -4 : -10);
+      g.stroke();
+      g.strokeStyle = color;
+      g.lineWidth = 4;
+      g.stroke();
+      g.fillStyle = accent;
+      g.beginPath();
+      if (shape === 'rake') {
+        g.rect(-12, -16, 24, 5);
+        for (let i = -12; i <= 12; i += 6) g.rect(i - 1, -22, 2.5, 7);
+      } else if (shape === 'spade') {
+        g.moveTo(-9, -10);
+        g.lineTo(9, -10);
+        g.lineTo(8, -24);
+        g.quadraticCurveTo(0, -30, -8, -24);
+        g.closePath();
+      } else {
+        g.moveTo(-3, -4);
+        g.lineTo(3, -4);
+        g.lineTo(0, -26);
+        g.closePath();
+      }
+      g.fill();
+      outline(2);
+      if (shape === 'dibber') {
+        g.fillStyle = color;
+        g.fillRect(-9, 18, 18, 5);
+      }
+      g.restore();
+      break;
+    }
+    case 'weeds': {
+      for (const [x, lean] of [[22, -0.4], [30, -0.1], [36, 0.2], [44, 0.5]] as const) {
+        g.strokeStyle = color;
+        g.lineWidth = 4;
+        g.beginPath();
+        g.moveTo(32, 52);
+        g.quadraticCurveTo(x, 36, x + lean * 18, 18);
+        g.stroke();
+      }
+      g.fillStyle = accent;
+      g.beginPath();
+      g.ellipse(32, 50, 12, 4, 0, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'potato':
+    case 'onion': {
+      g.fillStyle = color;
+      g.beginPath();
+      if (shape === 'potato') g.ellipse(32, 36, 18, 13, -0.3, 0, Math.PI * 2);
+      else {
+        g.moveTo(32, 14);
+        g.quadraticCurveTo(52, 30, 44, 46);
+        g.quadraticCurveTo(32, 54, 20, 46);
+        g.quadraticCurveTo(12, 30, 32, 14);
+      }
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      for (const [x, y] of shape === 'potato' ? [[24, 32], [36, 40], [40, 30]] : [[32, 20]]) {
+        g.beginPath();
+        g.arc(x, y, 2, 0, Math.PI * 2);
+        g.fill();
+      }
+      break;
+    }
+    case 'cabbage': {
+      g.fillStyle = color;
+      g.beginPath();
+      g.arc(32, 36, 17, 0, Math.PI * 2);
+      g.fill();
+      outline();
+      g.strokeStyle = accent;
+      g.lineWidth = 2;
+      for (const r of [0.6, 1.6, 2.6]) {
+        g.beginPath();
+        g.arc(32, 36, 12, r, r + 1.2);
+        g.stroke();
+      }
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

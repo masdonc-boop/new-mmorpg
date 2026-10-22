@@ -303,3 +303,105 @@ describe('Agility', () => {
     expect(p.skills.xp.agility).toBe(before + 7.5);
   });
 });
+
+describe('Farming', () => {
+  /** A world with a controllable real-time clock (farming grows on real time). */
+  function farmWorld(save?: SaveData) {
+    const t = { now: 1_700_000_000_000 };
+    const w = new GameWorld({ save: save ?? null, clock: () => t.now });
+    return { w, t };
+  }
+  const work = (w: GameWorld, i: number, seconds = 8) => {
+    const f = w.patches[i];
+    stand(w, f.x + 1, f.z);
+    w.issue({ type: 'interact', target: f.id });
+    run(w, seconds);
+  };
+
+  it('has four allotments; new characters carry rake, dibber and spade; old saves get them once', () => {
+    const { w } = farmWorld();
+    expect(w.patches.length).toBe(4);
+    for (const f of w.patches) expect(isBlocked(w.map, f.x + 1, f.z) && isBlocked(w.map, f.x - 1, f.z)).toBe(false);
+    for (const t of ['rake', 'seed_dibber', 'spade'] as const) expect(w.player.toolbelt.get(t)).toBe(t);
+    const save = w.save();
+    for (const t of ['rake', 'seed_dibber', 'spade'] as const) delete save.toolbelt![t];
+    save.grants = save.grants!.filter((g) => g !== 'farming-v1');
+    const w2 = new GameWorld({ save: JSON.parse(JSON.stringify(save)) });
+    expect(w2.player.toolbelt.get('spade')).toBe('spade');
+  });
+
+  it('rake, plant, grow on real time (even across a save), then harvest with a spade', () => {
+    const { w, t } = farmWorld();
+    const p = w.player;
+    const f = w.patches[0];
+    expect(w.patchState(f).what).toBe('rake');
+    work(w, 0);
+    expect(f.weeds).toBe(0);
+    expect(p.inventory.count('weeds')).toBe(3);
+    expect(p.skills.xp.farming).toBe(12);
+    p.inventory.add('potato_seed', 4);
+    work(w, 0, 2);
+    expect(f.crop).toBe('potato');
+    expect(p.inventory.count('potato_seed')).toBe(1);
+    expect(p.skills.xp.farming).toBe(20);
+    expect(w.patchState(f).what).toBe('growing');
+    // 25 minutes later (saved and reloaded in between): still growing, stage 3 of 4.
+    t.now += 25 * 60_000;
+    const { w: w2 } = farmWorld(JSON.parse(JSON.stringify(w.save())));
+    (w2 as unknown as { clock: () => number }).clock = () => t.now;
+    expect(w2.patches[0].growth(t.now)).toMatchObject({ stage: 2, ready: false });
+    t.now += 20 * 60_000;
+    expect(w2.patchState(w2.patches[0]).what).toBe('harvest');
+    const p2 = w2.player;
+    setRng(w2, 0.99); // keep lives for a while
+    work(w2, 0, 6);
+    expect(p2.inventory.count('potato')).toBeGreaterThanOrEqual(3);
+    setRng(w2, 0); // every pick uses a life
+    work(w2, 0, 8);
+    expect(w2.patches[0].crop).toBeNull();
+    expect(w2.patches[0].weeds).toBe(0);
+  });
+
+  it('needs the right tools, enough seeds and the level for the crop', () => {
+    const { w } = farmWorld();
+    const p = w.player;
+    const f = w.patches[1];
+    f.weeds = 0;
+    p.inventory.add('cabbage_seed', 3);
+    w.drainEvents();
+    work(w, 1, 2);
+    expect(lastMessage(w)).toContain('seeds of a crop you can grow');
+    p.skills.addXp('farming', xpForLevel(7));
+    delete p.toolbelt.slots.seed_dibber;
+    work(w, 1, 2);
+    expect(lastMessage(w)).toContain('seed dibber');
+    p.toolbelt.slots.seed_dibber = 'seed_dibber';
+    work(w, 1, 2);
+    expect(f.crop).toBe('cabbage');
+  });
+
+  it('weeds creep back onto a bare patch over time', () => {
+    const { w, t } = farmWorld();
+    work(w, 2);
+    const f = w.patches[2];
+    expect(f.weeds).toBe(0);
+    t.now += 11 * 60_000;
+    expect(w.patchState(f).what).toBe('rake');
+    expect(f.weeds).toBe(2);
+  });
+
+  it('potatoes bake on a range (Cooking 7) into food', () => {
+    const { w } = farmWorld();
+    const p = w.player;
+    p.inventory.add('potato', 1);
+    p.skills.addXp('cooking', xpForLevel(40));
+    const range = w.stations.find((s) => s.kind === 'range')!;
+    stand(w, range.x - 1, range.z);
+    w.issue({ type: 'interact', target: range.id });
+    run(w, 0.5);
+    w.issue({ type: 'craft', recipe: 'baked_potato', count: 1 });
+    run(w, 2.5);
+    expect(p.inventory.count('baked_potato')).toBe(1);
+    expect(itemDef('baked_potato').heal).toBe(40);
+  });
+});

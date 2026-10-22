@@ -4,7 +4,7 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
-import { Enemy, Gravestone, GroundItem, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { Enemy, FarmPatch, Gravestone, GroundItem, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
 import { CROSS_SPEED } from '../data/agility';
@@ -12,7 +12,7 @@ import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
-import { buildStaticWorld, campfireGeometry, obstaclePrefab, ResourceView, type StaticWorld } from './props';
+import { buildStaticWorld, campfireGeometry, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
 import { makeWorldMaterial, merge } from './geom';
@@ -277,6 +277,8 @@ export class GameRenderer {
       pose = sk === 'woodcutting' ? 'chop' : sk === 'fishing' || sk === 'crafting' || sk === 'thieving' ? 'work' : 'mine';
       tool = sk === 'woodcutting' ? 'axe' : sk === 'fishing' ? 'net' : sk === 'crafting' || sk === 'thieving' ? 'none' : 'pickaxe';
     }
+    const farming = p.action?.type === 'farm' ? world.get(p.action.patch) : null;
+    if (farming instanceof FarmPatch && !p.moving && Math.hypot(farming.x - p.x, farming.z - p.z) <= 1.4) pose = 'work';
     const making = world.crafting;
     if (making && p.anim !== 'walk') {
       pose = making.station === 'anvil' ? 'smith' : 'work';
@@ -340,6 +342,7 @@ export class GameRenderer {
     this.updateGroundItems(t);
     this.updateGraves();
     if (!this.obstaclesBuilt) this.buildObstacles();
+    this.updatePatches();
     this.updateFires(t, dt);
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
@@ -443,6 +446,8 @@ export class GameRenderer {
         return a.npc;
       case 'obstacle':
         return a.obstacle;
+      case 'farm':
+        return a.patch;
       case 'station':
         return a.station;
       case 'craft':
@@ -470,6 +475,8 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
     } else if (ent instanceof Station) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.85, t);
+    } else if (ent instanceof FarmPatch) {
+      this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 1.0, t);
     } else if (ent instanceof Obstacle) {
       this.markers.setTarget(new THREE.Vector3(ent.def.x1, groundHeight(map, ent.def.x1, ent.def.z1), ent.def.z1), '#5dff8a', 0.7, t);
     } else if (ent instanceof Gravestone) {
@@ -525,6 +532,38 @@ export class GameRenderer {
       this.scene.remove(v.sprite, v.shadow);
       this.overlay.removePlate(id);
       this.groundViews.delete(id);
+    }
+  }
+
+  // ---------------------------------------------------------------- farming patches
+
+  private patchViews = new Map<number, { key: string; mesh: THREE.Mesh }>();
+  private patchMat: THREE.Material | null = null;
+  private patchCheck = 0;
+
+  /** Rebuilds a patch's model when its weeds, crop or growth stage changes (checked twice a second). */
+  private updatePatches() {
+    const now = performance.now();
+    if (now - this.patchCheck < 500) return;
+    this.patchCheck = now;
+    const w = this.world;
+    const clock = w.clock();
+    for (const f of w.patches) {
+      f.settle(clock);
+      const g = f.growth(clock);
+      const key = `${f.weeds}:${f.crop}:${g.stage}`;
+      const v = this.patchViews.get(f.id);
+      if (v?.key === key) continue;
+      this.patchMat ??= makeWorldMaterial();
+      const mesh = new THREE.Mesh(patchPrefab(f.weeds, f.crop, g.stage, g.stages, f.id), this.patchMat);
+      mesh.position.set(f.x, groundHeight(w.map, f.x, f.z), f.z);
+      mesh.receiveShadow = true;
+      if (v) {
+        this.scene.remove(v.mesh);
+        v.mesh.geometry.dispose();
+      }
+      this.scene.add(mesh);
+      this.patchViews.set(f.id, { key, mesh });
     }
   }
 
@@ -712,6 +751,11 @@ export class GameRenderer {
       const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 5;
       const a = near ? this.project(g.x, v.sprite.position.y + 0.45, g.z) : null;
       this.overlay.plate(g.id, a, { name: g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name, kind: 'npc', show: near });
+    }
+    for (const f of w.patches) {
+      const near = Math.hypot(f.x - w.player.x, f.z - w.player.z) < 4;
+      const a = near ? this.project(f.x, groundHeight(w.map, f.x, f.z) + 0.9, f.z) : null;
+      this.overlay.plate(f.id, a, { name: w.patchState(f).text, kind: 'npc', show: near });
     }
     for (const o of w.obstacles) {
       const near = Math.hypot(o.x - w.player.x, o.z - w.player.z) < 7;
@@ -940,6 +984,10 @@ export class GameRenderer {
     for (const v of this.graveViews.values()) {
       const p = v.root.position;
       consider(v.grave.id, p.x, p.y + 0.4, p.z, 0.85);
+    }
+    for (const f of w.patches) {
+      if (Math.abs(f.x - w.player.x) > 30 || Math.abs(f.z - w.player.z) > 30) continue;
+      consider(f.id, f.x, groundHeight(map, f.x, f.z) + 0.2, f.z, 0.9);
     }
     for (const o of w.obstacles) {
       if (Math.abs(o.x - w.player.x) > 30 || Math.abs(o.z - w.player.z) > 30) continue;

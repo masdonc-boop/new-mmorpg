@@ -97,6 +97,8 @@ export interface WorldMap {
   enemySpawns: { type: EnemyType; x: number; z: number }[];
   /** `patrol`: waypoints for NPCs that walk a route (their tile is left unblocked). */
   npcs: { id: NpcId; x: number; z: number; facing: number; patrol?: { x: number; z: number }[] }[];
+  /** Farming allotment patches. */
+  patches: { x: number; z: number }[];
   /** Production stations players can use (furnace, anvil, cooking range). */
   stations: { kind: Exclude<StationKind, 'fletching' | 'crafting'>; x: number; z: number; facing: number }[];
   spawn: { x: number; z: number };
@@ -518,7 +520,7 @@ export function generateWorld(seed = 1337): WorldMap {
     // Townsfolk strolling round the plaza, and the farmer by the fields.
     { id: 'townsman', x: 54.5, z: 70.0, facing: 0, patrol: [{ x: 54.5, z: 70.0 }, { x: 59.5, z: 70.0 }, { x: 60.5, z: 67.5 }] },
     { id: 'townswoman', x: 52.5, z: 64.0, facing: 0, patrol: [{ x: 52.5, z: 64.0 }, { x: 58.0, z: 63.6 }] },
-    { id: 'farmer', x: 56.5, z: 81.0, facing: 0, patrol: [{ x: 56.5, z: 81.0 }, { x: 60.5, z: 81.0 }] },
+    { id: 'farmer', x: 69.5, z: 70.4, facing: 0, patrol: [{ x: 69.5, z: 70.4 }, { x: 76.0, z: 70.4 }] },
   ];
   for (const n of npcs) if (!n.patrol) blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
 
@@ -555,6 +557,13 @@ export function generateWorld(seed = 1337): WorldMap {
     enemySpawns,
     npcs,
     stations,
+    // Allotments in a row east of the plaza, north of the smithy, tended by Farmer Wren.
+    patches: [
+      { x: 69.0, z: 68.3 },
+      { x: 71.0, z: 68.3 },
+      { x: 73.0, z: 68.3 },
+      { x: 75.0, z: 68.3 },
+    ],
     spawn: { x: 56.5, z: 63.4 },
     regions: REGIONS,
     checkpoints,

@@ -106,6 +106,7 @@ export const RECIPES: Record<string, RecipeDef> = {
   // ---- Cooking
   shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 18, output: 'burnt_fish' } }),
   cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 20, output: 'burnt_meat' } }),
+  baked_potato: r({ id: 'baked_potato', station: 'range', skill: 'cooking', level: 7, xp: 15, inputs: [{ item: 'potato', qty: 1 }], output: { item: 'baked_potato', qty: 1 }, seconds: 1.8, fail: { chance: 0.3, stopLevel: 40, output: 'burnt_potato' } }),
   anchovies: r({ id: 'anchovies', station: 'range', skill: 'cooking', level: 15, xp: 40, inputs: [{ item: 'raw_anchovies', qty: 1 }], output: { item: 'anchovies', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 34, output: 'burnt_fish' } }),
 };
 

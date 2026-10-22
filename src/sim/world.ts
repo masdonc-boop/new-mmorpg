@@ -12,6 +12,7 @@ import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { TANNING } from '../data/tanning';
+import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
 import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
 import { BONES, DRAIN_RESISTANCE, PRAYER_TICK, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
@@ -158,6 +159,8 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** A farming patch changed (weeds, crop or harvest). */
+  | { type: 'patch'; patch: number }
   /** An agility obstacle was crossed. */
   | { type: 'obstacle'; obstacle: number }
   /** A pickpocket attempt on an NPC (for its reaction). */
@@ -188,6 +191,7 @@ export type PlayerAction =
   | { type: 'firemaking'; item: ItemId }
   | { type: 'pickpocket'; npc: number }
   | { type: 'obstacle'; obstacle: number; crossing: boolean; t: number }
+  | { type: 'farm'; patch: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
@@ -279,6 +283,51 @@ export class Obstacle {
   get z(): number {
     return (this.def.z1 + this.def.z2) / 2;
   }
+}
+
+/**
+ * A farming allotment. Growth and weeds run on real time (epoch milliseconds from the world clock),
+ * so crops keep growing while the player is away, as in OSRS.
+ */
+export class FarmPatch {
+  weeds = MAX_WEEDS;
+  crop: CropId | null = null;
+  plantedAt = 0;
+  lives = 0;
+  /** When the patch was last cleared or harvested (weeds creep back from then). */
+  bareSince = 0;
+  constructor(
+    public readonly id: number,
+    public readonly index: number,
+    public readonly x: number,
+    public readonly z: number,
+  ) {}
+
+  /** Growth stage now (0 = just planted) and whether it's ready to harvest. */
+  growth(now: number): { stage: number; stages: number; ready: boolean; minutesLeft: number } {
+    if (!this.crop) return { stage: 0, stages: 0, ready: false, minutesLeft: 0 };
+    const c = CROPS[this.crop];
+    const stageMs = c.stageMinutes * 60_000;
+    const stage = Math.max(0, Math.min(c.stages, Math.floor((now - this.plantedAt) / stageMs)));
+    const left = Math.max(0, this.plantedAt + c.stages * stageMs - now);
+    return { stage, stages: c.stages, ready: stage >= c.stages, minutesLeft: Math.ceil(left / 60_000) };
+  }
+
+  /** Weeds creep back onto a bare patch over time (up to the maximum). */
+  settle(now: number) {
+    if (this.crop || this.weeds >= MAX_WEEDS || this.bareSince <= 0) return;
+    const grown = Math.floor((now - this.bareSince) / (WEED_MINUTES * 60_000));
+    if (grown <= this.weeds) return;
+    this.weeds = Math.min(MAX_WEEDS, grown);
+  }
+}
+
+export interface SavedPatch {
+  weeds: number;
+  crop: CropId | null;
+  plantedAt: number;
+  lives: number;
+  bareSince: number;
 }
 
 export interface SavedGrave {
@@ -515,6 +564,7 @@ export type Interactable =
   | { kind: 'ground'; entity: GroundItem }
   | { kind: 'grave'; entity: Gravestone }
   | { kind: 'obstacle'; entity: Obstacle }
+  | { kind: 'patch'; entity: FarmPatch }
   | { kind: 'station'; entity: Station };
 
 export interface SaveData {
@@ -537,6 +587,8 @@ export interface SaveData {
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** Size of the worn ammo stack. */
   ammoQty?: number;
+  /** Farming patches by index (optional for older saves). */
+  patches?: SavedPatch[];
   /** Agility laps completed (optional for older saves). */
   laps?: number;
   /** Prayer points (optional for older saves: full). */
@@ -563,6 +615,9 @@ export class GameWorld {
   readonly npcs: Npc[] = [];
   readonly stations: Station[] = [];
   readonly obstacles: Obstacle[] = [];
+  readonly patches: FarmPatch[] = [];
+  /** Real-world clock in epoch ms (farming growth). Injected so tests and a server can control it. */
+  readonly clock: () => number;
   /** Fires lit by players (also listed in `stations` while they burn). Not saved: they burn out. */
   fires: Fire[] = [];
   groundItems: GroundItem[] = [];
@@ -572,9 +627,10 @@ export class GameWorld {
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch>();
 
-  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null } = {}) {
+  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number } = {}) {
+    this.clock = opts.clock ?? (() => Date.now());
     this.map = generateWorld(opts.seed ?? 1337);
     this.rng = mulberry32((opts.seed ?? 1337) ^ 0x5eed);
     const s = opts.save;
@@ -591,6 +647,20 @@ export class GameWorld {
       const station = new Station(3000 + i, st.kind, st.x, st.z);
       this.stations.push(station);
       this.byId.set(station.id, station);
+    });
+    this.map.patches.forEach((pt, i) => {
+      const f = new FarmPatch(4100 + i, i, pt.x, pt.z);
+      const sp = s?.patches?.[i];
+      if (sp && typeof sp === 'object') {
+        f.weeds = Number.isInteger(sp.weeds) ? Math.max(0, Math.min(MAX_WEEDS, sp.weeds)) : MAX_WEEDS;
+        f.crop = sp.crop && sp.crop in CROPS ? sp.crop : null;
+        f.plantedAt = Number.isFinite(sp.plantedAt) ? sp.plantedAt : 0;
+        f.lives = Number.isInteger(sp.lives) ? Math.max(0, Math.min(PATCH_LIVES, sp.lives)) : 0;
+        f.bareSince = Number.isFinite(sp.bareSince) ? sp.bareSince : 0;
+        if (f.crop) f.weeds = 0;
+      }
+      this.patches.push(f);
+      this.byId.set(f.id, f);
     });
     VILLAGE_COURSE.forEach((def, i) => {
       const o = new Obstacle(4000 + i, def, i);
@@ -635,7 +705,7 @@ export class GameWorld {
   /** Tools every character should own once (older saves receive them after the production update). */
   static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
   /** Everything a new character starts with on the toolbelt. */
-  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox', 'needle', 'chisel'];
+  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox', 'needle', 'chisel', 'rake', 'seed_dibber', 'spade'];
 
   /** Once, when the toolbelt arrives: move the tools already in the bag onto it (frees their slots). */
   private introduceToolbelt() {
@@ -700,6 +770,7 @@ export class GameWorld {
     this.player.grants.add('ammo-v1');
     this.player.grants.add('firemaking-v1');
     this.player.grants.add('crafting-v1');
+    this.player.grants.add('farming-v1');
     for (const t of GameWorld.STARTER_BELT) this.player.toolbelt.slots[itemDef(t).tool!.category] = t;
     inv.add('bread', 2);
     this.player.equipment.slots.ammo = 'bronze_arrow';
@@ -729,6 +800,7 @@ export class GameWorld {
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather },
       laps: p.laps,
+      patches: this.patches.map((f) => ({ weeds: f.weeds, crop: f.crop, plantedAt: f.plantedAt, lives: f.lives, bareSince: f.bareSince })),
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
       grants: [...p.grants],
@@ -757,6 +829,7 @@ export class GameWorld {
     this.introduceToolbelt();
     this.introduceAmmoSlot();
     this.grantSkillTools('firemaking-v1', ['tinderbox'], 'New skill: Firemaking! Tilly put a tinderbox on your toolbelt. Tap logs in your bag to light a fire.');
+    this.grantSkillTools('farming-v1', ['rake', 'seed_dibber', 'spade'], 'New skill: Farming! Tilly put a rake, seed dibber and spade on your toolbelt. The allotments are east of the plaza.');
     this.grantSkillTools('crafting-v1', ['needle', 'chisel'], 'New skill: Crafting! Tilly put a needle and a chisel on your toolbelt. Rook by the smithy tans pelts into leather.');
     p.autoGather = s.options?.autoGather === true;
     if (Array.isArray(s.overflow)) {
@@ -798,7 +871,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | undefined {
     return this.byId.get(id);
   }
 
@@ -810,6 +883,7 @@ export class GameWorld {
     if (e instanceof GroundItem) return e.visibleTo(this.player.id) ? { kind: 'ground', entity: e } : null;
     if (e instanceof Station) return { kind: 'station', entity: e };
     if (e instanceof Obstacle) return { kind: 'obstacle', entity: e };
+    if (e instanceof FarmPatch) return { kind: 'patch', entity: e };
     if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
   }
@@ -1126,6 +1200,7 @@ export class GameWorld {
     else if (action?.type === 'firemaking') this.updateFiremaking(action.item, dt);
     else if (action?.type === 'pickpocket') this.updatePickpocket(action.npc, dt);
     else if (action?.type === 'obstacle') this.updateObstacleApproach(action);
+    else if (action?.type === 'farm') this.updateFarming(action.patch, dt);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
 
@@ -1209,6 +1284,10 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'patch') {
+      if (this.farmBlocker(it.entity, true)) return;
+      p.action = { type: 'farm', patch: id };
+      p.gatherTimer = 0.9;
     } else if (it.kind === 'obstacle') {
       if (p.skills.level('agility') < it.entity.def.level) {
         this.message(`You need Agility level ${it.entity.def.level} to attempt that.`, 'warn');
@@ -2162,6 +2241,105 @@ export class GameWorld {
       this.message(`You eat the ${d.name.toLowerCase()}. It heals ${p.hp - before} HP.`, 'good');
     } else {
       this.message(d.examine);
+    }
+  }
+
+  // ---------------------------------------------------------------- farming
+
+  /** The seed the player would plant now: the highest-level crop they can grow and have 3 seeds for. */
+  plantableSeed(): ItemId | null {
+    const p = this.player;
+    const lvl = p.skills.level('farming');
+    const ok = Object.values(CROPS).filter((c) => lvl >= c.level && p.inventory.count(c.seed) >= SEEDS_PER_PATCH);
+    return ok.sort((a, b) => b.level - a.level)[0]?.seed ?? null;
+  }
+
+  /** What tapping the patch would do next, for prompts and the status line. */
+  patchState(f: FarmPatch): { what: 'rake' | 'plant' | 'growing' | 'harvest'; text: string } {
+    const now = this.clock();
+    f.settle(now);
+    if (f.crop) {
+      const g = f.growth(now);
+      const c = CROPS[f.crop];
+      if (g.ready) return { what: 'harvest', text: `${c.name} ready to harvest` };
+      return { what: 'growing', text: `${c.name} growing (${g.stage + 1}/${g.stages}) · ready in ${g.minutesLeft} min` };
+    }
+    if (f.weeds > 0) return { what: 'rake', text: `Weedy patch · rake it (${f.weeds} left)` };
+    return { what: 'plant', text: 'Empty patch · plant 3 seeds' };
+  }
+
+  /** Why the next step can't happen (null if it can). */
+  private farmBlocker(f: FarmPatch, verbose: boolean): string | null {
+    const st = this.patchState(f);
+    const p = this.player;
+    let why: string | null = null;
+    if (st.what === 'rake') why = this.toolFor('rake').tool ? null : this.toolFor('rake').why;
+    else if (st.what === 'plant') {
+      if (!this.toolFor('seed_dibber').tool) why = this.toolFor('seed_dibber').why;
+      else if (!this.plantableSeed()) why = `You need ${SEEDS_PER_PATCH} seeds of a crop you can grow (potato seeds from Farming 1; Tilly sells them).`;
+    } else if (st.what === 'growing') why = `${st.text}.`;
+    else if (!this.toolFor('spade').tool) why = this.toolFor('spade').why;
+    else if (p.inventory.capacityFor(CROPS[f.crop!].produce) <= 0) why = 'Your inventory is full.';
+    if (why && verbose) {
+      if (why === 'Your inventory is full.') this.inventoryFull();
+      else this.message(why, st.what === 'growing' ? 'info' : 'warn');
+    }
+    return why;
+  }
+
+  private updateFarming(id: number, dt: number) {
+    const p = this.player;
+    const f = this.byId.get(id);
+    if (!(f instanceof FarmPatch)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(f.x, f.z, 1.3, true)) return;
+    p.facing = Math.atan2(f.x - p.x, f.z - p.z);
+    p.gatherTimer -= dt;
+    if (p.gatherTimer > 0) return;
+    p.gatherTimer = 1.8;
+    if (this.farmBlocker(f, true)) {
+      p.action = null;
+      return;
+    }
+    const now = this.clock();
+    const st = this.patchState(f);
+    if (st.what === 'rake') {
+      f.weeds--;
+      p.inventory.add('weeds', 1);
+      this.grantXp('farming', RAKE_XP);
+      this.emit({ type: 'patch', patch: f.id });
+      if (f.weeds <= 0) {
+        f.bareSince = now;
+        p.action = null;
+        this.message('The patch is clear. Plant seeds with your seed dibber.', 'good');
+      }
+    } else if (st.what === 'plant') {
+      const seed = this.plantableSeed()!;
+      const c = cropForSeed(seed)!;
+      p.inventory.remove(seed, SEEDS_PER_PATCH);
+      f.crop = c.id;
+      f.plantedAt = now;
+      f.lives = PATCH_LIVES;
+      this.grantXp('farming', c.plantXp);
+      this.emit({ type: 'patch', patch: f.id });
+      this.message(`You plant ${SEEDS_PER_PATCH} ${plural(itemDef(seed).name.toLowerCase(), SEEDS_PER_PATCH)}. They will be ready in about ${c.stages * c.stageMinutes} minutes.`, 'good');
+      p.action = null;
+    } else if (st.what === 'harvest') {
+      const c = CROPS[f.crop!];
+      p.inventory.add(c.produce, 1);
+      this.emit({ type: 'loot', item: c.produce, qty: 1 });
+      this.grantXp('farming', c.harvestXp);
+      if (this.rng() < lifeLossChance(p.skills.level('farming'))) f.lives--;
+      if (f.lives <= 0) {
+        f.crop = null;
+        f.weeds = 0;
+        f.bareSince = now;
+        p.action = null;
+        this.message('You have harvested the patch completely.', 'good');
+      }
+      this.emit({ type: 'patch', patch: f.id });
     }
   }
 
