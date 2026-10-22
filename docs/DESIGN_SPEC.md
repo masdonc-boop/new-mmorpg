@@ -131,6 +131,14 @@ Phase 3A plan: the multiplayer architecture, codebase audit and milestone roadma
 
 **Phase 4A, world expansion (built):** Eastreach, a second landmass across the Saltwind Causeway, with two complete regions: Mirefen Marsh (Heronwick, levels 15–30) and the Thornridge Highlands (Cairnhold, levels 22–34). Each has a settlement with a bank, shop, station and waystone, new resources and chains, creatures and a boss, and a quest. Plan, contents and what remains: `docs/WORLD_EXPANSION.md`.
 
+**Phase 4B, skill and equipment progression (built):**
+- a training focus so Attack, Strength and Defence train independently;
+- style-specific gear bonuses;
+- full melee, ranged and magic tiers from 1 to 45, with their gathering and crafting chains;
+- quest requirements, tiered loot and a dungeon framework.
+
+Details and deferred items: `docs/PROGRESSION.md`.
+
 Owner decisions so far:
 - On hold: no server is built until hosting is chosen (no paid services or public deployment without approval).
 - Sign-in, when it comes: simple username and password accounts stored on the game server, with hashed passwords.

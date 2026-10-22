@@ -1563,13 +1563,14 @@ export class Hud {
       const cur = xpForLevel(lvl);
       const next = lvl >= MAX_LEVEL ? cur : xpForLevel(lvl + 1);
       const pct = lvl >= MAX_LEVEL ? 100 : ((xp - cur) / (next - cur)) * 100;
+      const nextUnlock = skillUnlocks(id).find((u) => u.level > lvl);
       const card = el(
         'div',
         'skill-card',
         `<div class="sk-icon" style="background:${info.color}">${info.glyph}</div>
          <div class="sk-main"><div class="sk-row"><span class="sk-name">${info.name}</span><span class="sk-lvl">${lvl}<small>/${MAX_LEVEL}</small></span></div>
          <div class="sk-bar"><div style="width:${pct.toFixed(1)}%;background:${info.color}"></div></div>
-         <div class="sk-xp">${Math.floor(xp).toLocaleString()} xp${lvl < MAX_LEVEL ? ` · ${Math.ceil(next - xp).toLocaleString()} to next` : ''}</div></div>`,
+         <div class="sk-xp">${Math.floor(xp).toLocaleString()} xp${lvl < MAX_LEVEL ? ` · ${Math.ceil(next - xp).toLocaleString()} to next` : ''}</div>${nextUnlock ? `<div class="sk-next">Next at ${nextUnlock.level}: ${nextUnlock.text}</div>` : ''}</div>`,
       );
       card.addEventListener('click', () => {
         this.openSkill = this.openSkill === id ? null : id;

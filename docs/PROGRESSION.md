@@ -71,3 +71,45 @@ Hitpoints always gains its share. The total xp per damage is unchanged, so no fo
   - Nothing blocks *walking* anywhere.
 - **Loot tables:** each creature drops some gear of its own tier now and then, and each boss has a signature drop.
 - **Dungeon framework** (`src/data/dungeons.ts`): entry requirements, recommended levels and reward tables for the Sunken Shrine and the Old Watchtower, ready for Phase 4C.
+
+## 3. What Phase 4B built
+
+| Batch | What |
+|---|---|
+| 4B.1 | **Training focus** (Skills panel): shared, Attack, Strength or Defence. Saved per character; a validated `setFocus` command. |
+| 4B.2 | **Style bonuses** (`styleBonus`): metal armour costs magic and ranged accuracy, and wolfhide adds ranged accuracy. Melee tiers completed (iron dagger, duskiron sword). The warhammer needs Strength 45; glimsteel arrows need Ranged 30. The item card shows style bonuses, and each requirement as met (green) or unmet (red). |
+| 4B.3 | **Ranged and magic tiers with their chains:** rowan trees and gear, iron and steel arrows, boarhide and ridgehide (tanned by Rook), linen and mireweave robes, the mirelight wand and rowan staff. Skill guides cover every tier and Eastreach. |
+| 4B.4 | **World progression:** quest requirements (checked by the simulation; shown in the journal), loot tables by tier with boss signature drops, and the dungeon framework (`src/data/dungeons.ts`). |
+| 4B.5 | **Polish:** a "Next at N" unlock line on every skill card; multiplayer tests; skills grid overflow fix; docs. |
+
+### The tiers as built
+
+| Level | Melee | Ranged | Magic |
+|---|---|---|---|
+| 1 | Bronze set, wooden shield | Shortbow, bronze arrows, wolfhide (ranged accuracy +1 to +5 per piece) | Riverwood wand, linen robes |
+| 10 | Iron set (dagger new) | Iron arrows; oak shortbow (15) | — |
+| 20 | Steel set | Steel arrows, boarhide (body also Defence 20); riverwood longbow (22); willow shortbow (25) | Emberglass wand (25); mireweave (25) |
+| 30 | Glimsteel set | Glimsteel arrows, ridgehide (body also Defence 30); rowan shortbow (35) | Mirelight wand (35) |
+| 40–45 | Duskiron set (sword new; warhammer also Strength 45) | Rowan longbow (40) | Rowan staff (40, two-handed) |
+
+### Saves, multiplayer and security
+- **No item ids were renamed or removed.** New fields (`options.focus`) are optional; older saves load with the original shared split.
+- **Gear worn above the wearer's level** in an older save stays worn and nothing is lost. Requirements apply when putting gear on, as before.
+- **Quests already under way** carry on whatever their requirements.
+- **Server-side:** the focus, quest requirements and every recipe and equip check run in the simulation, which the server is. Clients only send intents (tested over the network, including junk values). Trades of the new items go through the same escrow and ledger.
+- **Economy guards (tests):**
+  - no shop item sells back at a profit;
+  - no recipe or tanning turns shop-bought inputs into more coins;
+  - every wearable can be obtained;
+  - every new material has a use;
+  - creature loot rises with level, bosses are worth more than five regular kills, and gear drops stay within a creature's tier.
+
+### Deferred
+- **Melee stances** with small level boosts, and special attacks.
+- **More combat skills:** Ranged and Magic have no separate "power" skill; Ranged and Magic max hits come from their own level, as before.
+- **Combat triangle:** creatures attack only in melee, so ranged and magic armour bonuses against them don't exist yet.
+- **Herblore and potions, and runecraft-like spark stone tiers:** spark stones are the only magic ammunition.
+- **Gear above level 45**, dyes, and gear degradation.
+- **Gloves, boots, capes, amulets and rings** are not drawn on the hero; head, body, legs, weapon and shield are.
+- **A Cairnhold tanner:** hides go to Rook in Brightwater.
+- **The dungeons themselves** (Phase 4C): the planned uniques in `src/data/dungeons.ts` aren't in the item list yet.

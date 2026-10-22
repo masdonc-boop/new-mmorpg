@@ -817,7 +817,8 @@ button.danger {
 }
 .skills-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* minmax(0, …): long lines in a card ellipsize instead of widening the column off-screen. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 7px;
 }
 .skill-card {
@@ -2807,4 +2808,12 @@ button.danger {
 }
 .req-no {
   color: #ff8a7a;
+}
+/* The next thing a skill unlocks, under its xp line (Phase 4B). */
+.sk-next {
+  font-size: 10px;
+  color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
