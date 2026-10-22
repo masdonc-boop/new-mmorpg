@@ -15,6 +15,7 @@ export const TILE_COLORS: Record<number, string> = {
   [T.Bridge]: '#c9b98a',
   [T.Field]: '#b58a4e',
   [T.Camp]: '#a88a5e',
+  [T.Cave]: '#5f5a52',
 };
 
 /** Builds the flat-shaded, vertex-coloured terrain mesh. */

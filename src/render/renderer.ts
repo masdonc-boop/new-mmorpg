@@ -3,8 +3,8 @@ import { lerp } from '../core/math';
 import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
-import { BANK_COUNTER, EXCHANGE, groundHeight } from '../sim/worldmap';
-import { Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { BANK_COUNTER, EXCHANGE, groundHeight, inHollow } from '../sim/worldmap';
+import { Doorway, Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
 import { CROSS_SPEED } from '../data/agility';
@@ -60,6 +60,14 @@ export class GameRenderer {
   readonly camera: THREE.PerspectiveCamera;
   readonly overlay: WorldOverlay;
   private sun: THREE.DirectionalLight;
+  private hemi: THREE.HemisphereLight;
+  private ambient: THREE.AmbientLight;
+  /** The glowcap lantern's light, carried with the player underground. */
+  private lantern = new THREE.PointLight('#d8ffb8', 0, 11, 1.4);
+  /** 0 on the surface, 1 deep in Glimmer Hollow (eases between). */
+  private darkK = 0;
+  private skyColor = new THREE.Color(SKY);
+  private caveColor = new THREE.Color('#040506');
   private time = { value: 0 };
   private terrain: THREE.Mesh;
   private water: THREE.Mesh;
@@ -95,13 +103,15 @@ export class GameRenderer {
     this.overlay = new WorldOverlay(overlayParent);
 
     const hemi = new THREE.HemisphereLight('#dff3ff', '#5d7d3a', 1.35);
+    this.hemi = hemi;
     this.scene.add(hemi);
     this.sun = new THREE.DirectionalLight('#fff0d0', 2.1);
     this.sun.castShadow = true;
     this.sun.shadow.bias = -0.0008;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
-    this.scene.add(new THREE.AmbientLight('#ffffff', 0.2));
+    this.ambient = new THREE.AmbientLight('#ffffff', 0.2);
+    this.scene.add(this.ambient, this.lantern);
 
     const map = world.map;
     this.terrain = buildTerrain(map);
@@ -378,6 +388,7 @@ export class GameRenderer {
     const fog = this.scene.fog as THREE.Fog;
     fog.near = d * 1.4;
     fog.far = d * 3.6;
+    this.updateDarkness(dt, px, py, pz, d);
 
     // Shadow frustum follows the camera target.
     const sr = Math.min(40, d * 0.95);
@@ -437,6 +448,35 @@ export class GameRenderer {
     }
   }
 
+  /**
+   * Glimmer Hollow is dark: daylight and sky fade out underground, the fog closes in, and a burning
+   * glowcap lantern lights a green circle round the player (a faint one without it, so you can
+   * still find the way out).
+   */
+  private updateDarkness(dt: number, px: number, py: number, pz: number, d: number) {
+    const target = inHollow(px, pz) ? 1 : 0;
+    this.darkK += (target - this.darkK) * Math.min(1, dt * 3);
+    if (Math.abs(this.darkK - target) < 0.002) this.darkK = target;
+    const k = this.darkK;
+    const lit = this.world.isLit();
+    this.hemi.intensity = 1.35 * (1 - 0.95 * k);
+    this.sun.intensity = 2.1 * (1 - 0.98 * k);
+    this.ambient.intensity = 0.2 * (1 - 0.75 * k);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(this.skyColor).lerp(this.caveColor, k);
+    (this.scene.background as THREE.Color).copy(fog.color);
+    if (k > 0) {
+      fog.near = THREE.MathUtils.lerp(fog.near, d * 0.85, k);
+      fog.far = THREE.MathUtils.lerp(fog.far, d * (lit ? 1.75 : 1.2), k);
+    }
+    this.lantern.intensity = k * (lit ? 4.2 + Math.sin(this.time.value * 7) * 0.15 : 0.9);
+    this.lantern.distance = lit ? 11 : 4;
+    this.lantern.color.set(lit ? '#d8ffb8' : '#8a9aa8');
+    this.lantern.position.set(px, py + 1.7, pz);
+    // No sea underground (its shader would show through the dark at the screen edges).
+    this.water.visible = k < 0.5;
+  }
+
   private selectedId(): number | null {
     const a = this.world.player.action;
     if (!a) return null;
@@ -459,6 +499,8 @@ export class GameRenderer {
         return a.patch;
       case 'hotspot':
         return a.hotspot;
+      case 'passage':
+        return a.passage;
       case 'build':
         return this.world.hotspots.find((h) => h.def.id === a.hotspot)?.id ?? null;
       case 'station':
@@ -488,6 +530,8 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
     } else if (ent instanceof Station) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.85, t);
+    } else if (ent instanceof Doorway) {
+      this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.9, t);
     } else if (ent instanceof Hotspot) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.8, t);
     } else if (ent instanceof FarmPatch) {
@@ -833,6 +877,11 @@ export class GameRenderer {
       const a = near ? this.project(f.x, groundHeight(w.map, f.x, f.z) + 0.9, f.z) : null;
       this.overlay.plate(f.id, a, { name: w.patchState(f).text, kind: 'npc', show: near });
     }
+    for (const dw of w.doorways) {
+      const near = Math.hypot(dw.x - w.player.x, dw.z - w.player.z) < 7;
+      const a = near ? this.project(dw.x, groundHeight(w.map, dw.x, dw.z) + 1.9, dw.z) : null;
+      this.overlay.plate(dw.id, a, { name: dw.def.name, kind: 'npc', show: near });
+    }
     for (const o of w.obstacles) {
       const near = Math.hypot(o.x - w.player.x, o.z - w.player.z) < 7;
       const a = near ? this.project(o.x, groundHeight(w.map, o.x, o.z) + 1.5, o.z) : null;
@@ -980,6 +1029,12 @@ export class GameRenderer {
         if (e.id === p.id) this.shake(0.5);
         break;
       }
+      case 'passage': {
+        // Coming through a passage is a jump across the map: snap the camera.
+        this.camTarget.set(p.x, groundHeight(w.map, p.x, p.z) + 0.8, p.z);
+        this.darkK = inHollow(p.x, p.z) ? 1 : 0;
+        break;
+      }
       case 'respawn': {
         if (e.id === p.id) {
           const r = new THREE.Vector3(p.x, groundHeight(w.map, p.x, p.z), p.z);
@@ -1072,6 +1127,10 @@ export class GameRenderer {
     for (const h of w.hotspots) {
       if (Math.abs(h.x - w.player.x) > 30 || Math.abs(h.z - w.player.z) > 30) continue;
       consider(h.id, h.x, groundHeight(map, h.x, h.z) + 0.4, h.z, 0.9);
+    }
+    for (const dw of w.doorways) {
+      if (Math.abs(dw.x - w.player.x) > 30 || Math.abs(dw.z - w.player.z) > 30) continue;
+      consider(dw.id, dw.x, groundHeight(map, dw.x, dw.z) + 0.7, dw.z, 1.1);
     }
     for (const f of w.patches) {
       if (Math.abs(f.x - w.player.x) > 30 || Math.abs(f.z - w.player.z) > 30) continue;

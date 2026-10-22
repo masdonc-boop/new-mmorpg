@@ -26,7 +26,8 @@ import { toolLabel, type ToolCategory } from '../data/tools';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
-import { T, generateWorld, isBlocked, regionAt, tileAt, type Checkpoint, type WorldMap } from './worldmap';
+import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
+import { LANTERN_SECONDS } from '../data/hollow';
 
 export const TICK_SECONDS = 1 / 30;
 export const PLAYER_SPEED = 4.4;
@@ -201,6 +202,8 @@ export type GameEvent =
   | { type: 'house' }
   /** A farming patch changed (weeds, crop or harvest). */
   | { type: 'patch'; patch: number }
+  /** The player came through a passage (cave mouth or way up). */
+  | { type: 'passage'; passage: number }
   /** An agility obstacle was crossed. */
   | { type: 'obstacle'; obstacle: number }
   /** A pickpocket attempt on an NPC (for its reaction). */
@@ -235,6 +238,7 @@ export type PlayerAction =
   | { type: 'obstacle'; obstacle: number; crossing: boolean; t: number; reverse?: boolean }
   | { type: 'farm'; patch: number }
   | { type: 'hotspot'; hotspot: number }
+  | { type: 'passage'; passage: number }
   | { type: 'build'; hotspot: string; furniture: string; t: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
@@ -371,6 +375,22 @@ export class FarmPatch {
   }
 }
 
+/** A passage between the surface and Glimmer Hollow (tap to go through to the other end). */
+export class Doorway {
+  constructor(
+    public readonly id: number,
+    public readonly def: Passage,
+  ) {}
+
+  get x(): number {
+    return this.def.x;
+  }
+
+  get z(): number {
+    return this.def.z;
+  }
+}
+
 /** A furniture space in the player's house. */
 export class Hotspot {
   constructor(
@@ -465,6 +485,10 @@ export class Player implements Mover {
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
   /** Items carried to the shrines by faded wisps, waiting to be reclaimed for a fee. */
   shrineHeld: ItemStack[] = [];
+  /** Seconds left on the glowcap burning in the lantern (counts down only underground). */
+  lanternBurn = 0;
+  /** Already told the lantern is out (so the warning shows once). */
+  darkWarned = false;
   craftTimer = 0;
   fireTimer = 0;
   /** Prayer points (max = Prayer level). Fractions never show; they drain a whole point at a time. */
@@ -636,6 +660,7 @@ export type Interactable =
   | { kind: 'obstacle'; entity: Obstacle }
   | { kind: 'patch'; entity: FarmPatch }
   | { kind: 'hotspot'; entity: Hotspot }
+  | { kind: 'passage'; entity: Doorway }
   | { kind: 'station'; entity: Station };
 
 export interface SaveData {
@@ -674,6 +699,8 @@ export interface SaveData {
   graves?: SavedGrave[];
   /** Items held at the shrines after a wisp faded (optional for older saves). */
   shrineHeld?: { item: string; qty: number }[];
+  /** Glowcap lantern time left (optional for older saves). */
+  lanternBurn?: number;
   /** One-time grants already received (optional for older saves). */
   grants?: string[];
   /** Toolbelt contents by category (optional for older saves). */
@@ -692,6 +719,7 @@ export class GameWorld {
   readonly npcs: Npc[] = [];
   readonly stations: Station[] = [];
   readonly obstacles: Obstacle[] = [];
+  readonly doorways: Doorway[] = [];
   readonly patches: FarmPatch[] = [];
   readonly hotspots: Hotspot[] = [];
   /** The PRACTICE market: simulated traders and practice balances, separate from real wealth. */
@@ -708,7 +736,7 @@ export class GameWorld {
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number } = {}) {
     this.clock = opts.clock ?? (() => Date.now());
@@ -756,6 +784,11 @@ export class GameWorld {
       this.obstacles.push(o);
       this.byId.set(o.id, o);
     });
+    this.map.passages.forEach((def, i) => {
+      const d = new Doorway(4500 + i, def);
+      this.doorways.push(d);
+      this.byId.set(d.id, d);
+    });
     SHORTCUTS.forEach((def, i) => {
       const o = new Obstacle(4400 + i, def, -1);
       this.obstacles.push(o);
@@ -794,6 +827,7 @@ export class GameWorld {
       }
       this.graves = this.graves.filter((g) => !g.expired);
     }
+    if (s && Number.isFinite(s.lanternBurn) && s.lanternBurn! > 0) this.player.lanternBurn = Math.min(LANTERN_SECONDS, s.lanternBurn!);
     if (s && Array.isArray(s.shrineHeld)) {
       for (const it of s.shrineHeld) {
         const qty = Math.floor(Number(it?.qty));
@@ -907,6 +941,7 @@ export class GameWorld {
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
       shrineHeld: this.player.shrineHeld.map((i) => ({ ...i })),
+      lanternBurn: this.player.lanternBurn,
       grants: [...p.grants],
       toolbelt: p.toolbelt.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
@@ -982,7 +1017,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway | undefined {
     return this.byId.get(id);
   }
 
@@ -996,6 +1031,7 @@ export class GameWorld {
     if (e instanceof Obstacle) return { kind: 'obstacle', entity: e };
     if (e instanceof FarmPatch) return { kind: 'patch', entity: e };
     if (e instanceof Hotspot) return { kind: 'hotspot', entity: e };
+    if (e instanceof Doorway) return { kind: 'passage', entity: e };
     if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
   }
@@ -1218,6 +1254,7 @@ export class GameWorld {
     this.updatePlayer(dt);
     this.updateGroundItems(dt);
     this.updateGraves(dt);
+    this.updateLantern(dt);
     this.updateFires(dt);
     if (p.shopAt !== null && !this.activeShop()) {
       p.shopAt = null;
@@ -1359,6 +1396,7 @@ export class GameWorld {
     else if (action?.type === 'obstacle') this.updateObstacleApproach(action);
     else if (action?.type === 'farm') this.updateFarming(action.patch, dt);
     else if (action?.type === 'hotspot') this.updateHotspotApproach(action.hotspot);
+    else if (action?.type === 'passage') this.updatePassage(action.passage);
     else if (action?.type === 'build') this.updateBuild(action, dt);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
@@ -1443,6 +1481,8 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'passage') {
+      p.action = { type: 'passage', passage: id };
     } else if (it.kind === 'hotspot') {
       p.action = { type: 'hotspot', hotspot: id };
     } else if (it.kind === 'patch') {
@@ -1492,6 +1532,10 @@ export class GameWorld {
     if (!this.approach(e.x, e.z, style.range, !joystickActive)) return;
     if (!joystickActive) p.facing = Math.atan2(e.x - p.x, e.z - p.z);
     if (p.attackTimer > 0) return;
+    if (this.tooDark()) {
+      p.action = null;
+      return;
+    }
 
     const ammo = this.firingAmmo();
     if (ammo && this.ammoLeft() <= 0) {
@@ -2279,6 +2323,10 @@ export class GameWorld {
 
   private canGather(n: ResourceNode, verbose: boolean): boolean {
     const p = this.player;
+    if (!this.isLit()) {
+      if (verbose) this.tooDark();
+      return false;
+    }
     const lvl = p.skills.level(n.def.skill);
     if (lvl < n.def.levelReq) {
       if (verbose) this.message(`You need ${SKILL_INFO[n.def.skill].name} level ${n.def.levelReq} to ${n.def.skill === 'thieving' ? 'steal from' : 'gather from'} this ${n.def.name.toLowerCase()}.`, 'warn');
@@ -2466,6 +2514,70 @@ export class GameWorld {
 
   private hotspotByDef(id: string): Hotspot | undefined {
     return this.hotspots.find((h) => h.def.id === id);
+  }
+
+  /** Walk to a passage, then come out at the other end. */
+  private updatePassage(id: number) {
+    const p = this.player;
+    const d = this.byId.get(id);
+    if (!(d instanceof Doorway)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(d.x, d.z, 1.3, true)) return;
+    p.action = null;
+    const other = this.doorways.find((o) => o.def.id === d.def.to);
+    if (!other) return;
+    p.x = p.prevX = other.def.arriveX;
+    p.z = p.prevZ = other.def.arriveZ;
+    p.path = [];
+    p.facing = Math.atan2(other.def.arriveX - other.def.x, other.def.arriveZ - other.def.z);
+    for (const e of this.enemies) if (e.target === p.id) {
+      e.target = null;
+      e.state = 'return';
+    }
+    this.emit({ type: 'passage', passage: other.id });
+    if (inHollow(p.x, p.z)) {
+      p.darkWarned = false;
+      this.updateLantern(0);
+      if (!this.isLit()) {
+        this.message(this.hasLantern() ? 'You climb down into Glimmer Hollow. Your lantern has no glowcaps to burn: it is pitch dark, and you can’t mine or fight.' : 'You climb down into Glimmer Hollow. It is pitch dark: without a glowcap lantern you can’t mine or fight here.', 'warn');
+        p.darkWarned = true;
+      } else this.message('You climb down into Glimmer Hollow. Your lantern glows green against the dark.', 'good');
+    } else this.message('You climb back up into the daylight.');
+  }
+
+  hasLantern(): boolean {
+    return this.player.inventory.has('glowcap_lantern');
+  }
+
+  /** Whether the player can see: always on the surface; underground only by a burning lantern. */
+  isLit(): boolean {
+    const p = this.player;
+    return !inHollow(p.x, p.z) || (this.hasLantern() && p.lanternBurn > 0);
+  }
+
+  /** Underground, a lantern burns down and takes a fresh glowcap from the bag when it runs out. */
+  private updateLantern(dt: number) {
+    const p = this.player;
+    if (!inHollow(p.x, p.z) || !this.hasLantern()) return;
+    if (p.lanternBurn > 0) p.lanternBurn = Math.max(0, p.lanternBurn - dt);
+    if (p.lanternBurn > 0) return;
+    if (p.inventory.remove('cabbage', 1) === 1) {
+      p.lanternBurn = LANTERN_SECONDS;
+      p.darkWarned = false;
+      const left = p.inventory.count('cabbage');
+      this.message(`Your lantern takes a fresh glowcap (${left} left).`, left ? 'info' : 'warn');
+    } else if (!p.darkWarned) {
+      p.darkWarned = true;
+      this.message('Your lantern gutters out. It is pitch dark: find the way up, or bring more glowcaps.', 'bad');
+    }
+  }
+
+  private tooDark(): boolean {
+    if (this.isLit()) return false;
+    this.message('It is too dark to see. You need a glowcap lantern with glowcaps to burn.', 'warn');
+    return true;
   }
 
   private updateHotspotApproach(id: number) {

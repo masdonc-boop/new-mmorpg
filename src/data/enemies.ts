@@ -1,6 +1,6 @@
 import type { ItemId } from './items';
 
-export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord';
+export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime';
 export type EnemyModel = 'slime' | 'wolf' | 'goblin';
 
 export interface DropEntry {
@@ -43,6 +43,19 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'slime_gel', min: 1, max: 2, chance: 0.8 },
       { item: 'coins', min: 2, max: 8, chance: 0.6 },
       { item: 'air_rune', min: 2, max: 5, chance: 0.25 },
+    ],
+  },
+  // Glimmer Hollow: slimes grown fat and dark on glimmerite dust. They wait in the dark.
+  gloom_slime: {
+    id: 'gloom_slime', name: 'Gloom Slime', level: 14, maxHp: 110, attack: 13, strength: 12, defence: 11, maxHit: 11,
+    attackSeconds: 2.2, attackRange: 1.3, aggressive: true, aggroRange: 3.5, leashRange: 8, wanderRadius: 2,
+    speed: 2.2, respawnSeconds: 25, model: 'slime', scale: 1.25, color: '#3a4a6a', accent: '#b8f0ff',
+    drops: [
+      { item: 'slime_gel', min: 2, max: 4, chance: 0.9 },
+      { item: 'coins', min: 12, max: 30, chance: 0.7 },
+      { item: 'glimmerite_ore', min: 1, max: 1, chance: 0.15 },
+      { item: 'cabbage', min: 1, max: 2, chance: 0.2 },
+      { item: 'air_rune', min: 4, max: 10, chance: 0.3 },
     ],
   },
   wolf: {

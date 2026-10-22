@@ -34,6 +34,7 @@ export type IconShape =
   | 'wand'
   | 'eel'
   | 'rod'
+  | 'lantern'
   | 'ring'
   | 'needle'
   | 'chisel'
@@ -240,6 +241,7 @@ export const ITEMS = {
   bronze_nails: def({ id: 'bronze_nails', name: 'Bronze nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 1, icon: { shape: 'nails', color: '#c98a4b', accent: '#7a4f2a' } }),
   iron_nails: def({ id: 'iron_nails', name: 'Iron nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 2, icon: { shape: 'nails', color: '#a3aab3', accent: '#4e5560' } }),
   steel_nails: def({ id: 'steel_nails', name: 'Steel nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 3, icon: { shape: 'nails', color: '#d3d9df', accent: '#5c646e' } }),
+  glowcap_lantern: def({ id: 'glowcap_lantern', name: 'Glowcap lantern', examine: 'A bronze lantern that burns glowcaps from your bag, one every four minutes underground. Carry it into Glimmer Hollow.', stackable: false, kind: 'material', value: 40, icon: { shape: 'lantern', color: '#c98a4b', accent: '#b8ffa0' } }),
   fishing_rod: def({ id: 'fishing_rod', name: 'Riverwood rod', examine: 'A springy rod strung with bowstring line, for the clear pools upriver.', stackable: false, kind: 'tool', tool: { category: 'fishing_rod', tier: 1 }, value: 15, icon: { shape: 'rod', color: '#9b6a3a', accent: '#efe8d6' } }),
   small_fishing_net: def({ id: 'small_fishing_net', name: 'Hand net', examine: 'A light net on a short pole, for scooping brightfin and eels from the shallows.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts

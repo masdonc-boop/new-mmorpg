@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ITEMS } from '../src/data/items';
 import { ITEM_ALIASES, remapItemIds } from '../src/data/aliases';
 import { GameWorld, type SaveData } from '../src/sim/world';
-import { isBlocked } from '../src/sim/worldmap';
+import { inHollow, isBlocked } from '../src/sim/worldmap';
 import { xpForLevel } from '../src/data/skills';
 import { RESOURCES } from '../src/data/resources';
 import { RECIPES } from '../src/data/recipes';
@@ -127,7 +127,8 @@ describe('Batch 4a: glimmerite and glimsteel', () => {
 
   it('glimmerite veins lie in the deep Ironcrag Hills and need Mining 40', () => {
     const w = new GameWorld();
-    const veins = w.nodes.filter((n) => n.def.id === 'glimmerite_rock');
+    // (Glimmer Hollow has its own veins; these are the surface ones.)
+    const veins = w.nodes.filter((n) => n.def.id === 'glimmerite_rock' && !inHollow(n.x, n.z));
     expect(veins.length).toBeGreaterThanOrEqual(3);
     expect(veins[0].def.levelReq).toBe(40);
     for (const v of veins) expect(Math.hypot(v.x - 101, v.z - 62)).toBeLessThan(5);

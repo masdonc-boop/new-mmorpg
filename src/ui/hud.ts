@@ -2,7 +2,7 @@ import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } f
 import { QUESTS } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, type CombatStyle } from '../sim/combat';
-import { T, type WorldMap } from '../sim/worldmap';
+import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type WorldMap } from '../sim/worldmap';
 import type { Dialogue, GameEvent, GameWorld } from '../sim/world';
 import { TILE_COLORS } from '../render/terrain';
 import { itemIcon } from './icons';
@@ -101,6 +101,8 @@ export class Hud {
   private death!: HTMLDivElement;
   private minimap!: HTMLCanvasElement;
   private minimapBase!: HTMLCanvasElement;
+  /** Glimmer Hollow's own minimap (shown only while underground). */
+  private caveBase!: HTMLCanvasElement;
   private regionEl!: HTMLDivElement;
   private questTracker!: HTMLDivElement;
   private invDirty = true;
@@ -268,7 +270,8 @@ export class Hud {
       for (let x = 0; x < map.width; x++) {
         const t = map.tiles[z * map.width + x];
         let rgb: number[];
-        if (t === T.Water) rgb = water;
+        // Glimmer Hollow lies beyond the southern sea: it is drawn only on its own cave map.
+        if (t === T.Water || inHollow(x, z)) rgb = water;
         else {
           const hex = TILE_COLORS[t] ?? '#7ccf55';
           rgb = [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -297,6 +300,20 @@ export class Hud {
       g.fillRect(r.x, r.z, 1, 1);
     }
     this.minimapBase = c;
+    // The cave map: floor and rock walls on black.
+    const cc = el('canvas');
+    cc.width = map.width;
+    cc.height = map.height;
+    const cg = cc.getContext('2d')!;
+    cg.fillStyle = '#07080a';
+    cg.fillRect(0, 0, map.width, map.height);
+    HOLLOW_LAYOUT.forEach((row, dz) => {
+      for (let dx = 0; dx < row.length; dx++) {
+        cg.fillStyle = row[dx] === '#' ? '#3a3632' : row[dx] === 'E' ? '#fff4c8' : row[dx] === 'm' ? '#7fdc6a' : '#8a8274';
+        cg.fillRect(HOLLOW.x + dx, HOLLOW.z + dz, 1, 1);
+      }
+    });
+    this.caveBase = cc;
   }
 
   // ---------------------------------------------------------------- per-frame
@@ -399,7 +416,13 @@ export class Hud {
       const r = RECIPES[a.recipe];
       if (r) text = `${SKILL_INFO[r.skill].glyph} ${STATION_INFO[r.station].doing} ${itemDef(r.station === 'range' ? r.inputs[0].item : r.output.item).name.toLowerCase()}${a.remaining > 1 ? ` · ${a.remaining} left` : '…'}`;
     }
+    else if (a?.type === 'passage') text = '👣 Walking over…';
     else if (w.player.path.length > 0) text = '👣 Walking';
+    // Underground, the lantern's state is always worth knowing.
+    if (!text && inHollow(w.player.x, w.player.z)) {
+      const left = w.player.inventory.count('cabbage');
+      text = !w.hasLantern() ? '🌑 Pitch dark · no lantern' : w.isLit() ? `🏮 Lantern · ${Math.ceil(w.player.lanternBurn / 60)} min + ${left} glowcap${left === 1 ? '' : 's'}` : '🌑 Pitch dark · lantern out';
+    }
     if (w.player.stunTimer > 0) text = `💫 Stunned (${Math.ceil(w.player.stunTimer)}s)`;
     if (this.status.textContent !== text) this.status.textContent = text;
     this.status.classList.toggle('hidden', !text);
@@ -416,7 +439,8 @@ export class Hud {
     g.beginPath();
     g.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2);
     g.clip();
-    g.fillStyle = '#4aa0d2';
+    const underground = inHollow(p.x, p.z);
+    g.fillStyle = underground ? '#07080a' : '#4aa0d2';
     g.fillRect(0, 0, S, S);
     g.translate(S / 2, S / 2);
     // Rotate so "up" on the minimap matches the camera's forward direction.
@@ -424,14 +448,14 @@ export class Hud {
     g.scale(scale, scale);
     g.translate(-p.x, -p.z);
     g.imageSmoothingEnabled = false;
-    g.drawImage(this.minimapBase, 0, 0);
+    g.drawImage(underground ? this.caveBase : this.minimapBase, 0, 0);
     const dot = (x: number, z: number, color: string, r = 0.9) => {
       g.fillStyle = color;
       g.beginPath();
       g.arc(x, z, r, 0, Math.PI * 2);
       g.fill();
     };
-    for (const e of this.world.enemies) if (e.alive && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.id === 'goblin_warlord' ? '#ff2d2d' : '#ff7043', e.def.id === 'goblin_warlord' ? 1.4 : 0.8);
+    for (const e of this.world.enemies) if (e.alive && inHollow(e.x, e.z) === underground && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.id === 'goblin_warlord' ? '#ff2d2d' : '#ff7043', e.def.id === 'goblin_warlord' ? 1.4 : 0.8);
     for (const n of this.world.npcs) {
       const m = this.world.npcMarker(n.def.id);
       if (n.def.service === 'bank') dot(n.x, n.z, '#f5c542', 1.3);
@@ -1121,6 +1145,7 @@ export class Hud {
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, nd.def.id === 'rod_spot' ? '🎣 Clear pool · glass trout (rod, Fishing 20)' : nd.def.id === 'warm_spring' ? '🎣 Warm spring · ember carp (rod, Fishing 35)' : '🎣 Fishing spot · net brightfin and eels (needs a hand net)', 2.6);
       for (const hs of w.hotspots) consider(hs.id, hs.x, hs.z, `🔨 ${p.furniture[hs.def.id] ? furnitureDef(p.furniture[hs.def.id])!.name : hs.def.name} · ${p.furniture[hs.def.id] ? 'remove' : 'build'}`, 1.6);
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
+      for (const dw of w.doorways) consider(dw.id, dw.x, dw.z, dw.def.id === 'hollow_mouth' ? (w.hasLantern() ? '⛏️ Glimmer Hollow · climb down' : '⛏️ Glimmer Hollow · dark: bring a lantern') : '🪜 Way up · climb back to daylight', 2.2);
       for (const o of w.obstacles) {
         const far = o.def.shortcut && Math.hypot(o.def.x2 - p.x, o.def.z2 - p.z) < Math.hypot(o.def.x1 - p.x, o.def.z1 - p.z);
         const text = o.def.shortcut ? `🏃 ${o.def.name} · shortcut (Agility ${o.def.level})` : `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`;

@@ -19,6 +19,7 @@ export const T = {
   Bridge: 7,
   Field: 8,
   Camp: 9,
+  Cave: 10,
 } as const;
 export type TileType = (typeof T)[keyof typeof T];
 
@@ -48,7 +49,10 @@ export type DecorKind =
   | 'waystone'
   | 'furnace'
   | 'range'
-  | 'icechest';
+  | 'icechest'
+  | 'glowcap'
+  | 'cave_mouth'
+  | 'light_shaft';
 
 export interface Decor {
   kind: DecorKind;
@@ -106,6 +110,48 @@ export interface WorldMap {
   spawn: { x: number; z: number };
   regions: Region[];
   checkpoints: Checkpoint[];
+  /** Two-way passages (the cave mouth and the way back up): tap one to come out at the other. */
+  passages: Passage[];
+}
+
+export interface Passage {
+  id: string;
+  name: string;
+  verb: string;
+  /** The passage itself (blocked tile) and where you arrive when you come through from the other end. */
+  x: number;
+  z: number;
+  arriveX: number;
+  arriveZ: number;
+  /** The other end. */
+  to: string;
+}
+
+/**
+ * Glimmer Hollow: old glimmerite workings under the Ironcrag Hills. It is laid out in an unused
+ * corner of the map (beyond the southern sea) and reached only through its passages; the renderer
+ * darkens everything while you are inside. Legend: # rock, . floor, E way up, i iron, c coal,
+ * g glimmerite, q spark quartz, s gloom slime, m glowcaps.
+ */
+export const HOLLOW = { x: 3, z: 99 };
+export const HOLLOW_LAYOUT = [
+  '##########################',
+  '###.....m####......q.#####',
+  '##..........##.........###',
+  '##.E.........##..c...s..##',
+  '##.....##.......####....##',
+  '###...####..s...####..g.##',
+  '###..#####......###...g.##',
+  '##....###...i.......s...##',
+  '##.m........i..###....q.##',
+  '###....s..#######.m...####',
+  '####......########...#####',
+  '##########################',
+];
+
+/** Whether a point is inside Glimmer Hollow. */
+export function inHollow(x: number, z: number): boolean {
+  return x >= HOLLOW.x && x < HOLLOW.x + HOLLOW_LAYOUT[0].length && z >= HOLLOW.z && z < HOLLOW.z + HOLLOW_LAYOUT.length;
 }
 
 export interface Checkpoint {
@@ -144,6 +190,7 @@ export const REGIONS: Region[] = [
   { id: 'camp', name: 'Goblin Encampment', x: 86, z: 28, radius: 10, levels: 'Lv 10–25', danger: 3 },
   { id: 'fields', name: 'Southern Fields', x: 56, z: 90, radius: 10, levels: 'Safe', danger: 0 },
   { id: 'exchange', name: 'Exchange Plaza', x: 80.5, z: 43.5, radius: 6, levels: 'Trading', danger: 0 },
+  { id: 'hollow', name: 'Glimmer Hollow', x: 16, z: 105, radius: 14, levels: 'Lv 14 · dark', danger: 2 },
 ];
 
 /** The Exchange plaza north-east of the village: a round kiosk with clerks, and a bank booth. */
@@ -605,6 +652,60 @@ export function generateWorld(seed = 1337): WorldMap {
     blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
   }
 
+  // --- Glimmer Hollow (see HOLLOW_LAYOUT), carved last so nothing else moves ---
+  const passages: Passage[] = [];
+  const FLOOR_Y = 0.35;
+  const WALL_Y = 3.4;
+  HOLLOW_LAYOUT.forEach((row, dz) => {
+    for (let dx = 0; dx < row.length; dx++) {
+      const x = HOLLOW.x + dx;
+      const z = HOLLOW.z + dz;
+      const ch = row[dx];
+      tiles[idx(x, z)] = ch === '#' ? T.Rocky : T.Cave;
+      blocked[idx(x, z)] = ch === '#' ? 1 : 0;
+      occ[idx(x, z)] = ch === '#' ? 1 : 0;
+    }
+  });
+  const floorAt = (x: number, z: number) => inHollow(x, z) && tiles[idx(x, z)] === T.Cave;
+  for (let vz = HOLLOW.z; vz <= HOLLOW.z + HOLLOW_LAYOUT.length; vz++) {
+    for (let vx = HOLLOW.x; vx <= HOLLOW.x + HOLLOW_LAYOUT[0].length; vx++) {
+      const nearFloor = floorAt(vx - 1, vz - 1) || floorAt(vx, vz - 1) || floorAt(vx - 1, vz) || floorAt(vx, vz);
+      heights[vz * (W + 1) + vx] = nearFloor ? FLOOR_Y : WALL_Y + (fbm(vx * 0.4, vz * 0.4, seed + 21) - 0.5) * 1.6;
+    }
+  }
+  HOLLOW_LAYOUT.forEach((row, dz) => {
+    for (let dx = 0; dx < row.length; dx++) {
+      const x = HOLLOW.x + dx;
+      const z = HOLLOW.z + dz;
+      const ch = row[dx];
+      if (ch === 'i') addResource('iron_rock', x, z);
+      else if (ch === 'c') addResource('coal_rock', x, z);
+      else if (ch === 'g') addResource('glimmerite_rock', x, z);
+      else if (ch === 'q') addResource('spark_quartz_rock', x, z);
+      else if (ch === 's') enemySpawns.push({ type: 'gloom_slime', x: x + 0.5, z: z + 0.5 });
+      else if (ch === 'm') for (const [ox, oz] of [[0.3, 0.3], [0.7, 0.5], [0.4, 0.75]]) decor.push({ kind: 'glowcap', x: x + ox, z: z + oz, rot: ox * 9, scale: 0.8 + oz * 0.4, variant: 0 });
+      else if (ch === 'E') {
+        decor.push({ kind: 'light_shaft', x: x + 0.5, z: z + 0.5, rot: 0, scale: 1, variant: 0 });
+        blocked[idx(x, z)] = 1;
+        passages.push({ id: 'hollow_up', name: 'Way up', verb: 'Climb up', x: x + 0.5, z: z + 0.5, arriveX: x + 1.5, arriveZ: z + 0.5, to: 'hollow_mouth' });
+      }
+    }
+  });
+  // The cave mouth on the eastern Ironcrag slopes: the first open tile near (97, 56) with room in front.
+  mouth: for (let r = 0; r < 8; r++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = 97 + dx;
+        const z = 56 + dz;
+        if (!free(x, z) || !free(x, z + 1) || nearPath(x, z) || tiles[idx(x, z)] === T.Water || tiles[idx(x, z)] === T.Sand) continue;
+        decor.push({ kind: 'cave_mouth', x: x + 0.5, z: z + 0.5, rot: 0, scale: 1, variant: 0 });
+        blocked[idx(x, z)] = occ[idx(x, z)] = 1;
+        passages.push({ id: 'hollow_mouth', name: 'Glimmer Hollow', verb: 'Enter', x: x + 0.5, z: z + 0.5, arriveX: x + 0.5, arriveZ: z + 1.5, to: 'hollow_up' });
+        break mouth;
+      }
+    }
+  }
+
   return {
     seed,
     width: W,
@@ -628,6 +729,7 @@ export function generateWorld(seed = 1337): WorldMap {
     spawn: { x: 56.5, z: 63.4 },
     regions: REGIONS,
     checkpoints,
+    passages,
   };
 }
 

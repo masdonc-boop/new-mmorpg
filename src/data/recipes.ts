@@ -136,6 +136,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   emberglass_wand: r({ id: 'emberglass_wand', station: 'crafting', skill: 'crafting', level: 35, xp: 70, inputs: [{ item: 'emberglass_shard', qty: 2 }, { item: 'oak_logs', qty: 1 }], output: { item: 'emberglass_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
   // Gems: polish river agate (8) and cut ironcrag garnet (18; recipe id kept).
   polished_agate: r({ id: 'polished_agate', station: 'crafting', skill: 'crafting', level: 8, xp: 22, inputs: [{ item: 'river_agate', qty: 1 }], output: { item: 'polished_agate', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
+  // The glowcap lantern (Crafting 12): a bronze cage around a glowcap, for Glimmer Hollow.
+  glowcap_lantern: r({ id: 'glowcap_lantern', station: 'furnace', skill: 'crafting', level: 12, xp: 32, inputs: [{ item: 'bronze_bar', qty: 1 }, { item: 'cabbage', qty: 1 }], output: { item: 'glowcap_lantern', qty: 1 }, seconds: 2.2 }),
   // Jewellery: a charm on a cord anywhere; bands and settings at the furnace.
   agate_charm: r({ id: 'agate_charm', station: 'crafting', skill: 'crafting', level: 10, xp: 24, inputs: [{ item: 'polished_agate', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'agate_charm', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   agate_ring: r({ id: 'agate_ring', station: 'furnace', skill: 'crafting', level: 12, xp: 30, inputs: [{ item: 'polished_agate', qty: 1 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'agate_ring', qty: 1 }, seconds: 2.2 }),

@@ -229,6 +229,27 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
       }
       return merge(parts);
     }
+    case 'glowcap':
+      // Pale stalks; the glowing caps are added separately with an unlit material.
+      return merge([part(Cyl(0.03, 0.04, 0.18, 5), '#e8e2cc', { y: 0.09 })]);
+    case 'cave_mouth': {
+      // A dark opening in a rock face, with timber props at the old workings' entrance.
+      const parts: THREE.BufferGeometry[] = [];
+      parts.push(part(blob(1.1, 1, 0.18, 3), '#8a8478', { y: 0.7, z: -0.55, sx: 1.4, sy: 1.1, sz: 0.8, jitter: 0.1 }));
+      parts.push(part(Box(1.0, 1.15, 0.5), '#141210', { y: 0.58, z: 0.45 }));
+      for (const x of [-0.58, 0.58]) parts.push(part(Box(0.14, 1.35, 0.14), '#6e4a2c', { x, y: 0.68, z: 0.72 }));
+      parts.push(part(Box(1.36, 0.14, 0.16), '#6e4a2c', { y: 1.38, z: 0.72 }));
+      for (let i = 0; i < 4; i++) parts.push(part(blob(0.22, 0, 0.2, i * 1.3), '#9a9184', { x: i < 2 ? -1.0 + i * 0.25 : 0.75 + (i - 2) * 0.25, y: 0.12, z: 0.85, sy: 0.6, jitter: 0.1 }));
+      return merge(parts);
+    }
+    case 'light_shaft': {
+      // The way up: a rope ladder hanging from a crack of daylight (the light itself is added unlit).
+      const parts: THREE.BufferGeometry[] = [];
+      for (const x of [-0.18, 0.18]) parts.push(part(Cyl(0.025, 0.025, 2.6, 4), '#c9b48a', { x, y: 1.3 }));
+      for (let i = 0; i < 7; i++) parts.push(part(Box(0.42, 0.04, 0.06), '#8a5a34', { y: 0.2 + i * 0.36 }));
+      for (let i = 0; i < 5; i++) parts.push(part(blob(0.18, 0, 0.2, i * 2.1), '#8a8478', { x: Math.cos(i * 1.3) * 0.55, y: 0.08, z: Math.sin(i * 1.3) * 0.55, sy: 0.6, jitter: 0.1 }));
+      return merge(parts);
+    }
     case 'mushroom': {
       const cap = variant % 2 ? '#e8473c' : '#d98c3c';
       const parts = [part(Cyl(0.05, 0.06, 0.2, 6), '#f3ead8', { y: 0.1 }), part(new THREE.SphereGeometry(0.14, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), cap, { y: 0.18 })];
@@ -691,6 +712,10 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
   const crystalGeo = new THREE.OctahedronGeometry(0.28);
   const flameGeo = new THREE.ConeGeometry(0.32, 0.9, 6);
   const lanternGeo = new THREE.BoxGeometry(0.16, 0.2, 0.16);
+  const glowcapGeo = new THREE.SphereGeometry(0.11, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+  const glowcapMat = new THREE.MeshBasicMaterial({ color: '#b8ffa0' });
+  const shaftGeo = new THREE.CylinderGeometry(0.35, 0.9, 4.4, 10, 1, true);
+  const shaftMat = new THREE.MeshBasicMaterial({ color: '#fff4c8', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
 
   for (const d of map.decor) {
     const y = groundHeight(map, d.x, d.z);
@@ -730,6 +755,15 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
       m.position.set(lx, y + 1.78, lz);
       group.add(m);
       glows.push({ mesh: m, baseY: y + 1.78, phase: rng() * 6, kind: 'lantern' });
+    } else if (d.kind === 'glowcap') {
+      const m = new THREE.Mesh(glowcapGeo, glowcapMat);
+      m.position.set(d.x, y + 0.2 * d.scale, d.z);
+      m.scale.setScalar(d.scale);
+      group.add(m);
+    } else if (d.kind === 'light_shaft') {
+      const m = new THREE.Mesh(shaftGeo, shaftMat);
+      m.position.set(d.x, y + 2.2, d.z);
+      group.add(m);
     } else if (d.kind === 'fountain') {
       emitters.push({ x: d.x, y: y + 2.1, z: d.z, kind: 'fountain' });
     } else if (d.kind === 'furnace' || d.kind === 'range') {

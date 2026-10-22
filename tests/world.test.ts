@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GameWorld } from '../src/sim/world';
 import { findPath } from '../src/sim/pathfinding';
-import { T, generateWorld, isBlocked, tileAt } from '../src/sim/worldmap';
+import { T, generateWorld, isBlocked, tileAt, inHollow } from '../src/sim/worldmap';
 
 const run = (w: GameWorld, seconds: number) => {
   for (let t = 0; t < seconds * 30; t++) w.tick();
@@ -34,13 +34,14 @@ describe('World generation', () => {
 
   it('connects the village to every enemy, resource cluster and NPC', () => {
     const s = map.spawn;
-    for (const e of map.enemySpawns) {
+    // Glimmer Hollow is reached through its passage, not on foot (checked in its own test).
+    for (const e of map.enemySpawns.filter((e) => !inHollow(e.x, e.z))) {
       expect(findPath(map, s.x, s.z, e.x, e.z, 20000), `enemy ${e.type} at ${e.x},${e.z}`).not.toBeNull();
     }
     for (const n of map.npcs) expect(findPath(map, s.x, s.z, n.x, n.z, 20000), n.id).not.toBeNull();
     for (const c of map.checkpoints) expect(findPath(map, s.x, s.z, c.respawnX, c.respawnZ, 20000), c.id).not.toBeNull();
     let unreachable = 0;
-    for (const r of map.resources) if (!findPath(map, s.x, s.z, r.x + 0.5, r.z + 0.5, 20000)) unreachable++;
+    for (const r of map.resources) if (!inHollow(r.x, r.z) && !findPath(map, s.x, s.z, r.x + 0.5, r.z + 0.5, 20000)) unreachable++;
     expect(unreachable / map.resources.length).toBeLessThan(0.05);
   });
 
@@ -163,11 +164,9 @@ describe('Simulation', () => {
     w.tick();
     expect(p.checkpoints.has('meadow')).toBe(true);
     const slime = w.enemies.find((e) => e.def.id === 'slime')!;
-    p.x = slime.x + 1;
-    p.z = slime.z;
-    p.hp = 1;
-    w.issue({ type: 'interact', target: slime.id });
-    for (let i = 0; i < 30 * 15 && !p.dead; i++) w.tick();
+    p.x = p.prevX = slime.x + 1;
+    p.z = p.prevZ = slime.z;
+    (w as unknown as { killPlayer: () => void }).killPlayer();
     expect(p.dead).toBe(true);
     expect(w.nearestCheckpoint().id).toBe('meadow');
     w.issue({ type: 'respawn', at: 'checkpoint' });

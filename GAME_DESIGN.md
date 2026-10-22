@@ -43,7 +43,7 @@ Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORP
 
 | Area | Implementation |
 | --- | --- |
-| World | 112×112 tile island: Brightwater Village, Slime Meadows (W, across the river), Whispering Woods (N), Ironcrag Hills (E), Goblin Encampment (NE), Southern Fields (S) |
+| World | 112×112 tile island: Brightwater Village, Slime Meadows (W, across the river), Whispering Woods (N), Ironcrag Hills (E), Goblin Encampment (NE), Southern Fields (S), and Glimmer Hollow, a dark cave under the eastern hills |
 | Character | Creator with build, skin, hair style, hair/tunic/trouser colours; live 3D preview |
 | Movement | Floating virtual joystick (8-direction+, analog), tap-to-move with A* pathfinding, WASD on desktop |
 | Camera | Elevated follow camera, pinch / wheel / button zoom, experimental rotation |
