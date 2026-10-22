@@ -6,12 +6,13 @@ import { generateWorld, type WorldMap } from '../src/sim/worldmap';
 import { mergeSave } from '../src/sim/records';
 import { INTEREST_RADIUS, captureState, type WorldState } from '../src/net/replica';
 import { MOVES_PER_SNAPSHOT, diffState, limitMoves } from '../src/net/delta';
-import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from '../src/net/protocol';
+import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type LiveIntent, type LiveResult, type ServerMessage } from '../src/net/protocol';
 import { openDatabase } from './db';
 import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
 import { Repos, StaleWriteError } from './repo';
 import { prepareImport, type ImportPolicy } from './import';
 import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat } from './chat';
+import { LiveExchange, liveAccount } from './liveexchange';
 
 /**
  * Brightwater development server (docs/MULTIPLAYER.md 3A.2 and 3A.3).
@@ -39,6 +40,11 @@ export interface ServerOptions {
   graceMs?: number;
   /** Importing browser saves (an owner decision; docs/MULTIPLAYER.md section 7). Default `full`. */
   importPolicy?: ImportPolicy;
+  /**
+   * The live Exchange: real items and coins, traded between accounts (docs/MULTIPLAYER.md 3A.7).
+   * Off by default; switching it on is an owner decision. The practice market is unaffected.
+   */
+  liveExchange?: boolean;
   /** This server instance's lease name (random by default). */
   instance?: string;
   /** Real-world clock (farming, sessions, rate limits); injectable for tests. */
@@ -57,6 +63,8 @@ export interface RunningServer {
   stats: ServerStats;
   /** Moderation: stops a player chatting for a while (accounts: stored; guests: until they leave). */
   mute(name: string, minutes: number): boolean;
+  /** The live Exchange, when switched on. */
+  live: LiveExchange | null;
   /** Saves every loaded character now (tests and tooling). */
   saveAll(): void;
   /** Stops the server. `save: false` simulates a crash (nothing is saved on the way down). */
@@ -138,6 +146,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const sessions = new Map<string, Session>();
   // One shared world for everyone (docs/MULTIPLAYER.md 3A.5); it starts empty.
   const zone = new GameWorld({ noPlayer: true, map, clock });
+  // The live Exchange (off unless switched on): one for the whole world, restored from the database.
+  const live = opts.liveExchange ? new LiveExchange(clock, repos.exchangeState()) : null;
+  const features = { liveExchange: live !== null };
   // Sign-in limits: per account name and per network address.
   const accountFails = new RateLimiter(5, 5 * 60_000, clock);
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
@@ -360,7 +371,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     const character = zone.act(s.player, () => zone.characterRecord());
     s.lastCharacter = characterKey(character);
     s.lastState = stateFor(s);
-    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: s.lastState, ...(issued ? { session: issued } : {}) });
+    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: s.lastState, features, ...(issued ? { session: issued } : {}) });
     send(ws, { t: 'social', blocked: [...s.blocked] });
   }
 
@@ -466,6 +477,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return;
       case 'chat':
         return chat(s, msg.channel, msg.text, msg.to);
+      case 'gx':
+        return exchange(s, msg.req);
+      case 'gxGuide':
+        if (live) send(s.ws, { t: 'gxGuide', item: msg.item, guide: live.guide(msg.item) }, s);
+        return;
+      case 'gxOpen':
+        if (live && s.accountId !== null) send(s.ws, { t: 'gxState', state: live.view(liveAccount(s.accountId)) }, s);
+        return;
       case 'block': {
         const name = msg.name.trim();
         if (name.toLowerCase() === s.name.toLowerCase()) return notice(s, 'You can’t block yourself.', 'warn');
@@ -494,6 +513,36 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return;
       default:
         return;
+    }
+  }
+
+  /**
+   * One live Exchange request. The engine and the character's bank and bag change together and are
+   * saved together; the player gets the result and their new view, and anyone whose offer it filled
+   * gets theirs.
+   */
+  function exchange(s: Session, req: LiveIntent) {
+    if (!live) return notice(s, 'The live Exchange isn’t open on this server.', 'warn');
+    const reply = (result: LiveResult) => send(s.ws, { t: 'gxResult', nonce: req.nonce, result }, s);
+    if (s.accountId === null || s.characterId === null) return reply({ ok: false, error: 'Sign in to an account to trade on the Exchange.' });
+    if (!zone.act(s.player, () => zone.activeClerk())) return reply({ ok: false, error: 'You need to be at an Exchange clerk to do that.' });
+    if (zone.trades.trading(s.playerId)) return reply({ ok: false, error: 'Finish or decline your trade first.' });
+    const account = liveAccount(s.accountId);
+    const result = live.handle(account, s.player, req, () => {
+      const json = persisted(s);
+      const [record, zoneState] = JSON.parse(json);
+      const { audit, trades } = live.unsaved();
+      s.version = repos.commitExchange(live.toJSON(), audit, trades, { characterId: s.characterId!, epoch: s.epoch, version: s.version, record, zone: zoneState })!;
+      s.lastSaved = json;
+    });
+    reply(result);
+    send(s.ws, { t: 'gxState', state: live.view(account) }, s);
+    for (const other of live.counterparts(account, result)) {
+      const o = sessions.get(other);
+      if (o?.ws) {
+        send(o.ws, { t: 'gxState', state: live.view(other) }, o);
+        notice(o, 'One of your Exchange offers has been filled. Visit a clerk to collect.', 'good');
+      }
     }
   }
 
@@ -673,6 +722,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     zone,
     repos,
     stats,
+    live,
     saveAll,
     mute: (name: string, minutes: number) => {
       const until = clock() + minutes * 60_000;

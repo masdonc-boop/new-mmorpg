@@ -1,16 +1,17 @@
-import { ITEMS } from '../data/items';
+import { ITEMS, isItemId, type ItemId } from '../data/items';
 import type { StateDelta } from './delta';
 import type { WorldMap } from '../sim/worldmap';
-import type { Appearance, Command, GameEvent, PlayerId } from '../sim/world';
+import type { Appearance, Command, ExchangeIntent, GameEvent, PlayerId } from '../sim/world';
 import type { CharacterRecord } from '../sim/records';
 import type { WorldState } from './replica';
-import { validateCommand } from './validate';
+import { validateCommand, validateLiveIntent } from './validate';
+import type { Asset, Exchange, Order, Result } from '../exchange/engine';
 
 /**
  * The network protocol between the browser and the development server (docs/MULTIPLAYER.md 3A.2).
  * JSON messages over a WebSocket. Clients send intents only; the server sends state and events.
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 /** Largest message a client may send (bytes); anything bigger is rejected unread. */
 export const MAX_CLIENT_MESSAGE = 8 * 1024;
 /** A save import (signed-in accounts only) may be larger. */
@@ -44,13 +45,42 @@ export type ClientMessage =
   /** Stop (or start again) hearing from a player. */
   | { t: 'block'; name: string; on: boolean }
   /** Report a player's chat to the moderators (what this player saw from them goes along). */
-  | { t: 'report'; name: string; reason: string };
+  | { t: 'report'; name: string; reason: string }
+  /** Live Exchange (3A.7, only when the server has it switched on): a request, a price guide, or the current view. */
+  | { t: 'gx'; req: LiveIntent }
+  | { t: 'gxGuide'; item: ItemId }
+  | { t: 'gxOpen' };
+
+export type LiveIntent = ExchangeIntent | { op: 'claim'; nonce: number };
+export type LiveResult = Result & { note?: string };
+export interface LiveTrade {
+  id: number;
+  at: number;
+  item: ItemId;
+  qty: number;
+  price: number;
+  bought: boolean;
+}
+/** What a player sees of the live Exchange (built by server/liveexchange.ts). */
+export interface LiveView {
+  slots: number;
+  orders: Order[];
+  holdings: { asset: Asset; qty: number }[];
+  mine: LiveTrade[];
+  market: { id: number; at: number; item: ItemId; qty: number; price: number }[];
+  nonce: number;
+}
+export type Guide = ReturnType<Exchange['guide']>;
+/** Optional features the server has switched on. */
+export interface Features {
+  liveExchange: boolean;
+}
 
 export type ChatChannel = 'local' | 'private';
 
 export type ServerMessage =
   /** `session`: a token to sign in again without the password (only after a password sign-in). */
-  | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string }
+  | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string; features: Features }
   /** What changed since the last state this connection was sent (the welcome is the first). */
   | { t: 'state'; delta: StateDelta; events: GameEvent[]; character?: CharacterRecord }
   | { t: 'error'; error: string; fatal?: boolean; code?: ErrorCode }
@@ -62,7 +92,10 @@ export type ServerMessage =
   /** The players this account has blocked (sent on joining and after a change). */
   | { t: 'social'; blocked: string[] }
   /** A note from the server for the message log (chat refused, report filed, …). */
-  | { t: 'notice'; text: string; tone?: 'info' | 'warn' | 'good' };
+  | { t: 'notice'; text: string; tone?: 'info' | 'warn' | 'good' }
+  | { t: 'gxState'; state: LiveView }
+  | { t: 'gxResult'; nonce: number; result: LiveResult }
+  | { t: 'gxGuide'; item: ItemId; guide: Guide };
 
 /** Machine-readable reasons, so the client knows whether to ask for a password or try again. */
 export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale' | 'import';
@@ -153,6 +186,15 @@ export function parseClientMessage(raw: unknown, opts: { allowImport?: boolean }
     case 'block':
       if (!onlyKeys(m, ['t', 'name', 'on']) || typeof m.name !== 'string' || m.name.length < 1 || m.name.length > 32 || typeof m.on !== 'boolean') return null;
       return m as ClientMessage;
+    case 'gx': {
+      if (!onlyKeys(m, ['t', 'req'])) return null;
+      const req = validateLiveIntent(m.req);
+      return req ? { t: 'gx', req } : null;
+    }
+    case 'gxGuide':
+      return onlyKeys(m, ['t', 'item']) && typeof m.item === 'string' && m.item.length <= 64 && isItemId(m.item) ? { t: 'gxGuide', item: m.item } : null;
+    case 'gxOpen':
+      return onlyKeys(m, ['t']) ? { t: 'gxOpen' } : null;
     case 'report':
       if (!onlyKeys(m, ['t', 'name', 'reason']) || typeof m.name !== 'string' || m.name.length < 1 || m.name.length > 32) return null;
       if (typeof m.reason !== 'string' || m.reason.length > 200) return null;

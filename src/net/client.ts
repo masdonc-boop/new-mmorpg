@@ -2,7 +2,8 @@ import { GameWorld, TICK_SECONDS, type Command, type GameEvent, type PlayerId } 
 import { patchState } from './delta';
 import { mergeSave } from '../sim/records';
 import { applyCharacter, applyState, type WorldState } from './replica';
-import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type ChatChannel, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
+import type { ItemId } from '../data/items';
+import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type ChatChannel, type Features, type Guide, type LiveIntent, type LiveView, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
 import { generateWorld } from '../sim/worldmap';
 
 /**
@@ -73,6 +74,11 @@ export class NetClient {
   /** Chat received since the last `drainChat`, and the players this account has blocked. */
   private chat: ChatLine[] = [];
   blocked: string[] = [];
+  /** What the server has switched on (from the welcome). */
+  features: Features = { liveExchange: false };
+  /** The live Exchange as this account sees it (after `gxOpen`), and price guides asked for. */
+  liveView: LiveView | null = null;
+  readonly guides = new Map<ItemId, Guide>();
   /** The last full state, which the next delta changes. */
   private last: WorldState | null = null;
   private serverPos: { x: number; z: number } | null = null;
@@ -174,6 +180,7 @@ export class NetClient {
 
   private welcome(msg: Extract<ServerMessage, { t: 'welcome' }>): GameWorld {
     if (msg.session) this.session = msg.session;
+    this.features = msg.features;
     if (this.world && msg.playerId !== this.playerId) {
       // A different character answered (the server was reset): start over.
       this.fatal = true;
@@ -220,6 +227,20 @@ export class NetClient {
     }
     if (msg.t === 'chat') {
       this.chat.push({ channel: msg.channel, from: msg.from, to: msg.to, text: msg.text });
+      return;
+    }
+    if (msg.t === 'gxState') {
+      this.liveView = msg.state;
+      this.events.push({ type: 'exchange' });
+      return;
+    }
+    if (msg.t === 'gxResult') {
+      this.events.push({ type: 'exchangeResult', nonce: msg.nonce, result: msg.result, live: true });
+      return;
+    }
+    if (msg.t === 'gxGuide') {
+      this.guides.set(msg.item, msg.guide);
+      this.events.push({ type: 'exchange' });
       return;
     }
     if (msg.t === 'social') {
@@ -368,6 +389,19 @@ export class NetClient {
   /** Says something to players nearby, or privately to one player. */
   say(text: string, to?: string) {
     this.post(to ? { t: 'chat', channel: 'private', to, text } : { t: 'chat', channel: 'local', text });
+  }
+
+  /** Live Exchange requests (only when `features.liveExchange`). */
+  gx(req: LiveIntent) {
+    this.post({ t: 'gx', req });
+  }
+
+  gxOpen() {
+    this.post({ t: 'gxOpen' });
+  }
+
+  gxGuide(item: ItemId) {
+    this.post({ t: 'gxGuide', item });
   }
 
   block(name: string, on: boolean) {

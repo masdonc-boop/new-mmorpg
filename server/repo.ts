@@ -1,6 +1,7 @@
 import type { Db } from './db';
 import { hashToken, newToken } from './auth';
 import type { CharacterRecord, ZoneState } from '../src/sim/records';
+import type { AuditEntry, Trade } from '../src/exchange/engine';
 
 /**
  * Repositories over the SQLite database (docs/MULTIPLAYER.md 3.5). Game code talks to these, not
@@ -188,6 +189,49 @@ export class Repos {
   ledger(ref?: string): { ref: string; from: number; to: number; item: string; qty: number }[] {
     const sql = 'SELECT ref, from_character AS "from", to_character AS "to", item, qty FROM item_ledger' + (ref ? ' WHERE ref = ?' : '') + ' ORDER BY id';
     return (ref ? this.db.prepare(sql).all(ref) : this.db.prepare(sql).all()) as { ref: string; from: number; to: number; item: string; qty: number }[];
+  }
+
+  // ---------------------------------------------------------------- live exchange
+
+  /** The saved live Exchange (engine and client nonces), or null before the first request. */
+  exchangeState(): unknown {
+    const r = this.db.prepare('SELECT state FROM exchange_state WHERE id = 1').get() as { state: string } | undefined;
+    return r ? JSON.parse(r.state) : null;
+  }
+
+  /**
+   * Saves one live Exchange request: the engine state, its new audit entries and trades, and the
+   * character whose bank or bag it touched, all in one transaction. The character needs its current
+   * lease and version (throws StaleWriteError otherwise, and nothing is written). Returns the
+   * character's new version.
+   */
+  commitExchange(
+    state: unknown,
+    audit: AuditEntry[],
+    trades: Trade[],
+    character: { characterId: number; epoch: number; version: number; record: CharacterRecord; zone: ZoneState } | null,
+  ): number | null {
+    return this.db.transaction(() => {
+      const v = character ? this.saveCharacter(character.characterId, character.epoch, character.version, character.record, character.zone) : null;
+      this.db.prepare('INSERT INTO exchange_state (id, state, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at').run(JSON.stringify(state), this.now());
+      const a = this.db.prepare('INSERT INTO exchange_audit (seq, at, op, account, nonce, detail, hash) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const e of audit) a.run(e.seq, e.at, e.op, e.account, e.nonce ?? null, e.detail, e.hash);
+      const t = this.db.prepare('INSERT INTO exchange_trades (id, at, item, qty, price, buyer, seller, buy_order, sell_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      for (const x of trades) t.run(x.id, x.at, x.item, x.qty, x.price, x.buyer, x.seller, x.buyOrder, x.sellOrder);
+      return v;
+    })();
+  }
+
+  /** The stored audit chain, oldest first (for checking it end to end). */
+  exchangeAudit(): AuditEntry[] {
+    // Rebuilt in the engine's field order, which its hashes are computed over.
+    return (this.db.prepare('SELECT seq, at, op, account, nonce, detail, hash FROM exchange_audit ORDER BY seq').all() as (AuditEntry & { nonce: number | null })[]).map((e) =>
+      e.nonce === null ? { seq: e.seq, at: e.at, op: e.op, account: e.account, detail: e.detail, hash: e.hash } : { seq: e.seq, at: e.at, op: e.op, account: e.account, nonce: e.nonce, detail: e.detail, hash: e.hash },
+    );
+  }
+
+  exchangeTrades(): Trade[] {
+    return this.db.prepare('SELECT id, at, item, qty, price, buyer, seller, buy_order AS buyOrder, sell_order AS sellOrder FROM exchange_trades ORDER BY id').all() as Trade[];
   }
 
   // ---------------------------------------------------------------- chat and moderation

@@ -219,7 +219,7 @@ export type GameEvent =
   | { type: 'exchangeOpen' }
   | { type: 'exchangeClose' }
   /** The result of an exchange request (matched by nonce), and any change to the market. */
-  | { type: 'exchangeResult'; nonce: number; result: ExchangeResult }
+  | { type: 'exchangeResult'; nonce: number; result: ExchangeResult & { note?: string }; live?: boolean }
   | { type: 'exchange' }
   /** The player is at a house space (open the build interface). */
   | { type: 'hotspotOpen'; hotspot: string }

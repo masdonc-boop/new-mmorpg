@@ -48,6 +48,7 @@ type Field = Check | ReturnType<typeof opt>;
 
 const exchangeIntent: Check = (v) => {
   if (!isPlainObject(v)) return false;
+  if (v.op === 'claim') return false;
   if (v.op === 'place') return fields(v, { op: () => true, nonce, slot: int(0, 15), side: oneOf(['buy', 'sell']), item, qty: int(1, MAX_QTY), price: int(1, MAX_COINS) });
   if (v.op === 'cancel' || v.op === 'collect') return fields(v, { op: () => true, nonce, orderId });
   return false;
@@ -137,3 +138,13 @@ export function validateCommand(input: unknown): Command | null {
 /** Every command kind the validator knows (for tests and protocol docs). */
 export const COMMAND_TYPES = Object.keys(COMMANDS) as Command['type'][];
 
+
+/**
+ * A live Exchange request (network play, 3A.7): the practice market's intents, plus `claim` (take
+ * out what waits in exchange storage). Null if malformed.
+ */
+export function validateLiveIntent(v: unknown): import('../sim/world').ExchangeIntent | { op: 'claim'; nonce: number } | null {
+  if (!isPlainObject(v)) return null;
+  if (v.op === 'claim') return fields(v, { op: () => true, nonce }) ? { op: 'claim', nonce: v.nonce as number } : null;
+  return exchangeIntent(v) ? (v as import('../sim/world').ExchangeIntent) : null;
+}

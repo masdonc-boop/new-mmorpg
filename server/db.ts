@@ -85,6 +85,36 @@ const MIGRATIONS: string[] = [
   );
   ALTER TABLE accounts ADD COLUMN muted_until INTEGER NOT NULL DEFAULT 0;
   `,
+  // 4: the live Exchange (docs/MULTIPLAYER.md 3A.7). One engine per world, saved whole with every
+  // request (in the same transaction as the character it touched), plus append-only copies of its
+  // audit chain and trades that outlive the engine's in-memory window.
+  `
+  CREATE TABLE exchange_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE exchange_audit (
+    seq INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    op TEXT NOT NULL,
+    account TEXT NOT NULL,
+    nonce INTEGER,
+    detail TEXT NOT NULL,
+    hash TEXT NOT NULL
+  );
+  CREATE TABLE exchange_trades (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    item TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    price INTEGER NOT NULL,
+    buyer TEXT NOT NULL,
+    seller TEXT NOT NULL,
+    buy_order INTEGER NOT NULL,
+    sell_order INTEGER NOT NULL
+  );
+  `,
 ];
 
 export function openDatabase(path: string): Db {
