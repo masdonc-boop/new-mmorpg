@@ -460,8 +460,12 @@ export class Exchange {
     };
   }
 
-  /** Restores a saved exchange; returns null if the data is malformed or fails its accounting check. */
-  static restore(data: unknown, opts: ExchangeOptions = {}): Exchange | null {
+  /**
+   * Restores a saved exchange; returns null if the data is malformed or fails its accounting check.
+   * `check: false` puts back a state exactly as it was, even a broken one (a server undoing a
+   * request it has just refused; the broken state is then reported, not silently replaced).
+   */
+  static restore(data: unknown, opts: ExchangeOptions = {}, check = true): Exchange | null {
     try {
       const d = data as ReturnType<Exchange['toJSON']>;
       if (!d || d.v !== 1 || !Array.isArray(d.orders) || !Array.isArray(d.log)) return null;
@@ -477,7 +481,7 @@ export class Exchange {
       x.checkpoint = d.checkpoint;
       x.nonces = JSON.parse(JSON.stringify(d.nonces ?? {}));
       x.bought = JSON.parse(JSON.stringify(d.bought ?? {}));
-      return x.verify().length ? null : x;
+      return check && x.verify().length ? null : x;
     } catch {
       return null;
     }

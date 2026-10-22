@@ -13,6 +13,7 @@ import { Repos, StaleWriteError } from './repo';
 import { prepareImport, type ImportPolicy } from './import';
 import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat, filterForm } from './chat';
 import { LiveExchange, liveAccount } from './liveexchange';
+import { Bucket, DEFAULT_EXCHANGE_POLICY, ExchangeWatch, checkOffer, type ExchangePolicy } from './exchangeguard';
 import { BRIGHTWATER, HOLLOW_ZONE, zoneArea, zoneFor, zoneKind, type ZoneId } from '../src/sim/zones';
 import type { TradeCommit } from '../src/sim/trade';
 
@@ -47,6 +48,10 @@ export interface ServerOptions {
    * Off by default; switching it on is an owner decision. The practice market is unaffected.
    */
   liveExchange?: boolean;
+  /** Live Exchange safeguards (3B.3); anything left out keeps its default. */
+  exchangePolicy?: Partial<ExchangePolicy>;
+  /** How often the live Exchange checks its books against the database. Default one minute. */
+  integrityIntervalMs?: number;
   /** This server instance's lease name (random by default). */
   instance?: string;
   /** Real-world clock (farming, sessions, rate limits); injectable for tests. */
@@ -177,6 +182,18 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // The live Exchange (off unless switched on): one for the whole world, restored from the database.
   const live = opts.liveExchange ? new LiveExchange(clock, repos.exchangeState()) : null;
   const features = { liveExchange: live !== null };
+  const policy: ExchangePolicy = { ...DEFAULT_EXCHANGE_POLICY, ...opts.exchangePolicy };
+  const gxRequests = new Bucket(policy.requestsPerMinute, clock);
+  const gxGuides = new Bucket(policy.guidesPerMinute, clock);
+  const watch = new ExchangeWatch(policy, clock);
+  if (live) {
+    live.onFreeze = (why) => {
+      log(`LIVE EXCHANGE FROZEN: ${why}`);
+      repos.flagExchange([{ account: '*', kind: 'frozen', detail: why }]);
+      repos.adminAudit('server', 'exchange-freeze', '', why);
+      for (const x of sessions.values()) if (x.ws && x.accountId !== null && repos.role(x.accountId) === 'admin') notice(x, `The live Exchange froze itself: ${why}`, 'warn');
+    };
+  }
   /** Words moderators added to the chat filter (on top of the built-in list). */
   let chatFilter = repos.filterWords();
   // Sign-in limits: per account name and per network address.
@@ -548,7 +565,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       case 'admin':
         return admin(s, msg.cmd);
       case 'gxGuide':
-        if (live) send(s.ws, { t: 'gxGuide', item: msg.item, guide: live.guide(msg.item) }, s);
+        if (live && gxGuides.take(s.accountId === null ? s.key : liveAccount(s.accountId))) send(s.ws, { t: 'gxGuide', item: msg.item, guide: live.guide(msg.item) }, s);
         return;
       case 'gxOpen':
         if (live && s.accountId !== null) send(s.ws, { t: 'gxState', state: live.view(liveAccount(s.accountId)) }, s);
@@ -591,11 +608,24 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
    */
   function exchange(s: Session, req: LiveIntent) {
     if (!live) return notice(s, 'The live Exchange isn’t open on this server.', 'warn');
-    const reply = (result: LiveResult) => send(s.ws, { t: 'gxResult', nonce: req.nonce, result }, s);
+    // Trades in a result never name the other side's account.
+    const reply = (result: LiveResult) =>
+      send(s.ws, { t: 'gxResult', nonce: req.nonce, result: result.ok && result.trades ? { ...result, trades: result.trades.map((t) => ({ ...t, buyer: t.buyer === account ? t.buyer : '', seller: t.seller === account ? t.seller : '' })) } : result }, s);
+    const account = s.accountId === null ? '' : liveAccount(s.accountId);
     if (s.accountId === null || s.characterId === null) return reply({ ok: false, error: 'Sign in to an account to trade on the Exchange.' });
     if (!s.world.act(s.player, () => s.world.activeClerk())) return reply({ ok: false, error: 'You need to be at an Exchange clerk to do that.' });
     if (s.world.trades.trading(s.playerId)) return reply({ ok: false, error: 'Finish or decline your trade first.' });
-    const account = liveAccount(s.accountId);
+    // Safeguards (3B.3): per-account pace (kept across reconnects), then the offer rules.
+    if (!gxRequests.take(account)) {
+      repos.flagExchange([{ account, kind: 'rate-limited', detail: `${req.op} refused: over ${policy.requestsPerMinute} a minute` }]);
+      return reply({ ok: false, error: 'You are using the Exchange too quickly. Wait a moment and try again.' });
+    }
+    const refused = checkOffer(policy, live.x, req, clock() - repos.accountCreated(s.accountId));
+    if (refused) {
+      if (req.op === 'place') repos.flagExchange([{ account, kind: 'refused', detail: `${req.side} ${req.qty} ${req.item} @ ${req.price}: ${refused}` }]);
+      return reply({ ok: false, error: refused });
+    }
+    const guideBefore = req.op === 'place' ? live.guide(req.item) : null;
     const result = live.handle(account, s.player, req, () => {
       const json = persisted(s);
       const [record, zoneState] = JSON.parse(json);
@@ -604,6 +634,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       s.lastSaved = json;
     });
     reply(result);
+    if (result.ok && !result.replayed) {
+      const flags = watch.observe(account, req, result.trades ?? [], guideBefore);
+      if (flags.length) repos.flagExchange(flags);
+    }
     send(s.ws, { t: 'gxState', state: live.view(account) }, s);
     for (const other of live.counterparts(account, result)) {
       const o = sessions.get(other);
@@ -679,6 +713,20 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           chatFilter = repos.filterWords();
         }
         return answer(true, [chatFilter.length ? `Filtered (besides the built-in list): ${chatFilter.join(', ')}` : 'No extra filtered words.'], chatFilter);
+      }
+      case 'flags': {
+        const flags = repos.exchangeFlags(cmd.limit);
+        return answer(true, flags.length ? flags.map((f) => `${new Date(f.at).toISOString().slice(0, 16)} ${f.kind} ${f.account}: ${f.detail}`) : ['No flags.'], flags);
+      }
+      case 'exchange': {
+        if (!live) return answer(false, ['The live Exchange is switched off on this server.']);
+        if (cmd.action === 'freeze') live.freeze(`frozen by ${actor}${cmd.reason ? `: ${cmd.reason}` : ''}`);
+        if (cmd.action === 'unfreeze') {
+          const problems = live.x.verify();
+          if (problems.length) return answer(false, [`Still failing its checks: ${problems.join('; ')}`]);
+          live.unfreeze();
+        }
+        return answer(true, [live.frozen ? `The live Exchange is closed: ${live.frozen}` : 'The live Exchange is open; its books balance.'], { frozen: live.frozen });
       }
       case 'audit': {
         const log = repos.adminLog(cmd.limit);
@@ -829,6 +877,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   let last = performance.now();
   let acc = 0;
   let sinceSave = 0;
+  let sinceCheck = 0;
+  const integrityIntervalMs = opts.integrityIntervalMs ?? 60_000;
   const every = Math.round(1 / TICK_SECONDS / SNAPSHOT_HZ);
   const timer = setInterval(() => {
     const now = performance.now();
@@ -867,6 +917,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       stats.tickMsMax = Math.max(stats.tickMsMax, took);
     }
     sinceSave += elapsed * 1000;
+    sinceCheck += elapsed * 1000;
+    if (live && sinceCheck >= integrityIntervalMs) {
+      sinceCheck = 0;
+      if (!live.frozen) live.checkIntegrity(repos.lastExchangeHash());
+    }
     if (sinceSave >= saveIntervalMs) {
       sinceSave = 0;
       saveAll();

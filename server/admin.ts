@@ -14,6 +14,7 @@ import { Repos, type Role } from './repo';
  *   ban <name> <minutes|forever> <reason…>
  *   unban <name>
  *   audit [n]                         the latest admin actions
+ *   flags [n]                         unusual live Exchange activity
  *
  * Bans, unbans and roles take effect at the player's next sign-in (and roles at the next command);
  * to remove someone who is online now, use /kick or /ban in the game as a moderator.
@@ -84,12 +85,16 @@ export function runAdmin(args: string[], dbPath = process.env.DB ?? 'server/data
         out(n ? `${a.username} is no longer banned.` : `${a.username} wasn’t banned.`);
         break;
       }
+      case 'flags': {
+        for (const f of repos.exchangeFlags(Number(rest[0]) || 30)) out(`${new Date(f.at).toISOString()} ${f.kind} ${f.account}: ${f.detail}`);
+        break;
+      }
       case 'audit': {
         for (const e of repos.adminLog(Number(rest[0]) || 30)) out(`${new Date(e.at).toISOString()} ${e.actor} ${e.action} ${e.target} ${e.detail}`);
         break;
       }
       default:
-        return fail('Commands: grant, revoke, roles, reports, resolve, ban, unban, audit (see server/admin.ts).');
+        return fail('Commands: grant, revoke, roles, reports, resolve, ban, unban, audit, flags (see server/admin.ts).');
     }
   } finally {
     if (db.open) db.close();

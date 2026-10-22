@@ -63,7 +63,10 @@ export type AdminCommand =
   | { op: 'reports'; status: 'open' | 'resolved' | 'all' }
   | { op: 'resolve'; id: number; resolution: string }
   | { op: 'filter'; action: 'add' | 'remove' | 'list'; word?: string }
-  | { op: 'audit'; limit: number };
+  | { op: 'audit'; limit: number }
+  /** Live Exchange (3B.3): unusual activity, and closing or reopening it. */
+  | { op: 'flags'; limit: number }
+  | { op: 'exchange'; action: 'status' | 'freeze' | 'unfreeze'; reason?: string };
 
 export type LiveIntent = ExchangeIntent | { op: 'claim'; nonce: number };
 export type LiveResult = Result & { note?: string };
@@ -183,7 +186,10 @@ function validAdmin(c: unknown): AdminCommand | null {
       if (c.action === 'list') return c.word === undefined ? { op: 'filter', action: 'list' } : null;
       return (c.action === 'add' || c.action === 'remove') && typeof c.word === 'string' && /^[a-z0-9!@$+]{3,24}$/i.test(c.word) ? (c as AdminCommand) : null;
     case 'audit':
+    case 'flags':
       return onlyKeys(c, ['op', 'limit']) && Number.isInteger(c.limit) && (c.limit as number) >= 1 && (c.limit as number) <= 200 ? (c as AdminCommand) : null;
+    case 'exchange':
+      return onlyKeys(c, ['op', 'action', 'reason']) && (c.action === 'status' || c.action === 'freeze' || c.action === 'unfreeze') && (c.reason === undefined || text(c.reason, 200)) ? (c as AdminCommand) : null;
     default:
       return null;
   }

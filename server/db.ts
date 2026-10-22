@@ -147,6 +147,17 @@ const MIGRATIONS: string[] = [
     detail TEXT NOT NULL DEFAULT ''
   );
   `,
+  // 6: live Exchange safeguards (docs/MULTIPLAYER.md 3B.3): unusual activity for moderators to review.
+  `
+  CREATE TABLE exchange_flags (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    account TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL
+  );
+  CREATE INDEX exchange_flags_account ON exchange_flags(account);
+  `,
 ];
 
 export function openDatabase(path: string): Db {

@@ -20,7 +20,7 @@ export interface ChatEntry {
   text: string;
 }
 
-const ADMIN_HELP = 'Commands: /who · /kick name reason · /mute name minutes reason · /unmute name · /ban name minutes|forever reason · /unban name · /reports [open|resolved|all] · /resolve id note · /filter add|remove|list word · /audit [n]';
+const ADMIN_HELP = 'Commands: /who · /kick name reason · /mute name minutes reason · /unmute name · /ban name minutes|forever reason · /unban name · /reports [open|resolved|all] · /resolve id note · /filter add|remove|list word · /audit [n] · /flags [n] · /exchange status|freeze reason|unfreeze';
 
 /** Reads a typed moderation command ("/kick Ash spamming"). */
 export function parseAdmin(line: string): AdminCommand | { error: string } {
@@ -49,6 +49,11 @@ export function parseAdmin(line: string): AdminCommand | { error: string } {
       return (args[0] === 'add' || args[0] === 'remove') && args[1] ? { op: 'filter', action: args[0], word: args[1] } : { error: 'Usage: /filter add|remove|list word' };
     case 'audit':
       return { op: 'audit', limit: Math.min(200, n(args[0]) || 20) };
+    case 'flags':
+      return { op: 'flags', limit: Math.min(200, n(args[0]) || 20) };
+    case 'exchange':
+      if (args[0] === 'freeze') return { op: 'exchange', action: 'freeze', reason: rest(1) };
+      return args[0] === 'unfreeze' ? { op: 'exchange', action: 'unfreeze' } : { op: 'exchange', action: 'status' };
     default:
       return { error: ADMIN_HELP };
   }

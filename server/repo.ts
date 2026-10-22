@@ -236,6 +236,24 @@ export class Repos {
     })();
   }
 
+  /** The newest stored audit entry's hash (for the integrity check). */
+  lastExchangeHash(): string | null {
+    return (this.db.prepare('SELECT hash FROM exchange_audit ORDER BY seq DESC LIMIT 1').get() as { hash: string } | undefined)?.hash ?? null;
+  }
+
+  flagExchange(flags: { account: string; kind: string; detail: string }[]) {
+    const q = this.db.prepare('INSERT INTO exchange_flags (at, account, kind, detail) VALUES (?, ?, ?, ?)');
+    for (const f of flags) q.run(this.now(), f.account, f.kind, f.detail.slice(0, 500));
+  }
+
+  exchangeFlags(limit = 50): { at: number; account: string; kind: string; detail: string }[] {
+    return this.db.prepare('SELECT at, account, kind, detail FROM exchange_flags ORDER BY id DESC LIMIT ?').all(limit) as { at: number; account: string; kind: string; detail: string }[];
+  }
+
+  accountCreated(accountId: number): number {
+    return (this.db.prepare('SELECT created_at AS c FROM accounts WHERE id = ?').get(accountId) as { c: number } | undefined)?.c ?? 0;
+  }
+
   /** The stored audit chain, oldest first (for checking it end to end). */
   exchangeAudit(): AuditEntry[] {
     // Rebuilt in the engine's field order, which its hashes are computed over.

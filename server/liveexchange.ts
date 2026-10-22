@@ -63,6 +63,33 @@ export class LiveExchange {
     this.savedTrade = this.x.history({}, 1)[0]?.id ?? 0;
   }
 
+  /** Why the Exchange is closed (null: open). Reads still work while frozen; requests don't. */
+  frozen: string | null = null;
+  /** Called when the Exchange freezes itself (the server tells admins and logs it). */
+  onFreeze: (why: string) => void = () => {};
+
+  freeze(why: string) {
+    if (this.frozen) return;
+    this.frozen = why;
+    this.onFreeze(why);
+  }
+
+  unfreeze() {
+    this.frozen = null;
+  }
+
+  /**
+   * The periodic check: the engine's books balance, and its newest audit entry is the one the
+   * database holds (so memory and disk agree). Freezes the Exchange if not; returns the problems.
+   */
+  checkIntegrity(storedLastHash: string | null): string[] {
+    const problems = this.x.verify();
+    const last = this.x.auditLog().at(-1)?.hash ?? null;
+    if (last !== storedLastHash) problems.push(`newest audit entry ${last ?? 'none'} doesn’t match the database (${storedLastHash ?? 'none'})`);
+    if (problems.length) this.freeze(problems.join('; '));
+    return problems;
+  }
+
   toJSON() {
     return { engine: this.x.toJSON(), clients: this.clients };
   }
@@ -96,6 +123,7 @@ export class LiveExchange {
    * throw (then everything is put back). Returns the result to show the player.
    */
   handle(account: string, p: Player, req: LiveIntent, commit: () => void): LiveResult {
+    if (this.frozen) return { ok: false, error: 'The Exchange is closed for checks. Your offers and items are safe.' };
     const c = (this.clients[account] ??= { last: 0, recent: [] });
     const fp = fnv(JSON.stringify(req));
     if (req.nonce <= c.last) {
@@ -106,7 +134,7 @@ export class LiveExchange {
     // A deep copy: toJSON() shares the engine's own objects.
     const before = { engine: JSON.parse(JSON.stringify(this.x.toJSON())), clients: JSON.stringify(this.clients), bag: p.inventory.clone(), bank: p.bank.toJSON() };
     const undo = () => {
-      this.x = Exchange.restore(before.engine, this.options())!;
+      this.x = Exchange.restore(before.engine, this.options(), false)!;
       this.clients = JSON.parse(before.clients);
       p.inventory.slots.splice(0, p.inventory.slots.length, ...before.bag.slots);
       p.bank.slots = before.bank;
@@ -121,12 +149,24 @@ export class LiveExchange {
     if (!result.ok) {
       // Validation failed part way (e.g. after moving coins in): put everything back.
       undo();
+    } else {
+      // Integrity (3B.3): the books must still balance before anything is saved. If they don't,
+      // nothing is kept and the Exchange closes until an admin has looked.
+      const problems = this.x.verify();
+      if (problems.length) {
+        undo();
+        this.freeze(`accounting check failed after a ${req.op}: ${problems.join('; ')}`);
+        return { ok: false, error: 'The Exchange is closed for checks. Nothing changed.' };
+      }
     }
     // (Looked up again: undoing replaces the nonce records.)
     const n = (this.clients[account] ??= { last: 0, recent: [] });
     n.last = req.nonce;
     n.recent.push({ nonce: req.nonce, fp, result });
     if (n.recent.length > REPLAY_MEMORY) n.recent.shift();
+    // A refused request changed nothing worth writing: its number is remembered in memory and saved
+    // with the next request that does change something.
+    if (!result.ok) return result;
     try {
       commit();
     } catch (err) {
