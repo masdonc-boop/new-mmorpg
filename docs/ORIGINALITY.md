@@ -109,7 +109,7 @@ The owner approved the replacement direction on 2026-10-22, with two conditions:
 | Batch | Contents | Status |
 |---|---|---|
 | 1 | H3 (breastplate, greaves), H5 (warlord's bones), the item-id alias map applied to saves on load, and the originality guard test | Done |
-| 2 | H2 spark stones | Planned |
+| 2 | H2 spark stones: air runes became spark stones (same id). New loop: mine spark quartz (Mining 5), chip it with a chisel (Crafting 1, 8 chips), charge the chips at the shrine or a waystone (Magic xp) | Done |
 | 3 | H1 vows | Planned |
 | 4 | H6 original metals | Planned |
 | 5 | H7 and H10 (fish, crops) with M6 | Planned |

@@ -105,6 +105,7 @@ export const RECIPES: Record<string, RecipeDef> = {
   leather_vambraces: r({ id: 'leather_vambraces', station: 'crafting', skill: 'crafting', level: 11, xp: 22, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_vambraces', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   leather_body: r({ id: 'leather_body', station: 'crafting', skill: 'crafting', level: 14, xp: 25, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   leather_chaps: r({ id: 'leather_chaps', station: 'crafting', skill: 'crafting', level: 18, xp: 27, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  dull_spark: r({ id: 'dull_spark', station: 'crafting', skill: 'crafting', level: 1, xp: 6, inputs: [{ item: 'spark_quartz', qty: 1 }], output: { item: 'dull_spark', qty: 8 }, seconds: 1.5, tool: 'chisel' }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 20, xp: 50, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking
   shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 30, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.35, stopLevel: 18, output: 'burnt_fish' } }),
@@ -132,7 +133,7 @@ export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
   { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
   { a: 'needle', b: ['leather', 'wolf_fang'], opens: 'crafting' },
-  { a: 'chisel', b: ['sapphire'], opens: 'crafting' },
+  { a: 'chisel', b: ['sapphire', 'spark_quartz'], opens: 'crafting' },
 ];
 
 export function useCombo(x: ItemId, y: ItemId): AnywhereKind | null {

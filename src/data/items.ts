@@ -12,7 +12,6 @@ export type IconShape =
   | 'pickaxe'
   | 'fang'
   | 'gem'
-  | 'rune'
   | 'bar'
   | 'dagger'
   | 'sword'
@@ -31,6 +30,7 @@ export type IconShape =
   | 'fish'
   | 'tinderbox'
   | 'ashes'
+  | 'spark'
   | 'needle'
   | 'chisel'
   | 'thread'
@@ -116,7 +116,9 @@ export const ITEMS = {
   coal_ore: def({ id: 'coal_ore', name: 'Coal', examine: 'Black and dusty. Smelted with iron ore to make steel.', stackable: false, kind: 'material', value: 25, icon: { shape: 'ore', color: '#2f2d2c', accent: '#5a5856' } }),
   sapphire: def({ id: 'sapphire', name: 'Uncut sapphire', examine: 'A rare blue gem found while mining.', stackable: false, kind: 'material', value: 60, icon: { shape: 'gem', color: '#3a6fe8', accent: '#bcd2ff' } }),
   bronze_arrow: def({ id: 'bronze_arrow', name: 'Bronze arrows', examine: 'Fired from a bow. Wear them in your ammo slot.', stackable: true, kind: 'ammo', value: 1, equip: { slot: 'ammo', ammoFor: 'ranged' }, icon: { shape: 'arrow', color: '#c98a4b', accent: '#f2f2f2' } }),
-  air_rune: def({ id: 'air_rune', name: 'Air runes', examine: 'Fuel for basic spells. Consumed on cast.', stackable: true, kind: 'ammo', value: 2, icon: { shape: 'rune', color: '#d9e6f2', accent: '#6bb8ff' } }),
+  air_rune: def({ id: 'air_rune', name: 'Spark stones', examine: 'Quartz chips charged at a shrine. A wand burns one per spell.', stackable: true, kind: 'ammo', value: 2, icon: { shape: 'spark', color: '#8fe8ff', accent: '#ffffff' } }),
+  spark_quartz: def({ id: 'spark_quartz', name: 'Spark quartz', examine: 'Cloudy crystal from the Ironcrag Hills. It hums faintly. Chip it with a chisel.', stackable: false, kind: 'material', value: 6, icon: { shape: 'ore', color: '#7c8a96', accent: '#8fe8ff' } }),
+  dull_spark: def({ id: 'dull_spark', name: 'Dull spark chips', examine: 'Quartz chips waiting to be charged at the shrine or a waystone.', stackable: true, kind: 'material', value: 1, icon: { shape: 'spark', color: '#9aa6b0', accent: '#d6dde3' } }),
   slime_gel: def({ id: 'slime_gel', name: 'Slime gel', examine: 'Wobbly. Alchemists might want it.', stackable: true, kind: 'material', value: 3, icon: { shape: 'gel', color: '#6fdc5a', accent: '#d8ffd0' } }),
   wolf_pelt: def({ id: 'wolf_pelt', name: 'Wolf pelt', examine: 'Thick grey fur. A tanner can make leather from it.', stackable: false, kind: 'material', value: 15, icon: { shape: 'pelt', color: '#8c8f99', accent: '#d7d9de' } }),
   wolf_fang: def({ id: 'wolf_fang', name: 'Wolf fang', examine: 'Sharp as a dagger.', stackable: true, kind: 'trophy', value: 8, icon: { shape: 'fang', color: '#f1ecd9', accent: '#b8ad8a' } }),

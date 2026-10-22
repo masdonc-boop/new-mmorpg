@@ -510,6 +510,8 @@ export function generateWorld(seed = 1337): WorldMap {
   };
   // Coal deep in the Ironcrag Hills, past the iron (Mining 30, for steel).
   placeLater('coal_rock', 99, 70, 5, 3.5, 0xc0a1);
+  // Spark quartz on the Ironcrag slopes, near the first copper (Mining 5).
+  placeLater('spark_quartz_rock', 86, 56, 5, 3, 0x5a4c);
   // A flax patch south-east of the wheat fields (Crafting: spin into bowstrings).
   placeLater('flax', 72, 87, 8, 3, 0xf1a5);
   // The crafting corner beside the smithy: a spinning wheel (the tanner stands just south).

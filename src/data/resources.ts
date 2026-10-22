@@ -2,7 +2,7 @@ import type { ItemId } from './items';
 import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
-export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall';
+export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall';
 
 export interface ResourceDef {
   id: ResourceType;
@@ -30,6 +30,8 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   copper_rock: { id: 'copper_rock', name: 'Copper rock', skill: 'mining', levelReq: 1, xp: 18, item: 'copper_ore', tool: 'pickaxe', baseChance: 0.55, depleteChance: 0.5, respawnSeconds: 8, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.01 } },
   tin_rock: { id: 'tin_rock', name: 'Tin rock', skill: 'mining', levelReq: 1, xp: 18, item: 'tin_ore', tool: 'pickaxe', baseChance: 0.55, depleteChance: 0.5, respawnSeconds: 8, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.01 } },
   coal_rock: { id: 'coal_rock', name: 'Coal rock', skill: 'mining', levelReq: 30, xp: 50, item: 'coal_ore', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
+  // Spark quartz: the crystal behind Brightwater's magic (chipped, then charged at a shrine).
+  spark_quartz_rock: { id: 'spark_quartz_rock', name: 'Spark quartz', skill: 'mining', levelReq: 5, xp: 14, item: 'spark_quartz', tool: 'pickaxe', baseChance: 0.5, depleteChance: 0.45, respawnSeconds: 7, actionSeconds: 1.8 },
   // Picking flax needs no tool and gives no experience (as in OSRS); Crafting turns it into bowstrings.
   flax: { id: 'flax', name: 'Flax', skill: 'crafting', levelReq: 1, xp: 0, item: 'flax', baseChance: 1, depleteChance: 0.17, respawnSeconds: 6, actionSeconds: 1.2 },
   // Market stalls (Thieving): taking from one always works and empties it until it restocks.

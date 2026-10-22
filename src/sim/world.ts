@@ -133,6 +133,8 @@ export type Command =
   | { type: 'togglePrayer'; prayer: PrayerId }
   /** Pray at the shrine or a waystone to recharge prayer points. */
   | { type: 'pray' }
+  /** Charge dull spark chips into spark stones at the shrine or a waystone. */
+  | { type: 'chargeSparks' }
   /** Gameplay options that are part of the character (saved with it). */
   | { type: 'setOption'; option: 'autoGather'; on: boolean }
   | { type: 'respawn'; at: 'home' | 'checkpoint' };
@@ -1152,6 +1154,9 @@ export class GameWorld {
       case 'pray':
         this.pray();
         break;
+      case 'chargeSparks':
+        this.chargeSparks();
+        break;
       case 'setOption':
         if (cmd.option === 'autoGather') p.autoGather = cmd.on === true;
         break;
@@ -1488,7 +1493,7 @@ export class GameWorld {
     }
   }
 
-  /** Shots or casts left for the current style (worn ammo for bows, bag runes for magic). */
+  /** Shots or casts left for the current style (worn ammo for bows, spark stones in the bag for magic). */
   ammoLeft(): number {
     const p = this.player;
     const style = STYLES[p.style];
@@ -2753,6 +2758,35 @@ export class GameWorld {
   nearAltar(): Checkpoint | null {
     const p = this.player;
     return this.map.checkpoints.find((c) => dist(p.x, p.z, c.x, c.z) < 2.6) ?? null;
+  }
+
+  /**
+   * Shrines and waystones charge quartz chips into spark stones, the fuel for wand spells (one
+   * stone per cast). All carried chips charge at once; Magic xp for each.
+   */
+  private chargeSparks() {
+    const p = this.player;
+    const altar = this.nearAltar();
+    if (!altar) {
+      this.message('Spark chips can only be charged at the shrine or a waystone.', 'warn');
+      return;
+    }
+    const chips = p.inventory.count('dull_spark');
+    if (chips <= 0) {
+      this.message('You have no dull spark chips. Chip spark quartz with a chisel first.', 'warn');
+      return;
+    }
+    const sim = p.inventory.clone();
+    sim.remove('dull_spark', chips);
+    const n = Math.min(chips, sim.capacityFor('air_rune'));
+    if (n <= 0) {
+      this.inventoryFull();
+      return;
+    }
+    if (p.inventory.remove('dull_spark', n) !== n || p.inventory.add('air_rune', n) !== n) throw new Error('spark charge invariant broken');
+    this.grantXp('magic', n * 0.5);
+    this.emit({ type: 'loot', item: 'air_rune', qty: n });
+    this.message(`The ${altar.name}'s light fills the chips: ${n} spark stone${n === 1 ? '' : 's'}.`, 'good');
   }
 
   private pray() {

@@ -118,6 +118,7 @@ const ORE_COLORS: Record<string, string> = {
   tin_rock: '#e3ebf2',
   iron_rock: '#b8503a',
   coal_rock: '#26231f',
+  spark_quartz_rock: '#8fe8ff',
 };
 
 function buildingPrefab(b: Building): THREE.BufferGeometry {

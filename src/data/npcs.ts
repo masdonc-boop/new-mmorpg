@@ -38,7 +38,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
     service: 'shop',
     reach: 2.2,
     idleLines: [
-      'Tools, strings, arrows and runes! And I buy what you gather.',
+      'Tools, strings, arrows and spark stones! And I buy what you gather.',
       'Copper and tin are found in the Ironcrag Hills to the east. Iron lies deeper, for seasoned miners.',
       'Tap a tree or rock and you will keep working it automatically while you stay nearby.',
     ],
@@ -49,7 +49,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
     thieving: { level: 40, xp: 46.8, loot: [{ item: 'coins', min: 30, max: 30, weight: 1 }], stunDamage: 20 },
     idleLines: [
       'Slimes in the western meadow are harmless enough. Wolves in the Whispering Woods bite back.',
-      'Switch combat styles with the big button: blade, bow, or staff. Bows need arrows, staves need air runes.',
+      'Switch combat styles with the big button: blade, bow, or staff. Bows need arrows, wands burn spark stones.',
       'If you fall, the shrine in the plaza will bring you back. You keep your belongings.',
     ],
   },

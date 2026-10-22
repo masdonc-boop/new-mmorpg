@@ -72,7 +72,7 @@ export const QUESTS: Record<string, QuestDef> = {
         { item: 'bread', qty: 3 },
       ],
       xp: { attack: 200, woodcutting: 150, hitpoints: 100 },
-      text: ['250 coins', '50 bronze arrows', '50 air runes', '3 bread', '200 Attack xp', '150 Woodcutting xp', '100 Hitpoints xp'],
+      text: ['250 coins', '50 bronze arrows', '50 spark stones', '3 bread', '200 Attack xp', '150 Woodcutting xp', '100 Hitpoints xp'],
     },
   },
 };

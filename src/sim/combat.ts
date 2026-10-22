@@ -14,7 +14,7 @@ export interface StyleDef {
   accuracy: number;
   power: number;
   ammo?: ItemId;
-  /** Ammo is drawn from the worn ammo slot (arrows) rather than the bag (runes). */
+  /** Ammo is drawn from the worn ammo slot (arrows) rather than the bag (spark stones). */
   ammoWorn?: boolean;
   /** Projectile speed in tiles per second; undefined = instant (melee). */
   projectileSpeed?: number;

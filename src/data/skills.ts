@@ -39,7 +39,7 @@ export const SKILL_INFO: Record<SkillId, SkillInfo> = {
   defence: { name: 'Defence', color: '#5b8de0', glyph: '⛨', category: 'combat', available: true, howTo: 'Fight in Melee style. Wear armour (helm, breastplate, greaves, shield) to be hit less.' },
   hitpoints: { name: 'Hitpoints', color: '#e83f7a', glyph: '♥', category: 'combat', available: true, howTo: 'Rises with any combat. Eat cooked food to heal.' },
   ranged: { name: 'Ranged', color: '#7fc04a', glyph: '➶', category: 'combat', available: true, howTo: 'Fight in Ranged style with arrows in your bag. Wield a shortbow you fletched for better shots.' },
-  magic: { name: 'Magic', color: '#8a6cf0', glyph: '✦', category: 'combat', available: true, howTo: 'Fight in Magic style. Each cast uses one air rune (Tilly sells them; slimes drop them).' },
+  magic: { name: 'Magic', color: '#8a6cf0', glyph: '✦', category: 'combat', available: true, howTo: 'Fight in Magic style. Each cast uses one spark stone. Mine spark quartz in the Ironcrag Hills, chip it with a chisel, and charge the chips at the shrine or a waystone (Tilly sells a few; slimes drop them).' },
   woodcutting: { name: 'Woodcutting', color: '#b07a3c', glyph: '🌲', category: 'gathering', available: true, howTo: 'Needs a bronze axe. Tap any tree; oaks from level 15.' },
   mining: { name: 'Mining', color: '#9aa3ad', glyph: '⛏', category: 'gathering', available: true, howTo: 'Needs a bronze pickaxe. Copper and tin rocks in the Ironcrag Hills (east); iron from level 15, coal from 30 (deeper east).' },
   fishing: { name: 'Fishing', color: '#4aa7c9', glyph: '🎣', category: 'gathering', available: true, howTo: 'Needs a small fishing net. Tap a bubbling fishing spot in the river just west of the village.' },

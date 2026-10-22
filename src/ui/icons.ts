@@ -160,23 +160,33 @@ export function itemIcon(id: string): string {
       }
       break;
     }
-    case 'rune': {
-      g.fillStyle = '#b8b2a6';
-      g.beginPath();
-      g.roundRect(14, 14, 36, 36, 9);
-      g.fill();
-      outline();
-      g.fillStyle = color;
-      g.beginPath();
-      g.roundRect(18, 18, 28, 28, 7);
-      g.fill();
-      g.strokeStyle = accent;
-      g.lineWidth = 3.5;
-      g.beginPath();
-      g.arc(32, 32, 8, 0.3, Math.PI * 1.7);
-      g.moveTo(24, 26);
-      g.quadraticCurveTo(32, 20, 40, 26);
-      g.stroke();
+    case 'spark': {
+      // A cluster of charged quartz shards with a soft glow.
+      const glow = g.createRadialGradient(32, 36, 2, 32, 36, 24);
+      glow.addColorStop(0, 'rgba(160,240,255,0.55)');
+      glow.addColorStop(1, 'rgba(160,240,255,0)');
+      g.fillStyle = glow;
+      g.fillRect(6, 10, 52, 52);
+      for (const [x, y, h, r] of [[24, 46, 22, -0.35], [38, 46, 26, 0.3], [31, 48, 30, 0]] as const) {
+        g.save();
+        g.translate(x, y);
+        g.rotate(r);
+        g.fillStyle = color;
+        g.beginPath();
+        g.moveTo(-5, 0);
+        g.lineTo(-5, -h + 7);
+        g.lineTo(0, -h);
+        g.lineTo(5, -h + 7);
+        g.lineTo(5, 0);
+        g.closePath();
+        g.fill();
+        outline(2);
+        g.fillStyle = accent;
+        g.globalAlpha = 0.6;
+        g.fillRect(-2.5, -h + 8, 2, h - 12);
+        g.globalAlpha = 1;
+        g.restore();
+      }
       break;
     }
     case 'gel': {

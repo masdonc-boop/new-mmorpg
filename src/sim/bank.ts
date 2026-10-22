@@ -21,7 +21,7 @@ export const BANK_CATEGORIES: { id: BankCategory; label: string }[] = [
   { id: 'equipment', label: 'Equipment' },
   { id: 'tools', label: 'Tools' },
   { id: 'food', label: 'Food' },
-  { id: 'ammo', label: 'Ammo & runes' },
+  { id: 'ammo', label: 'Ammo & sparks' },
   { id: 'other', label: 'Other' },
 ];
 

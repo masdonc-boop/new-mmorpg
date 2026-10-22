@@ -1127,7 +1127,11 @@ export class Hud {
     let b = best as Hint | null;
     this.promptCmd = b?.cmd ?? null;
     const altar = !p.dead && !this.openPanel && !p.action && !this.dialogueOpen ? w.nearAltar() : null;
-    if (altar && p.prayerPoints < p.skills.level('prayer') && (!b || Math.hypot(altar.x - p.x, altar.z - p.z) < b.d)) {
+    const chips = p.inventory.count('dull_spark');
+    if (altar && chips > 0) {
+      b = { id: -1, text: `✨ ${altar.name} · charge ${chips} spark chip${chips === 1 ? '' : 's'}`, d: 0, cmd: { type: 'chargeSparks' } };
+      this.promptCmd = b.cmd!;
+    } else if (altar && p.prayerPoints < p.skills.level('prayer') && (!b || Math.hypot(altar.x - p.x, altar.z - p.z) < b.d)) {
       b = { id: -1, text: `🙏 ${altar.name} · recharge prayer`, d: 0, cmd: { type: 'pray' } };
       this.promptCmd = b.cmd!;
     }
