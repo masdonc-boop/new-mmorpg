@@ -2769,3 +2769,12 @@ button.danger {
   border-color: rgba(125, 255, 138, 0.6);
   color: #c9ffd2;
 }
+
+/* 3B.2 moderation answers in the chat box */
+.chat-line.system {
+  color: #9fd7ff;
+  font-size: 12px;
+}
+.chat-line.system.bad {
+  color: var(--warn);
+}

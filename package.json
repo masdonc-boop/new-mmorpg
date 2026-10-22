@@ -10,7 +10,8 @@
     "preview": "vite preview --host",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "server": "tsx server/main.ts"
+    "server": "tsx server/main.ts",
+    "admin": "tsx server/admin.ts"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",

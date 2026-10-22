@@ -115,6 +115,38 @@ const MIGRATIONS: string[] = [
     sell_order INTEGER NOT NULL
   );
   `,
+  // 5: moderation (docs/MULTIPLAYER.md 3B.2). Roles are granted only with the local admin tool.
+  `
+  ALTER TABLE accounts ADD COLUMN role TEXT NOT NULL DEFAULT 'player';
+  CREATE TABLE bans (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    at INTEGER NOT NULL,
+    until INTEGER,
+    reason TEXT NOT NULL,
+    by TEXT NOT NULL,
+    lifted_at INTEGER,
+    lifted_by TEXT
+  );
+  CREATE INDEX bans_account ON bans(account_id);
+  ALTER TABLE reports ADD COLUMN status TEXT NOT NULL DEFAULT 'open';
+  ALTER TABLE reports ADD COLUMN resolved_by TEXT;
+  ALTER TABLE reports ADD COLUMN resolved_at INTEGER;
+  ALTER TABLE reports ADD COLUMN resolution TEXT;
+  CREATE TABLE chat_filter (
+    word TEXT PRIMARY KEY,
+    added_by TEXT NOT NULL,
+    at INTEGER NOT NULL
+  );
+  CREATE TABLE admin_audit (
+    id INTEGER PRIMARY KEY,
+    at INTEGER NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT ''
+  );
+  `,
 ];
 
 export function openDatabase(path: string): Db {

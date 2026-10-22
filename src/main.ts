@@ -231,6 +231,7 @@ async function boot() {
           liveMarket: () => (net!.features.liveExchange ? (liveMarket ??= new LiveSource(world, net!)) : null),
           social: {
             say: (text: string, to?: string) => net!.say(text, to),
+            admin: (cmd) => net!.admin(cmd),
             block: (name: string, on: boolean) => net!.block(name, on),
             report: (name: string, reason: string) => net!.report(name, reason),
             blocked: () => net!.blocked,

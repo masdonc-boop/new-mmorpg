@@ -6,12 +6,12 @@ import { generateWorld, type WorldMap } from '../src/sim/worldmap';
 import { mergeSave } from '../src/sim/records';
 import { INTEREST_RADIUS, captureState, type WorldState } from '../src/net/replica';
 import { MOVES_PER_SNAPSHOT, diffState, limitMoves } from '../src/net/delta';
-import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type LiveIntent, type LiveResult, type ServerMessage } from '../src/net/protocol';
+import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type AdminCommand, type LiveIntent, type LiveResult, type ServerMessage } from '../src/net/protocol';
 import { openDatabase } from './db';
 import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
 import { Repos, StaleWriteError } from './repo';
 import { prepareImport, type ImportPolicy } from './import';
-import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat } from './chat';
+import { CHAT_HEARD, CHAT_RADIUS, ChatPace, cleanChat, filterForm } from './chat';
 import { LiveExchange, liveAccount } from './liveexchange';
 import { BRIGHTWATER, HOLLOW_ZONE, zoneArea, zoneFor, zoneKind, type ZoneId } from '../src/sim/zones';
 import type { TradeCommit } from '../src/sim/trade';
@@ -81,6 +81,8 @@ const MAX_INPUT_QUEUE = 8;
 const INPUT_HOLD_TICKS = 6;
 /** Rate limit: messages per second per connection (token bucket), and strikes before disconnecting. */
 const MESSAGE_RATE = 90;
+/** What a moderator may do (admins may do everything). */
+const MODERATOR_OPS = new Set<AdminCommand['op']>(['who', 'kick', 'mute', 'unmute', 'reports', 'resolve']);
 const MAX_STRIKES = 20;
 /** Commands for the practice market are handled on the device; the server ignores them. */
 const DEVICE_LOCAL = new Set(['exchange', 'exchangeResetPractice']);
@@ -175,6 +177,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   // The live Exchange (off unless switched on): one for the whole world, restored from the database.
   const live = opts.liveExchange ? new LiveExchange(clock, repos.exchangeState()) : null;
   const features = { liveExchange: live !== null };
+  /** Words moderators added to the chat filter (on top of the built-in list). */
+  let chatFilter = repos.filterWords();
   // Sign-in limits: per account name and per network address.
   const accountFails = new RateLimiter(5, 5 * 60_000, clock);
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
@@ -339,6 +343,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       token = auth.token;
     }
     if (ws.readyState !== ws.OPEN) return null;
+    const ban = repos.activeBan(accountId);
+    if (ban) {
+      repos.audit(accountId, 'login-banned');
+      return no(`This account is banned${ban.until ? ` until ${new Date(ban.until).toUTCString()}` : ''}: ${ban.reason || 'no reason given'}.`, 'banned');
+    }
     return { session: attachAccount(ws, accountId, issued), token };
   }
 
@@ -536,6 +545,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return chat(s, msg.channel, msg.text, msg.to);
       case 'gx':
         return exchange(s, msg.req);
+      case 'admin':
+        return admin(s, msg.cmd);
       case 'gxGuide':
         if (live) send(s.ws, { t: 'gxGuide', item: msg.item, guide: live.guide(msg.item) }, s);
         return;
@@ -603,6 +614,92 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   }
 
+  /**
+   * Moderation (3B.2). The role is read from the database on every command, so taking it away works
+   * at once. Moderators: who, kick, mute, reports. Admins: also bans, the word filter and the audit
+   * log. Every command is logged, including refused ones.
+   */
+  function admin(s: Session, cmd: AdminCommand) {
+    const role = s.accountId === null ? 'player' : repos.role(s.accountId);
+    const actor = `${s.name}#${s.accountId ?? 'guest'}`;
+    const answer = (ok: boolean, lines: string[], data?: unknown) => send(s.ws, { t: 'admin', ok, lines, ...(data === undefined ? {} : { data }) }, s);
+    const allowed = role === 'admin' || (role === 'moderator' && MODERATOR_OPS.has(cmd.op));
+    const target = 'name' in cmd ? cmd.name : 'id' in cmd ? String(cmd.id) : '';
+    repos.adminAudit(actor, allowed ? cmd.op : `denied:${cmd.op}`, target, JSON.stringify(cmd).slice(0, 300));
+    if (!allowed) return answer(false, [role === 'player' ? 'Unknown command.' : 'You don’t have permission for that.']);
+    const online = (name: string) => [...sessions.values()].find((x) => x.name.toLowerCase() === name.toLowerCase());
+    const account = (name: string) => repos.findAccount(name);
+    switch (cmd.op) {
+      case 'who': {
+        const list = [...sessions.values()].map((x) => ({ name: x.name, zone: x.zoneId, guest: x.accountId === null, online: !!x.ws }));
+        return answer(true, [`${list.length} in the world:`, ...list.map((x) => `${x.name}${x.guest ? ' (guest)' : ''} · ${x.zone}${x.online ? '' : ' · reconnecting'}`)], list);
+      }
+      case 'kick': {
+        const t = online(cmd.name);
+        if (!t) return answer(false, [`${cmd.name} isn’t in the world.`]);
+        kick(t, `You were removed from the world by a moderator${cmd.reason ? `: ${cmd.reason}` : '.'}`, 'kicked');
+        return answer(true, [`${t.name} was kicked.`]);
+      }
+      case 'mute':
+      case 'unmute': {
+        const until = cmd.op === 'mute' ? clock() + cmd.minutes * 60_000 : 0;
+        const t = online(cmd.name);
+        const a = account(cmd.name);
+        if (!t && !a) return answer(false, [`No player called ${cmd.name}.`]);
+        if (t) t.mutedUntil = until;
+        if (a) repos.mute(a.id, until, actor);
+        if (t && cmd.op === 'mute') notice(t, `You have been muted for ${cmd.minutes} minutes${cmd.reason ? `: ${cmd.reason}` : '.'}`, 'warn');
+        return answer(true, [cmd.op === 'mute' ? `${cmd.name} is muted for ${cmd.minutes} minutes.` : `${cmd.name} can chat again.`]);
+      }
+      case 'ban': {
+        const a = account(cmd.name);
+        if (!a) return answer(false, [`No account called ${cmd.name}.`]);
+        if (repos.role(a.id) === 'admin') return answer(false, ['Admins can’t be banned from here (use the local admin tool).']);
+        const until = cmd.minutes === null ? null : clock() + cmd.minutes * 60_000;
+        repos.ban(a.id, until, cmd.reason, actor);
+        const t = online(cmd.name);
+        if (t) kick(t, `This account has been banned${until ? ` until ${new Date(until).toUTCString()}` : ''}${cmd.reason ? `: ${cmd.reason}` : '.'}`, 'banned');
+        return answer(true, [`${a.username} is banned ${until ? `until ${new Date(until).toUTCString()}` : 'permanently'}.`]);
+      }
+      case 'unban': {
+        const a = account(cmd.name);
+        if (!a) return answer(false, [`No account called ${cmd.name}.`]);
+        const n = repos.unban(a.id, actor);
+        return answer(n > 0, [n ? `${a.username} is no longer banned.` : `${a.username} wasn’t banned.`]);
+      }
+      case 'reports': {
+        const list = repos.reportList(cmd.status);
+        return answer(true, list.length ? list.map((r) => `#${r.id} ${r.status} · ${r.reporter} reported ${r.target}: ${r.reason}${r.context.length ? ` · said: “${r.context.slice(-3).join('” “')}”` : ''}${r.resolution ? ` · ${r.resolution}` : ''}`) : ['No reports.'], list);
+      }
+      case 'resolve':
+        return repos.resolveReport(cmd.id, cmd.resolution, actor) ? answer(true, [`Report #${cmd.id} resolved.`]) : answer(false, [`No open report #${cmd.id}.`]);
+      case 'filter': {
+        if (cmd.action !== 'list') {
+          repos.setFilterWord(filterForm(cmd.word!), cmd.action === 'add', actor);
+          chatFilter = repos.filterWords();
+        }
+        return answer(true, [chatFilter.length ? `Filtered (besides the built-in list): ${chatFilter.join(', ')}` : 'No extra filtered words.'], chatFilter);
+      }
+      case 'audit': {
+        const log = repos.adminLog(cmd.limit);
+        return answer(true, log.map((e) => `${new Date(e.at).toISOString().slice(0, 16)} ${e.actor} ${e.action} ${e.target}`), log);
+      }
+    }
+  }
+
+  /** Removes a character from the world at once (saved first), telling their client why. */
+  function kick(t: Session, why: string, code: ErrorCode) {
+    const ws = t.ws;
+    t.ws = null;
+    if (ws) {
+      send(ws, { t: 'error', error: why, fatal: true, code });
+      ws.close(4003, code);
+    }
+    if (t.accountId !== null) unload(t, code);
+    else remove(t);
+    log(`${t.name} ${code}`);
+  }
+
   function sessionOf(playerId: PlayerId): Session | undefined {
     for (const x of sessions.values()) if (x.playerId === playerId) return x;
     return undefined;
@@ -616,7 +713,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   function chat(s: Session, channel: 'local' | 'private', raw: string, to?: string) {
     const muted = Math.max(s.mutedUntil, s.accountId === null ? 0 : repos.mutedUntil(s.accountId));
     if (muted > clock()) return notice(s, `You are muted until ${new Date(muted).toUTCString()}.`, 'warn');
-    const clean = cleanChat(raw);
+    const clean = cleanChat(raw, chatFilter);
     if ('error' in clean) return notice(s, clean.error, 'warn');
     const slow = s.pace.take(clean.text);
     if (slow) return notice(s, slow, 'warn');

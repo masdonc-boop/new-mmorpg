@@ -49,7 +49,21 @@ export type ClientMessage =
   /** Live Exchange (3A.7, only when the server has it switched on): a request, a price guide, or the current view. */
   | { t: 'gx'; req: LiveIntent }
   | { t: 'gxGuide'; item: ItemId }
-  | { t: 'gxOpen' };
+  | { t: 'gxOpen' }
+  /** Moderation (3B.2): only accounts with a moderator or admin role; checked by the server every time. */
+  | { t: 'admin'; cmd: AdminCommand };
+
+export type AdminCommand =
+  | { op: 'who' }
+  | { op: 'kick'; name: string; reason: string }
+  | { op: 'mute'; name: string; minutes: number; reason: string }
+  | { op: 'unmute'; name: string }
+  | { op: 'ban'; name: string; minutes: number | null; reason: string }
+  | { op: 'unban'; name: string }
+  | { op: 'reports'; status: 'open' | 'resolved' | 'all' }
+  | { op: 'resolve'; id: number; resolution: string }
+  | { op: 'filter'; action: 'add' | 'remove' | 'list'; word?: string }
+  | { op: 'audit'; limit: number };
 
 export type LiveIntent = ExchangeIntent | { op: 'claim'; nonce: number };
 export type LiveResult = Result & { note?: string };
@@ -97,10 +111,12 @@ export type ServerMessage =
   | { t: 'zone'; zone: string; state: WorldState }
   | { t: 'gxState'; state: LiveView }
   | { t: 'gxResult'; nonce: number; result: LiveResult }
-  | { t: 'gxGuide'; item: ItemId; guide: Guide };
+  | { t: 'gxGuide'; item: ItemId; guide: Guide }
+  /** The answer to an admin command, as lines for the chat box (and the raw data, for tools). */
+  | { t: 'admin'; ok: boolean; lines: string[]; data?: unknown };
 
 /** Machine-readable reasons, so the client knows whether to ask for a password or try again. */
-export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale' | 'import';
+export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale' | 'import' | 'banned' | 'kicked';
 
 /** Guest names (development). Account names are checked by the server so it can say what's wrong. */
 export const GUEST_NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,11}$/;
@@ -138,6 +154,38 @@ function validAuth(a: unknown): a is Auth {
       return onlyKeys(a, ['kind', 'token']) && typeof a.token === 'string' && /^[A-Za-z0-9_-]{20,64}$/.test(a.token);
     default:
       return false;
+  }
+}
+
+function validAdmin(c: unknown): AdminCommand | null {
+  if (!isPlainObject(c)) return null;
+  const name = (v: unknown) => typeof v === 'string' && v.length >= 1 && v.length <= 32;
+  const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
+  const minutes = (v: unknown) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 525_600;
+  switch (c.op) {
+    case 'who':
+      return onlyKeys(c, ['op']) ? { op: 'who' } : null;
+    case 'kick':
+      return onlyKeys(c, ['op', 'name', 'reason']) && name(c.name) && text(c.reason, 200) ? (c as AdminCommand) : null;
+    case 'mute':
+      return onlyKeys(c, ['op', 'name', 'minutes', 'reason']) && name(c.name) && minutes(c.minutes) && text(c.reason, 200) ? (c as AdminCommand) : null;
+    case 'unmute':
+    case 'unban':
+      return onlyKeys(c, ['op', 'name']) && name(c.name) ? (c as AdminCommand) : null;
+    case 'ban':
+      return onlyKeys(c, ['op', 'name', 'minutes', 'reason']) && name(c.name) && (c.minutes === null || minutes(c.minutes)) && text(c.reason, 200) ? (c as AdminCommand) : null;
+    case 'reports':
+      return onlyKeys(c, ['op', 'status']) && (c.status === 'open' || c.status === 'resolved' || c.status === 'all') ? (c as AdminCommand) : null;
+    case 'resolve':
+      return onlyKeys(c, ['op', 'id', 'resolution']) && Number.isInteger(c.id) && (c.id as number) > 0 && text(c.resolution, 300) ? (c as AdminCommand) : null;
+    case 'filter':
+      if (!onlyKeys(c, ['op', 'action', 'word'])) return null;
+      if (c.action === 'list') return c.word === undefined ? { op: 'filter', action: 'list' } : null;
+      return (c.action === 'add' || c.action === 'remove') && typeof c.word === 'string' && /^[a-z0-9!@$+]{3,24}$/i.test(c.word) ? (c as AdminCommand) : null;
+    case 'audit':
+      return onlyKeys(c, ['op', 'limit']) && Number.isInteger(c.limit) && (c.limit as number) >= 1 && (c.limit as number) <= 200 ? (c as AdminCommand) : null;
+    default:
+      return null;
   }
 }
 
@@ -197,6 +245,11 @@ export function parseClientMessage(raw: unknown, opts: { allowImport?: boolean }
       return onlyKeys(m, ['t', 'item']) && typeof m.item === 'string' && m.item.length <= 64 && isItemId(m.item) ? { t: 'gxGuide', item: m.item } : null;
     case 'gxOpen':
       return onlyKeys(m, ['t']) ? { t: 'gxOpen' } : null;
+    case 'admin': {
+      if (!onlyKeys(m, ['t', 'cmd'])) return null;
+      const cmd = validAdmin(m.cmd);
+      return cmd ? { t: 'admin', cmd } : null;
+    }
     case 'report':
       if (!onlyKeys(m, ['t', 'name', 'reason']) || typeof m.name !== 'string' || m.name.length < 1 || m.name.length > 32) return null;
       if (typeof m.reason !== 'string' || m.reason.length > 200) return null;

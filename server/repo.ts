@@ -26,6 +26,20 @@ export interface CharacterRow {
   leaseEpoch: number;
 }
 
+export type Role = 'player' | 'moderator' | 'admin';
+
+export interface ReportRow {
+  id: number;
+  at: number;
+  reporter: string;
+  target: string;
+  reason: string;
+  context: string[];
+  status: string;
+  resolvedBy: string | null;
+  resolution: string | null;
+}
+
 /** A save was refused because another server (or a later sign-in) now owns the character, or it changed underneath. */
 export class StaleWriteError extends Error {
   constructor(message: string) {
@@ -262,6 +276,64 @@ export class Repos {
   mute(accountId: number, until: number, by: string) {
     this.db.prepare('UPDATE accounts SET muted_until = ? WHERE id = ?').run(until, accountId);
     this.audit(accountId, 'muted', `${by} until ${new Date(until).toISOString()}`);
+  }
+
+  // ---------------------------------------------------------------- moderation (3B.2)
+
+  role(accountId: number): Role {
+    const r = this.db.prepare('SELECT role FROM accounts WHERE id = ?').get(accountId) as { role: string } | undefined;
+    return r?.role === 'admin' || r?.role === 'moderator' ? r.role : 'player';
+  }
+
+  /** Only the local admin tool calls this (never anything a client sends). */
+  setRole(username: string, role: Role, by: string): boolean {
+    const a = this.findAccount(username);
+    if (!a) return false;
+    this.db.prepare('UPDATE accounts SET role = ? WHERE id = ?').run(role, a.id);
+    this.adminAudit(by, 'role', a.username, role);
+    return true;
+  }
+
+  /** The ban in force for an account, if any. */
+  activeBan(accountId: number): { until: number | null; reason: string } | null {
+    const r = this.db.prepare('SELECT until, reason FROM bans WHERE account_id = ? AND lifted_at IS NULL AND (until IS NULL OR until > ?) ORDER BY id DESC').get(accountId, this.now()) as { until: number | null; reason: string } | undefined;
+    return r ?? null;
+  }
+
+  ban(accountId: number, until: number | null, reason: string, by: string) {
+    this.db.prepare('INSERT INTO bans (account_id, at, until, reason, by) VALUES (?, ?, ?, ?, ?)').run(accountId, this.now(), until, reason.slice(0, 200), by);
+  }
+
+  unban(accountId: number, by: string): number {
+    return this.db.prepare('UPDATE bans SET lifted_at = ?, lifted_by = ? WHERE account_id = ? AND lifted_at IS NULL').run(this.now(), by, accountId).changes;
+  }
+
+  reportList(status: 'open' | 'resolved' | 'all' = 'open', limit = 50): ReportRow[] {
+    const where = status === 'all' ? '' : 'WHERE r.status = ?';
+    const sql = `SELECT r.id, r.at, a.username AS reporter, r.target, r.reason, r.context, r.status, r.resolved_by AS resolvedBy, r.resolution FROM reports r JOIN accounts a ON a.id = r.reporter ${where} ORDER BY r.id DESC LIMIT ?`;
+    const rows = (status === 'all' ? this.db.prepare(sql).all(limit) : this.db.prepare(sql).all(status, limit)) as (Omit<ReportRow, 'context'> & { context: string })[];
+    return rows.map((r) => ({ ...r, context: JSON.parse(r.context) }));
+  }
+
+  resolveReport(id: number, resolution: string, by: string): boolean {
+    return this.db.prepare("UPDATE reports SET status = 'resolved', resolved_by = ?, resolved_at = ?, resolution = ? WHERE id = ? AND status = 'open'").run(by, this.now(), resolution.slice(0, 300), id).changes === 1;
+  }
+
+  filterWords(): string[] {
+    return (this.db.prepare('SELECT word FROM chat_filter ORDER BY word').all() as { word: string }[]).map((r) => r.word);
+  }
+
+  setFilterWord(word: string, on: boolean, by: string) {
+    if (on) this.db.prepare('INSERT OR IGNORE INTO chat_filter (word, added_by, at) VALUES (?, ?, ?)').run(word, by, this.now());
+    else this.db.prepare('DELETE FROM chat_filter WHERE word = ?').run(word);
+  }
+
+  adminAudit(actor: string, action: string, target = '', detail = '') {
+    this.db.prepare('INSERT INTO admin_audit (at, actor, action, target, detail) VALUES (?, ?, ?, ?, ?)').run(this.now(), actor, action, target, detail.slice(0, 500));
+  }
+
+  adminLog(limit = 50): { at: number; actor: string; action: string; target: string; detail: string }[] {
+    return this.db.prepare('SELECT at, actor, action, target, detail FROM admin_audit ORDER BY id DESC LIMIT ?').all(limit) as { at: number; actor: string; action: string; target: string; detail: string }[];
   }
 
   // ---------------------------------------------------------------- audit

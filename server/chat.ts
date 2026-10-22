@@ -15,14 +15,17 @@ export const CHAT_HEARD = 40;
  * A basic word filter: listed words are starred out wherever they appear, also when spelled with
  * digits or symbols for letters. It is deliberately short; reports and mutes cover the rest.
  */
-const FILTERED = ['fuck', 'shit', 'cunt', 'bitch', 'bastard', 'asshole', 'wanker', 'twat', 'slut', 'whore', 'retard', 'nigger', 'nigga'].map((w) => w.replace(/(.)\1+/g, '$1'));
+/** Collapses repeated letters, as the filter compares words. */
+export const filterForm = (w: string) => w.toLowerCase().replace(/(.)\1+/g, '$1');
+
+const FILTERED = ['fuck', 'shit', 'cunt', 'bitch', 'bastard', 'asshole', 'wanker', 'twat', 'slut', 'whore', 'retard', 'nigger', 'nigga'].map(filterForm);
 const LOOKALIKE: Record<string, string> = { '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a', '@': 'a', '5': 's', $: 's', '7': 't', '+': 't' };
 
 /** Links are a common scam ("free coins at …"); they are never passed on. */
 const LINK = /\b(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+\.(?:com|net|org|io|gg|xyz|ru|ly|me|co|info|biz|app|site|link)\b\S*/gi;
 
 /** Stars out filtered words. Letters are compared after mapping look-alikes and dropping repeats. */
-function filterWords(text: string): string {
+function filterWords(text: string, extra: readonly string[]): string {
   const chars = [...text];
   // A comparable form of the text, and which original character each position came from.
   const norm: string[] = [];
@@ -38,7 +41,8 @@ function filterWords(text: string): string {
     from.push(i);
   });
   const flat = norm.join('');
-  for (const w of FILTERED) {
+  for (const w of [...FILTERED, ...extra]) {
+    if (!w) continue;
     let at = flat.indexOf(w);
     while (at >= 0) {
       for (let i = from[at]; i <= from[at + w.length - 1]; i++) if (/\S/.test(chars[i])) chars[i] = '*';
@@ -48,8 +52,11 @@ function filterWords(text: string): string {
   return chars.join('');
 }
 
-/** Cleans a message for others to read, or says why it can't be sent. */
-export function cleanChat(raw: string): { text: string } | { error: string } {
+/**
+ * Cleans a message for others to read, or says why it can't be sent. `extra`: words moderators added
+ * to the filter (in `filterForm`).
+ */
+export function cleanChat(raw: string, extra: readonly string[] = []): { text: string } | { error: string } {
   const text = raw
     .normalize('NFKC')
     .replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '')
@@ -57,7 +64,7 @@ export function cleanChat(raw: string): { text: string } | { error: string } {
     .trim();
   if (!text) return { error: 'Say something first.' };
   if ([...text].length > CHAT_MAX) return { error: `Messages are up to ${CHAT_MAX} characters.` };
-  return { text: filterWords(text.replace(LINK, '[link]')) };
+  return { text: filterWords(text.replace(LINK, '[link]'), extra) };
 }
 
 /**

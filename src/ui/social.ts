@@ -1,8 +1,11 @@
 import type { Player } from '../sim/world';
+import type { AdminCommand } from '../net/protocol';
 
 /** Chat, blocking and reporting, as the server offers them (network play only; docs/MULTIPLAYER.md 3A.6). */
 export interface SocialCallbacks {
   say(text: string, to?: string): void;
+  /** Moderation commands typed as /who, /kick, … (refused by the server without a role). */
+  admin(cmd: AdminCommand): void;
   block(name: string, on: boolean): void;
   report(name: string, reason: string): void;
   blocked(): string[];
@@ -10,10 +13,45 @@ export interface SocialCallbacks {
 }
 
 export interface ChatEntry {
-  channel: 'local' | 'private';
+  channel: 'local' | 'private' | 'system';
+  ok?: boolean;
   from: string;
   to?: string;
   text: string;
+}
+
+const ADMIN_HELP = 'Commands: /who · /kick name reason · /mute name minutes reason · /unmute name · /ban name minutes|forever reason · /unban name · /reports [open|resolved|all] · /resolve id note · /filter add|remove|list word · /audit [n]';
+
+/** Reads a typed moderation command ("/kick Ash spamming"). */
+export function parseAdmin(line: string): AdminCommand | { error: string } {
+  const [head, ...args] = line.trim().slice(1).split(/\s+/);
+  const rest = (from: number) => args.slice(from).join(' ');
+  const n = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : NaN);
+  switch (head?.toLowerCase()) {
+    case 'who':
+      return { op: 'who' };
+    case 'kick':
+      return args[0] ? { op: 'kick', name: args[0], reason: rest(1) } : { error: 'Usage: /kick name reason' };
+    case 'mute':
+      return args[0] && n(args[1]) > 0 ? { op: 'mute', name: args[0], minutes: n(args[1]), reason: rest(2) } : { error: 'Usage: /mute name minutes reason' };
+    case 'unmute':
+      return args[0] ? { op: 'unmute', name: args[0] } : { error: 'Usage: /unmute name' };
+    case 'ban':
+      return args[0] && (args[1] === 'forever' || n(args[1]) > 0) ? { op: 'ban', name: args[0], minutes: args[1] === 'forever' ? null : n(args[1]), reason: rest(2) } : { error: 'Usage: /ban name minutes|forever reason' };
+    case 'unban':
+      return args[0] ? { op: 'unban', name: args[0] } : { error: 'Usage: /unban name' };
+    case 'reports':
+      return { op: 'reports', status: args[0] === 'resolved' || args[0] === 'all' ? args[0] : 'open' };
+    case 'resolve':
+      return n(args[0]) > 0 && args[1] ? { op: 'resolve', id: n(args[0]), resolution: rest(1) } : { error: 'Usage: /resolve id note' };
+    case 'filter':
+      if (args[0] === 'list' || !args[0]) return { op: 'filter', action: 'list' };
+      return (args[0] === 'add' || args[0] === 'remove') && args[1] ? { op: 'filter', action: args[0], word: args[1] } : { error: 'Usage: /filter add|remove|list word' };
+    case 'audit':
+      return { op: 'audit', limit: Math.min(200, n(args[0]) || 20) };
+    default:
+      return { error: ADMIN_HELP };
+  }
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
@@ -25,6 +63,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
 
 /** How a chat line reads: "Ash: hi", "Ash whispers: hi", "To Brindle: hi". */
 export function chatText(e: ChatEntry): string {
+  if (e.channel === 'system') return e.text;
   if (e.channel === 'local') return `${e.from}: ${e.text}`;
   return e.to ? `To ${e.to}: ${e.text}` : `${e.from} whispers: ${e.text}`;
 }
@@ -90,6 +129,13 @@ export class ChatBox {
   private send() {
     const raw = this.input.value.trim();
     if (!raw) return;
+    if (raw.startsWith('/')) {
+      const cmd = parseAdmin(raw);
+      if ('error' in cmd) this.add({ channel: 'system', from: '', text: cmd.error, ok: false });
+      else this.cb.admin(cmd);
+      this.input.value = '';
+      return;
+    }
     const m = /^@(\S+)\s+([\s\S]+)$/.exec(raw);
     if (m) this.cb.say(m[2], m[1]);
     else if (raw.startsWith('@')) return;
@@ -115,7 +161,7 @@ export class ChatBox {
   private render() {
     this.lines.replaceChildren();
     for (const e of this.history.slice(-30)) {
-      const line = el('div', `chat-line ${e.channel}`);
+      const line = el('div', `chat-line ${e.channel}${e.ok === false ? ' bad' : ''}`);
       line.textContent = chatText(e);
       const other = e.channel === 'private' ? e.to ?? e.from : null;
       if (other) line.addEventListener('click', () => this.whisper(other));

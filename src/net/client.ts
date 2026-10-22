@@ -3,7 +3,7 @@ import { patchState } from './delta';
 import { mergeSave } from '../sim/records';
 import { applyCharacter, applyState, type WorldState } from './replica';
 import type { ItemId } from '../data/items';
-import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type ChatChannel, type Features, type Guide, type LiveIntent, type LiveView, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
+import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type AdminCommand, type ChatChannel, type Features, type Guide, type LiveIntent, type LiveView, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
 import { generateWorld } from '../sim/worldmap';
 
 /**
@@ -20,7 +20,9 @@ import { generateWorld } from '../sim/worldmap';
 /** How far in the past other entities are shown (ms): about one and a half snapshot gaps. */
 /** A chat message as received (`to`: a private message this player sent). */
 export interface ChatLine {
-  channel: ChatChannel;
+  /** `system`: the server answering a moderation command. */
+  channel: ChatChannel | 'system';
+  ok?: boolean;
   from: string;
   to?: string;
   text: string;
@@ -74,6 +76,8 @@ export class NetClient {
   /** Chat received since the last `drainChat`, and the players this account has blocked. */
   private chat: ChatLine[] = [];
   blocked: string[] = [];
+  /** Answers to moderation commands (also shown in the chat box). */
+  readonly adminReplies: Extract<ServerMessage, { t: 'admin' }>[] = [];
   /** What the server has switched on (from the welcome). */
   features: Features = { liveExchange: false };
   /** The zone this player is in (Brightwater until told otherwise). */
@@ -253,6 +257,11 @@ export class NetClient {
       this.events.push({ type: 'exchange' });
       return;
     }
+    if (msg.t === 'admin') {
+      for (const text of msg.lines) this.chat.push({ channel: 'system', from: '', text, ok: msg.ok });
+      this.adminReplies.push(msg);
+      return;
+    }
     if (msg.t === 'social') {
       this.blocked = msg.blocked;
       return;
@@ -412,6 +421,11 @@ export class NetClient {
 
   gxGuide(item: ItemId) {
     this.post({ t: 'gxGuide', item });
+  }
+
+  /** A moderation command (the server checks the account's role). */
+  admin(cmd: AdminCommand) {
+    this.post({ t: 'admin', cmd });
   }
 
   block(name: string, on: boolean) {
