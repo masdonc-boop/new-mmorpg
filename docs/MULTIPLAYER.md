@@ -758,3 +758,43 @@ Acceptance:
 | Mobile bandwidth and battery | Interest radius, 10 Hz deltas, JSON first with measurement before optimising |
 | Cost | Everything runs locally with free software; no hosting until the owner approves |
 | Premature scaling | One process, SQLite, zones as an in-process abstraction first; regional servers only when needed |
+
+---
+
+## 11. Phase 3B: hardening and controlled testing
+
+Phase 3B makes the Phase 3A server dependable enough for a small, private test with real phones. It adds no new gameplay. Everything still runs on a machine the owner controls: nothing is hosted, published or public, and the live Exchange stays off by default.
+
+### 3B.1 Audit and fixes: done
+
+An independent read-only review of the server, protocol, trading, Exchange and zone code (October 2026) produced the findings below. Each was checked against the code before being fixed. Tests are in `tests/net-hardening.test.ts` unless noted.
+
+| # | Finding | Severity | Fix |
+|---|---|---|---|
+| H1 | **Pathfinding flood.** A `moveTo` or `interact` aimed off the map or at an unreachable place made the pathfinder search everything reachable (about 8 ms each), and commands ran as they arrived (up to 90 a second per client). | High | Walkable areas are worked out once per map, so an unreachable goal is refused at once (under 0.2 ms). Game commands now have their own pace: 15 a second per session. |
+| H2 | **Parallel password guessing.** Sign-in limits were checked before the slow password hash and counted only after it, so many connections at once could each guess before any failure counted. | High | Sign-ins are counted while they run: one at a time per account name, two per address. Anything more is refused at once. |
+| M1 | **Repeat imports.** The once-per-save rule hashed the raw upload, so any extra field made a save look new. | Medium | The hash is of the character as it comes across, minus the account's name and id. **Still open:** the default `full` policy trusts what the save says (owner decision, section 7). |
+| M2 | **Unbounded memory per client.** A client that stops reading made the server queue snapshots without limit, and the block list was unbounded and resent whole. | Medium | A connection with more than 2 MB waiting is closed. The block list is capped at 200, and blocked names must be valid player names. |
+| M3 | **Live Exchange cost per request.** Every request copied and rewrote the whole engine. | Medium | Per-account limits (3B.3) apply before any work. Refused requests no longer rewrite the market. |
+| M4 | **Zone thrashing.** Stepping back and forth over a zone threshold changed zone, built a house instance and saved on every tick. | Medium | A player changes zone at most once a second (configurable). |
+| M5 | **Guests never left.** A guest who signed out stayed in the world for good. | Medium | They are removed on sign-out. |
+| M6 | **Guest names.** Guests could take an account's name, or take over another guest's character. | Medium | Account names are refused for guests. A guest name can only be taken back from the address it joined from. (Guests remain a development feature, off unless `GUESTS=1`.) |
+| M7 | **One error stopped the server.** Any thrown error (including SQLITE_BUSY while the admin tool held the database) crashed the process. | Medium | Message handling, each zone's tick, transfers, snapshots and periodic saves are all guarded: errors are logged and the server carries on. A save that fails for any reason other than a stale lease keeps the character in the world and retries every second, so nobody is ever unloaded unsaved. |
+| L1 | **No Origin check.** Any web page could open connections on a visitor's behalf. | Low | `allowedOrigins` server option: pages not on the list are refused. Clients that send no Origin (tests, tools) are allowed. 3B.7 makes it required beyond this machine. |
+| L2 | **Cheap unauthenticated connections.** | Low | Eight connections per address. Before sign-in, messages are limited to 4 KB (bigger ones close the connection unread). Messages sent while a sign-in is running count as strikes. |
+| L3 | **Lock-out abuse.** Anyone could lock any account by guessing wrong 5 times. | Low | Wrong passwords lock the name **for that address**, with a much higher limit (50 in 5 minutes) across all addresses. |
+| L4 | **Admin log flooding.** Players could flood the admin log with refused commands. | Low | Plain players' attempts aren't logged; moderators' refusals are. |
+| L5 | **Exchange results named the other side's account.** | Low | Removed (`tests/net-exchange-guard.test.ts`). |
+| L6 | **Character record built in the wrong world.** Snapshots built it in Brightwater rather than the player's zone. | Low | Now uses the player's own zone. |
+| L7 | **Moderators could act on admins.** | Low | Only admins may act on moderators or admins. |
+
+Checked and fine (from the same review):
+- strict message validation (prototype keys, number ranges, exact shapes);
+- commands act only for the signed-in player;
+- trade and Exchange atomicity and undo;
+- lease epochs against stale writers;
+- token storage and constant-time password checks;
+- per-viewer snapshots;
+- chat cleaning;
+- wisps and loot moving 1:1;
+- parameterized SQL.

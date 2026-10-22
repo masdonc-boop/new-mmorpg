@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type Player, type PlayerId } from '../src/sim/world';
 import { routeEvents } from '../src/net/audience';
 import { generateWorld, type WorldMap } from '../src/sim/worldmap';
@@ -48,6 +48,13 @@ export interface ServerOptions {
    * Off by default; switching it on is an owner decision. The practice market is unaffected.
    */
   liveExchange?: boolean;
+  /**
+   * Web pages allowed to connect (their Origin header), e.g. ['http://192.168.1.20:4173']. Clients
+   * that send no Origin (not browsers) are always allowed. Unset: any page (development only).
+   */
+  allowedOrigins?: string[];
+  /** 3B.1 limits (defaults suit real players, each on their own address; tests raise them). */
+  limits?: Partial<{ connectionsPerAddress: number; signInsPerAddress: number; transferCooldownMs: number }>;
   /** Live Exchange safeguards (3B.3); anything left out keeps its default. */
   exchangePolicy?: Partial<ExchangePolicy>;
   /** How often the live Exchange checks its books against the database. Default one minute. */
@@ -86,6 +93,12 @@ const MAX_INPUT_QUEUE = 8;
 const INPUT_HOLD_TICKS = 6;
 /** Rate limit: messages per second per connection (token bucket), and strikes before disconnecting. */
 const MESSAGE_RATE = 90;
+/** 3B.1 limits. */
+const MAX_PREAUTH_MESSAGE = 4096;
+const MAX_BUFFERED = 2 * 1024 * 1024;
+const MAX_BLOCKED = 200;
+/** Game commands (not movement inputs) per second: each may start a pathfind. */
+const COMMAND_RATE = 15;
 /** What a moderator may do (admins may do everything). */
 const MODERATOR_OPS = new Set<AdminCommand['op']>(['who', 'kick', 'mute', 'unmute', 'reports', 'resolve']);
 const MAX_STRIKES = 20;
@@ -144,6 +157,13 @@ export interface Session {
   strikes: number;
   tokens: number;
   lastImportTry: number;
+  /** Network address a guest joined from (only that address may take the guest name back). */
+  addr: string;
+  /** When they last changed zones, and whether their last save failed (3B.1). */
+  lastTransfer: number;
+  saveFailed: boolean;
+  /** Game commands allowed right now (refilled every tick). */
+  cmdTokens: number;
 }
 
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
@@ -198,6 +218,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   let chatFilter = repos.filterWords();
   // Sign-in limits: per account name and per network address.
   const accountFails = new RateLimiter(5, 5 * 60_000, clock);
+  const accountFailsAll = new RateLimiter(50, 5 * 60_000, clock);
+  /** Sign-ins being checked right now, by address and by account name (3B.1). */
+  const signingIn = new Map<string, number>();
+  /** Open connections by address (3B.1). */
+  const connections = new Map<string, number>();
+  const allowedOrigins = opts.allowedOrigins ?? null;
+  const limits = { connectionsPerAddress: 8, signInsPerAddress: 2, transferCooldownMs: 1000, ...opts.limits };
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
   const registrations = new RateLimiter(5, 60 * 60_000, clock);
   // A real hash to compare against when the account doesn't exist (so timing doesn't reveal names).
@@ -215,6 +242,12 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const stats: ServerStats = { ticks: 0, tickMsTotal: 0, tickMsMax: 0, bytesSent: 0 };
   const send = (ws: WebSocket | null, msg: ServerMessage, s?: Session) => {
     if (!ws || ws.readyState !== ws.OPEN) return 0;
+    // 3B.1: a client that stops reading isn't allowed to pile up memory on the server.
+    if (ws.bufferedAmount > MAX_BUFFERED) {
+      log(`${s?.name ?? 'a connection'} isn't keeping up; closing it`);
+      ws.terminate();
+      return 0;
+    }
     const data = JSON.stringify(msg);
     ws.send(data);
     stats.bytesSent += data.length;
@@ -228,6 +261,24 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   wss.on('connection', (ws, req) => {
     const addr = req.socket.remoteAddress ?? 'unknown';
+    // 3B.1: a few connections per address, and only from pages this server serves (when set).
+    const open = (connections.get(addr) ?? 0) + 1;
+    if (open > limits.connectionsPerAddress) {
+      ws.close(1008, 'too many connections');
+      return;
+    }
+    const origin = req.headers.origin;
+    if (allowedOrigins && origin !== undefined && !allowedOrigins.includes(origin)) {
+      log(`refused a connection from origin ${origin}`);
+      ws.close(1008, 'origin');
+      return;
+    }
+    connections.set(addr, open);
+    ws.once('close', () => {
+      const n = (connections.get(addr) ?? 1) - 1;
+      if (n > 0) connections.set(addr, n);
+      else connections.delete(addr);
+    });
     let session: Session | null = null;
     let joining = false;
     let token: string | null = null;
@@ -245,21 +296,54 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }, 5000);
 
     ws.on('message', (data, isBinary) => {
+      try {
+        onMessage(data, isBinary);
+      } catch (err) {
+        // 3B.1: one bad request never takes the whole server down.
+        log(`error handling a message from ${session?.name ?? addr}: ${(err as Error).stack ?? err}`);
+        send(ws, { t: 'error', error: 'Something went wrong on the server. Nothing was changed.' });
+      }
+    });
+    const onMessage = (data: RawData, isBinary: boolean) => {
       if (isBinary) return strike('Binary messages are not accepted.');
+      // Before signing in, only a small hello is expected.
+      const size = Array.isArray(data) ? data.reduce((n, b) => n + b.length, 0) : (data as Buffer | ArrayBuffer).byteLength;
+      if (!session && size > MAX_PREAUTH_MESSAGE) {
+        ws.close(1009, 'too large');
+        return;
+      }
       const msg = parseClientMessage(data.toString(), { allowImport: session?.accountId != null && session.ws === ws });
       if (!msg) return strike('Invalid message.');
       if (!session) {
-        if (joining) return;
+        if (joining) return strike('Still signing in.');
         if (msg.t !== 'hello') return strike('Say hello first.');
         joining = true;
         clearTimeout(helloTimer);
+        // 3B.1: sign-ins that check a password are counted while they run, so opening many
+        // connections at once can't try many passwords before the first failure is recorded.
+        const keys = [`addr:${addr}`, ...(msg.auth.kind === 'login' ? [`name:${msg.auth.username.toLowerCase()}`] : [])];
+        if (msg.auth.kind !== 'guest' && keys.some((k) => (signingIn.get(k) ?? 0) >= (k.startsWith('addr:') ? limits.signInsPerAddress : 1))) {
+          refuse(ws, 'A sign-in is already in progress. Try again in a moment.', 'locked');
+          return;
+        }
+        if (msg.auth.kind !== 'guest') for (const k of keys) signingIn.set(k, (signingIn.get(k) ?? 0) + 1);
+        const done = () => {
+          if (msg.auth.kind === 'guest') return;
+          for (const k of keys) {
+            const n = (signingIn.get(k) ?? 1) - 1;
+            if (n > 0) signingIn.set(k, n);
+            else signingIn.delete(k);
+          }
+        };
         signIn(ws, addr, msg)
           .then((r) => {
             joining = false;
+            done();
             if (r) ({ session, token } = r);
           })
           .catch((err) => {
             joining = false;
+            done();
             log(`sign-in failed: ${(err as Error).message}`);
             refuse(ws, 'The server could not sign you in. Try again.', 'auth');
           });
@@ -279,7 +363,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return;
       }
       handle(session, msg);
-    });
+    };
     ws.on('close', () => {
       clearTimeout(helloTimer);
       if (session && session.ws === ws) {
@@ -311,7 +395,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return null;
       }
       if (!GUEST_NAME.test(auth.name)) return no('Guest names are up to 12 letters or numbers, starting with a letter.', 'auth');
-      return { session: attachGuest(ws, auth.name, auth.appearance), token: null };
+      // 3B.1: a guest can't take an account's name, or another guest's character from elsewhere.
+      if (repos.findAccount(auth.name)) return no('That name belongs to an account. Choose another guest name.', 'taken');
+      const existing = sessions.get(`guest:${auth.name.toLowerCase()}`);
+      if (existing && existing.addr !== addr) return no('That guest name is in use. Choose another.', 'taken');
+      return { session: attachGuest(ws, auth.name, auth.appearance, addr), token: null };
     }
     if (addressFails.blocked(addr)) {
       refuse(ws, 'Too many sign-in attempts from here. Try again in a few minutes.', 'locked');
@@ -334,8 +422,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       issued = token = repos.createSession(accountId);
       log(`new account ${auth.username}`);
     } else if (auth.kind === 'login') {
-      const key = auth.username.toLowerCase();
-      if (accountFails.blocked(key)) {
+      // 3B.1: wrong passwords lock the name for this address (so others can't lock someone out),
+      // with a much higher limit across all addresses.
+      const name = auth.username.toLowerCase();
+      const key = `${name}|${addr}`;
+      if (accountFails.blocked(key) || accountFailsAll.blocked(name)) {
         repos.audit(repos.findAccount(auth.username)?.id ?? null, 'login-locked', auth.username);
         return no('Too many wrong passwords for this name. Try again in a few minutes.', 'locked');
       }
@@ -343,6 +434,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       const ok = await verifyPassword(auth.password, account?.password ?? dummyHash);
       if (!account || !ok) {
         accountFails.fail(key);
+        accountFailsAll.fail(name);
         addressFails.fail(addr);
         repos.audit(account?.id ?? null, 'login-failed', auth.username);
         return no('Wrong name or password.', 'auth');
@@ -368,13 +460,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     return { session: attachAccount(ws, accountId, issued), token };
   }
 
-  function attachGuest(ws: WebSocket, name: string, appearance?: Appearance): Session {
+  function attachGuest(ws: WebSocket, name: string, appearance: Appearance | undefined, addr: string): Session {
     const key = `guest:${name.toLowerCase()}`;
     let s = sessions.get(key);
     if (!s) {
       const playerId = nextGuestId++;
       const player = zone.addPlayer({ playerId, name, appearance });
       s = newSession(key, name, playerId, player, BRIGHTWATER, null, null, 0, 0);
+      s.addr = addr;
       sessions.set(key, s);
       log(`new guest ${name} (#${playerId})`);
     }
@@ -405,7 +498,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
 
   function newSession(key: string, name: string, playerId: PlayerId, player: Player, zoneId: ZoneId, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
-    return { key, name, playerId, player, zoneId, world: zones.get(zoneId)!, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, pace: new ChatPace(clock), blocked: new Set(accountId === null ? [] : repos.blockedBy(accountId).map((n) => n.toLowerCase())), heard: [], mutedUntil: 0, lastReport: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
+    return { key, name, playerId, player, zoneId, world: zones.get(zoneId)!, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, pace: new ChatPace(clock), blocked: new Set(accountId === null ? [] : repos.blockedBy(accountId).map((n) => n.toLowerCase())), heard: [], mutedUntil: 0, lastReport: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0, addr: '', lastTransfer: 0, saveFailed: false, cmdTokens: COMMAND_RATE };
   }
 
   /** Points a session at a connection (taking over from any older one) and sends the welcome. */
@@ -444,8 +537,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       s.lastSaved = json;
       return true;
     } catch (err) {
-      if (!(err instanceof StaleWriteError)) throw err;
-      dropStale(s, why, err);
+      if (err instanceof StaleWriteError) {
+        dropStale(s, why, err);
+        return false;
+      }
+      // 3B.1: anything else (the database busy or full): keep the character and try again later.
+      s.saveFailed = true;
+      log(`${s.name}: ${why} save failed, will retry (${(err as Error).message})`);
       return false;
     }
   }
@@ -488,6 +586,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.player = p;
     s.world = target;
     s.zoneId = to;
+    s.lastTransfer = clock();
     closeIfEmpty(fromId);
     if (s.ws) {
       s.lastState = stateFor(s);
@@ -498,7 +597,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   /** Saves and unloads a character, giving up its lease. */
   function unload(s: Session, why: string) {
-    if (save(s, why) && s.characterId !== null) repos.releaseLease(s.characterId, s.epoch);
+    s.saveFailed = false;
+    const saved = save(s, why);
+    // Never leave the world unsaved: a failed save keeps them here (disconnected) to retry.
+    if (s.saveFailed) {
+      s.disconnectedAt = clock() - graceMs + 1000;
+      return;
+    }
+    if (saved && s.characterId !== null) repos.releaseLease(s.characterId, s.epoch);
     if (sessions.get(s.key) === s) remove(s);
   }
 
@@ -508,6 +614,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     const ws = s.ws;
     s.ws = null;
     if (s.accountId !== null) unload(s, 'logout');
+    // 3B.1: a guest who signs out leaves the world (they used to stay in it for good).
+    else remove(s);
     ws?.close(1000, 'logout');
     log(`${s.name} signed out`);
   }
@@ -550,6 +658,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         if (DEVICE_LOCAL.has(msg.cmd.type)) return;
         // Movement by joystick arrives as numbered inputs, not commands.
         if (msg.cmd.type === 'joystick') return;
+        // 3B.1: commands can start pathfinding, so they have their own (lower) rate.
+        if (s.cmdTokens < 1) return;
+        s.cmdTokens--;
         if (msg.cmd.type === 'tradeRequest') {
           // Trades are saved to both accounts as they happen, so guests (never saved) can't trade.
           const other = sessionOf(msg.cmd.target);
@@ -572,7 +683,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         return;
       case 'block': {
         const name = msg.name.trim();
+        if (!USERNAME.test(name) && !GUEST_NAME.test(name)) return notice(s, 'That isn’t a player’s name.', 'warn');
         if (name.toLowerCase() === s.name.toLowerCase()) return notice(s, 'You can’t block yourself.', 'warn');
+        if (msg.on && !s.blocked.has(name.toLowerCase()) && s.blocked.size >= MAX_BLOCKED) return notice(s, `You can block up to ${MAX_BLOCKED} players.`, 'warn');
         if (msg.on) s.blocked.add(name.toLowerCase());
         else s.blocked.delete(name.toLowerCase());
         if (s.accountId !== null) repos.setBlocked(s.accountId, name.toLowerCase(), msg.on);
@@ -659,8 +772,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     const answer = (ok: boolean, lines: string[], data?: unknown) => send(s.ws, { t: 'admin', ok, lines, ...(data === undefined ? {} : { data }) }, s);
     const allowed = role === 'admin' || (role === 'moderator' && MODERATOR_OPS.has(cmd.op));
     const target = 'name' in cmd ? cmd.name : 'id' in cmd ? String(cmd.id) : '';
-    repos.adminAudit(actor, allowed ? cmd.op : `denied:${cmd.op}`, target, JSON.stringify(cmd).slice(0, 300));
+    // (Plain players trying commands aren't logged: they could otherwise flood the log.)
+    if (role !== 'player') repos.adminAudit(actor, allowed ? cmd.op : `denied:${cmd.op}`, target, JSON.stringify(cmd).slice(0, 300));
     if (!allowed) return answer(false, [role === 'player' ? 'Unknown command.' : 'You don’t have permission for that.']);
+    // Moderators can't act on moderators or admins (3B.1).
+    if ('name' in cmd && role !== 'admin') {
+      const a = repos.findAccount(cmd.name);
+      if (a && repos.role(a.id) !== 'player') return answer(false, ['Only an admin can do that to a moderator or admin.']);
+    }
     const online = (name: string) => [...sessions.values()].find((x) => x.name.toLowerCase() === name.toLowerCase());
     const account = (name: string) => repos.findAccount(name);
     switch (cmd.op) {
@@ -860,7 +979,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
 
   function snapshot(s: Session) {
-    const character = zone.act(s.player, () => zone.characterRecord());
+    const character = s.world.act(s.player, () => s.world.characterRecord());
     const json = characterKey(character);
     const changed = json !== s.lastCharacter;
     if (changed) s.lastCharacter = json;
@@ -899,18 +1018,38 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
           continue;
         }
         s.tokens = Math.min(MESSAGE_RATE, s.tokens + MESSAGE_RATE * TICK_SECONDS);
+        s.cmdTokens = Math.min(COMMAND_RATE, s.cmdTokens + COMMAND_RATE * TICK_SECONDS);
         applyInput(s);
       }
       for (const [id, w] of [...zones]) {
-        w.tick(TICK_SECONDS);
-        routeTickEvents(id, w);
+        // 3B.1: a fault in one zone is logged and doesn't stop the others (or the server).
+        try {
+          w.tick(TICK_SECONDS);
+          routeTickEvents(id, w);
+        } catch (err) {
+          log(`error in zone ${id}: ${(err as Error).stack ?? err}`);
+        }
       }
-      // Anyone now standing in another zone's area (through a passage or a door) moves over.
+      // Anyone now standing in another zone's area (through a passage or a door) moves over, at
+      // most once a second each (stepping back and forth on a threshold can't cost a save a tick).
       for (const s of [...sessions.values()]) {
         const to = zoneFor(s.player.x, s.player.z, s.playerId);
-        if (to !== s.zoneId) transfer(s, to);
+        if (to === s.zoneId || clock() - s.lastTransfer < limits.transferCooldownMs) continue;
+        try {
+          transfer(s, to);
+        } catch (err) {
+          log(`error moving ${s.name} to ${to}: ${(err as Error).stack ?? err}`);
+        }
       }
-      if (tick % every === 0) for (const s of sessions.values()) if (s.ws) snapshot(s);
+      if (tick % every === 0)
+        for (const s of sessions.values()) {
+          if (!s.ws) continue;
+          try {
+            snapshot(s);
+          } catch (err) {
+            log(`error sending ${s.name} a snapshot: ${(err as Error).stack ?? err}`);
+          }
+        }
       const took = performance.now() - started;
       stats.ticks++;
       stats.tickMsTotal += took;
@@ -924,7 +1063,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
     if (sinceSave >= saveIntervalMs) {
       sinceSave = 0;
-      saveAll();
+      try {
+        saveAll();
+      } catch (err) {
+        log(`periodic save failed: ${(err as Error).stack ?? err}`);
+      }
     }
   }, 1000 * TICK_SECONDS);
 

@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 async function serve(dbPath = ':memory:') {
-  const s = await startServer({ port: 0, dbPath, log: () => {}, allowGuests: true, graceMs: 150 });
+  const s = await startServer({ port: 0, dbPath, log: () => {}, allowGuests: true, graceMs: 150, limits: { connectionsPerAddress: 100, signInsPerAddress: 100, transferCooldownMs: 0 } });
   running.push(s);
   return { s, url: `ws://127.0.0.1:${s.port}` };
 }

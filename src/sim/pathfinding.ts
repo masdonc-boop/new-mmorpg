@@ -72,6 +72,9 @@ export function findPath(map: WorldMap, sx: number, sz: number, gx: number, gz: 
   const gtx = Math.floor(gx);
   const gtz = Math.floor(gz);
   const goalBlocked = isBlocked(map, gx, gz);
+  // A goal in a part of the map that can't be walked to from here (off the map, across the sea,
+  // in Glimmer Hollow) is known at once, without searching everything reachable first.
+  if (!reachable(map, Math.floor(sx), Math.floor(sz), gtx, gtz, goalBlocked)) return null;
   const isGoal = (x: number, z: number) =>
     goalBlocked ? Math.max(Math.abs(x - gtx), Math.abs(z - gtz)) === 1 : x === gtx && z === gtz;
 
@@ -143,4 +146,53 @@ export function simplifyPath(path: PathPoint[]): PathPoint[] {
   }
   out.push(path[path.length - 1]);
   return out;
+}
+
+/** Connected walkable areas of a map (worked out once per map): tile → area number, or -1 if blocked. */
+const AREAS = new WeakMap<WorldMap, Int32Array>();
+function areas(map: WorldMap): Int32Array {
+  let a = AREAS.get(map);
+  if (a) return a;
+  const W = map.width;
+  const H = map.height;
+  a = new Int32Array(W * H).fill(-1);
+  let next = 0;
+  const stack: number[] = [];
+  for (let i = 0; i < W * H; i++) {
+    if (a[i] !== -1 || isBlocked(map, (i % W) + 0.5, Math.floor(i / W) + 0.5)) continue;
+    a[i] = next;
+    stack.push(i);
+    while (stack.length) {
+      const c = stack.pop()!;
+      const cx = c % W;
+      const cz = Math.floor(c / W);
+      for (const [dx, dz] of DIRS) {
+        const nx = cx + dx;
+        const nz = cz + dz;
+        if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+        const n = nz * W + nx;
+        if (a[n] !== -1 || isBlocked(map, nx + 0.5, nz + 0.5)) continue;
+        if (dx !== 0 && dz !== 0 && (isBlocked(map, cx + dx + 0.5, cz + 0.5) || isBlocked(map, cx + 0.5, cz + dz + 0.5))) continue;
+        a[n] = next;
+        stack.push(n);
+      }
+    }
+    next++;
+  }
+  AREAS.set(map, a);
+  return a;
+}
+
+/** Whether a goal tile (or, if it is blocked, a tile next to it) is in the start tile's walkable area. */
+function reachable(map: WorldMap, sx: number, sz: number, gx: number, gz: number, goalBlocked: boolean): boolean {
+  const W = map.width;
+  const inside = (x: number, z: number) => x >= 0 && z >= 0 && x < W && z < map.height;
+  if (!inside(sx, sz) || !inside(gx, gz)) return false;
+  const a = areas(map);
+  const home = a[sz * W + sx];
+  // Standing somewhere the grid calls blocked (e.g. mid-obstacle): let the search decide.
+  if (home === -1) return true;
+  if (!goalBlocked) return a[gz * W + gx] === home;
+  for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if ((dx || dz) && inside(gx + dx, gz + dz) && a[(gz + dz) * W + gx + dx] === home) return true;
+  return false;
 }

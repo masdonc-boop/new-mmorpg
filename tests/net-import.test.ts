@@ -184,15 +184,25 @@ describe('3A.4 importing over the network', () => {
     await pump(guest.c, 300);
     for (const e of guest.c.drainEvents()) if (e.type === 'message') events.push(e.text);
     expect(events.join()).toMatch(/Invalid message/);
-    // Before signing in, even a well-formed import is refused.
+    // Before signing in, even a well-formed import is refused: anything bigger than a hello closes
+    // the connection unread (3B.1), and a small one is invalid.
     const ws = new WebSocket(url);
     const got: string[] = [];
+    let closed = false;
     await new Promise<void>((r) => (ws.onopen = () => r()));
     ws.onmessage = (e) => got.push(String(e.data));
+    ws.onclose = () => (closed = true);
     ws.send(JSON.stringify({ t: 'import', save: fixture('batch-11-full.json') }));
     ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, content: contentVersion(map), auth: { kind: 'guest', name: 'Late' } }));
     await sleep(300);
+    expect(closed).toBe(true);
+    expect(got).toEqual([]);
+    const ws2 = new WebSocket(url);
+    await new Promise<void>((r) => (ws2.onopen = () => r()));
+    ws2.onmessage = (e) => got.push(String(e.data));
+    ws2.send(JSON.stringify({ t: 'import', save: { version: 1 } }));
+    await sleep(200);
     expect(got[0]).toMatch(/Invalid message/);
-    ws.close();
+    ws2.close();
   }, 10_000);
 });

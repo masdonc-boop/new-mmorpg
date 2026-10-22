@@ -70,7 +70,8 @@ describe('3B.2 moderation on the server', () => {
     const r = await admin(ash, { op: 'who' });
     expect(r.ok).toBe(false);
     expect(r.lines[0]).toBe('Unknown command.');
-    expect(server.repos.adminLog().map((e) => e.action)).toContain('denied:who');
+    // Plain players' attempts aren't logged (they could flood the log); a moderator's refusals are.
+    expect(server.repos.adminLog()).toEqual([]);
     // Granted on the machine the server runs on, effective at the next command.
     const out: string[] = [];
     expect(runAdmin(['grant', 'Ash', 'moderator'], dbPath, (l) => out.push(l))).toBe(0);
@@ -79,6 +80,7 @@ describe('3B.2 moderation on the server', () => {
     // A moderator can't ban, change the filter or read the admin log.
     expect((await admin(ash, { op: 'ban', name: 'Ash', minutes: 5, reason: '' })).lines[0]).toMatch(/permission/);
     expect((await admin(ash, { op: 'filter', action: 'list' })).ok).toBe(false);
+    expect(server.repos.adminLog().map((e) => e.action)).toContain('denied:ban');
     runAdmin(['revoke', 'Ash'], dbPath, silent);
     expect((await admin(ash, { op: 'who' })).ok).toBe(false);
     expect(runAdmin(['grant', 'Nobody', 'admin'], dbPath, silent)).toBe(1);

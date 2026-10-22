@@ -34,7 +34,7 @@ export type PreparedImport =
   | { ok: true; world: GameWorld; record: CharacterRecord; hash: string; report: string[] }
   | { ok: false; error: string };
 
-/** A stable fingerprint of the uploaded save (used to stop the same save being imported twice). */
+/** A stable fingerprint (used to stop the same character being imported twice). */
 export function saveHash(save: unknown): string {
   return createHash('sha256').update(JSON.stringify(save)).digest('hex');
 }
@@ -50,7 +50,6 @@ export function prepareImport(
   const save = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
   if (save.version !== 1) return { ok: false, error: 'That save is from a version of Brightwater this server does not know.' };
   if (JSON.stringify(save).length > IMPORT_MAX_BYTES) return { ok: false, error: 'That save is too large.' };
-  const hash = saveHash(raw);
   const report: string[] = [];
 
   // Device-local and world-owned parts never come across; the name is the account's.
@@ -136,5 +135,9 @@ export function prepareImport(
     }
   }
   const record = world.characterRecord();
+  // 3B.1: the fingerprint is of the character as it comes across (without the account's name and
+  // id), not of the raw upload, so padding a save with extra fields doesn't make it "new".
+  const { name: _n, playerId: _p, ...character } = record as CharacterRecord & { playerId?: number };
+  const hash = saveHash(character);
   return { ok: true, world, record, hash, report };
 }
