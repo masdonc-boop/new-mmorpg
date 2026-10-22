@@ -110,6 +110,55 @@ const fixture = require(path.join(__dirname, '..', 'tests', 'fixtures', 'saves',
   const after = await state();
   check('the game saves and loads on this device', Math.hypot(after.x - before.x, after.z - before.z) < 1.5, `${after.x.toFixed(1)},${after.z.toFixed(1)} vs ${before.x.toFixed(1)},${before.z.toFixed(1)}`);
 
+  // Eastreach (Phase 4A): tap a willow in Mirefen and the ground beside it, then save and reload there.
+  await page.evaluate(() => {
+    const w = window.game.world;
+    const t = w.nodes.find((n) => n.def.id === 'willow' && !n.depleted);
+    const spot = [[3, 0], [-3, 0], [0, 3], [0, -3]].map(([dx, dz]) => ({ x: t.x + dx, z: t.z + dz })).find((q) => !w.map.blocked[Math.floor(q.z) * w.map.width + Math.floor(q.x)]);
+    w.player.x = w.player.prevX = spot.x;
+    w.player.z = w.player.prevZ = spot.z;
+    w.player.skills.addXp('woodcutting', 20000);
+  });
+  await page.waitForTimeout(2500);
+  const willow = await page.evaluate(() => {
+    const w = window.game.world;
+    const p = w.player;
+    const r = window.game.renderer;
+    const rect = document.querySelector('canvas').getBoundingClientRect();
+    const t = w.nodes
+      .filter((n) => n.def.id === 'willow' && !n.depleted)
+      .map((n) => ({ n, a: r.project(n.x, 1.6, n.z) }))
+      .filter(({ a }) => a.visible && a.x > 40 && a.x < rect.width - 40 && a.y > 220 && a.y < rect.height - 260)
+      .sort((a, b) => Math.hypot(a.n.x - p.x, a.n.z - p.z) - Math.hypot(b.n.x - p.x, b.n.z - p.z))[0];
+    return t ? { id: t.n.id, x: t.a.x + rect.left, y: t.a.y + rect.top, xp: p.skills.xp.woodcutting } : null;
+  });
+  if (willow) {
+    await touch('touchStart', willow.x, willow.y);
+    await page.waitForTimeout(60);
+    await touch('touchEnd', willow.x, willow.y);
+    await page.waitForTimeout(3500);
+  }
+  const cut = await page.evaluate(() => ({ action: window.game.world.player.action && window.game.world.player.action.type, xp: window.game.world.player.skills.xp.woodcutting }));
+  check('Eastreach: tapping a willow in Mirefen starts gathering', !!willow && (cut.action === 'gather' || cut.xp > willow.xp), JSON.stringify({ willow, cut }));
+  if (shots) await page.screenshot({ path: path.join(shots, 'smoke-willow.png') });
+  const ground = await page.evaluate(() => {
+    const rect = document.querySelector('canvas').getBoundingClientRect();
+    return { x: rect.left + rect.width * 0.5 + 60, y: rect.top + rect.height * 0.5 + 40 };
+  });
+  const g0 = await state();
+  await touch('touchStart', ground.x, ground.y);
+  await page.waitForTimeout(60);
+  await touch('touchEnd', ground.x, ground.y);
+  await page.waitForTimeout(1500);
+  const g1 = await state();
+  check('Eastreach: tapping the ground walks there (chunked terrain picks)', Math.hypot(g1.x - g0.x, g1.z - g0.z) > 0.5, `${g0.x.toFixed(1)},${g0.z.toFixed(1)} -> ${g1.x.toFixed(1)},${g1.z.toFixed(1)}`);
+  const eBefore = await state();
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await page.reload();
+  await page.waitForFunction(() => window.game && window.game.world, null, { timeout: 30000 });
+  const eAfter = await state();
+  check('Eastreach: saving and reloading keeps you there', eAfter.x > 112 && Math.hypot(eAfter.x - eBefore.x, eAfter.z - eBefore.z) < 1.5, `${eAfter.x.toFixed(1)},${eAfter.z.toFixed(1)} vs ${eBefore.x.toFixed(1)},${eBefore.z.toFixed(1)}`);
+
   // An older save (before multiplayer) still loads.
   const old = await ctx.newPage();
   old.on('pageerror', (e) => errors.push(e.message));

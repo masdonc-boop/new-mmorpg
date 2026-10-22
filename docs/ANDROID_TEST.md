@@ -152,7 +152,11 @@ Tick each item as you go and note anything odd, with the time:
    - `/who`;
    - `/mute OtherName 1 test`, then `/unmute OtherName`;
    - `/reports` after the other player reports you from the player menu.
-10. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
+10. **Eastreach** (optional, Phase 4A). Walk east from the village along the Ironcrag road to the signpost and over the Saltwind Causeway together.
+    - At the fork, one goes north to Cairnhold and the other south to Heronwick.
+    - Each should see the other leave and come back into view.
+    - Note the frame rate in each settlement (Settings → Show FPS).
+11. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
 
 ### 5. Afterwards
 

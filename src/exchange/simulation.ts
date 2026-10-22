@@ -16,6 +16,8 @@ export const PRACTICE_ITEMS: ItemId[] = [
   'logs', 'oak_logs', 'copper_ore', 'tin_ore', 'iron_ore', 'coal_ore', 'bronze_bar', 'iron_bar', 'steel_bar',
   'raw_shrimps', 'shrimps', 'raw_anchovies', 'anchovies', 'bones', 'big_bones', 'wolf_pelt', 'leather', 'flax', 'bowstring',
   'plank', 'oak_plank', 'potato', 'cabbage', 'air_rune', 'spark_quartz', 'glimmerite_ore', 'glimsteel_bar', 'duskiron_ore', 'duskiron_bar', 'emberglass_shard', 'slime_gel', 'bronze_arrow',
+  // Eastreach (Phase 4A)
+  'willow_logs', 'raw_silverpike', 'silverpike', 'mire_oil', 'silver_ore', 'silver_bar',
 ];
 
 export const PRACTICE_GRANT: { asset: Asset; qty: number }[] = [
