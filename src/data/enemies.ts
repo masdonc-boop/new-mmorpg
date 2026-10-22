@@ -145,6 +145,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     drops: [
       { item: 'bones', min: 1, max: 1, chance: 1 },
       { item: 'raw_meat', min: 1, max: 2, chance: 0.8 },
+      { item: 'boar_hide', min: 1, max: 1, chance: 0.6 },
       { item: 'coins', min: 16, max: 38, chance: 0.7 },
     ],
   },
@@ -155,7 +156,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     speed: 3.5, respawnSeconds: 26, model: 'wolf', scale: 1.15, color: '#9a9ea6', accent: '#d8dce2',
     drops: [
       { item: 'bones', min: 1, max: 1, chance: 1 },
-      { item: 'wolf_pelt', min: 1, max: 1, chance: 0.55 },
+      { item: 'ridge_pelt', min: 1, max: 1, chance: 0.55 },
       { item: 'wolf_fang', min: 1, max: 1, chance: 0.25 },
       { item: 'coins', min: 24, max: 52, chance: 0.7 },
       { item: 'silver_ore', min: 1, max: 1, chance: 0.1 },
@@ -170,7 +171,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'big_bones', min: 1, max: 1, chance: 1 },
       { item: 'coins', min: 260, max: 520, chance: 1 },
       { item: 'silver_bar', min: 1, max: 3, chance: 0.6 },
-      { item: 'wolf_pelt', min: 2, max: 3, chance: 0.8 },
+      { item: 'ridge_pelt', min: 2, max: 3, chance: 0.8 },
       { item: 'cut_sapphire', min: 1, max: 1, chance: 0.25 },
     ],
   },

@@ -70,6 +70,23 @@ function willowPrefab(seed: number): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** Thornridge rowan: a slim grey trunk, a light, feathery crown and clusters of red berries. */
+function rowanPrefab(seed: number): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [part(Cyl(0.12, 0.2, 1.8, 6), '#8a8478', { y: 0.9 })];
+  const greens = ['#6f9a3a', '#7fae46', '#5f8a34'];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + rng();
+    const r = i === 0 ? 0 : 0.45;
+    parts.push(part(blob(i === 0 ? 0.7 : 0.5, 0, 0.22, rng()), greens[i % 3], { x: Math.cos(a) * r, y: 2.2 + (i === 0 ? 0.35 : rng() * 0.3), z: Math.sin(a) * r, jitter: 0.08 }));
+  }
+  for (let i = 0; i < 6; i++) {
+    const a = rng() * Math.PI * 2;
+    parts.push(part(blob(0.09), '#d8342a', { x: Math.cos(a) * 0.62, y: 2.0 + rng() * 0.5, z: Math.sin(a) * 0.62 }));
+  }
+  return merge(parts);
+}
+
 function stumpPrefab(oak: boolean): THREE.BufferGeometry {
   return merge([
     part(Cyl(oak ? 0.26 : 0.2, oak ? 0.32 : 0.25, 0.35, 7), oak ? '#6e4a2c' : '#86592f', { y: 0.17 }),
@@ -1034,7 +1051,7 @@ export class ResourceView {
       byType.set(n.def.id, arr);
     }
     for (const [type, list] of byType) {
-      const isTree = type === 'tree' || type === 'oak' || type === 'willow';
+      const isTree = type === 'tree' || type === 'oak' || type === 'willow' || type === 'rowan';
       if (type === 'net_spot' || type === 'rod_spot' || type === 'warm_spring' || type === 'mire_pool') {
         if (type === 'mire_pool') this.addLilyPads(list);
         if (type === 'warm_spring') this.addSpringPools(list);
@@ -1049,7 +1066,7 @@ export class ResourceView {
       }
       const flax = type === 'flax';
       const variants = isTree
-        ? [0, 1, 2].map((v) => (type === 'willow' ? willowPrefab(760 + v * 17) : treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak')))
+        ? [0, 1, 2].map((v) => (type === 'willow' ? willowPrefab(760 + v * 17) : type === 'rowan' ? rowanPrefab(820 + v * 19) : treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak')))
         : flax
           ? [0, 1].map((v) => flaxPrefab(400 + v * 11, false))
           : [0, 1].map((v) => rockPrefab(900 + v * 7 + type.length, ORE_COLORS[type] ?? null, false));

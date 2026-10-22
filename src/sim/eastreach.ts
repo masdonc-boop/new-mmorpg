@@ -402,6 +402,10 @@ function buildCairnhold(c: Ctx, seed: number) {
   const tarnEdge = (x: number, z: number) =>
     map.tiles[c.idx(x, z)] === T.Water && !c.occ[c.idx(x, z)] && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => map.tiles[c.idx(x + a, z + b)] !== T.Water && !map.blocked[c.idx(x + a, z + b)]);
   scatterNodes(c, 'rod_spot', EAST.tarn.x, EAST.tarn.z, 2, EAST.tarn.r + 1, seed ^ 0x7a12, tarnEdge);
+  // Rowan groves on the lower slopes (Woodcutting 40, Phase 4B).
+  const slope = (x: number, z: number) => c.free(x, z) && [T.Heath, T.Forest, T.Grass].includes(map.tiles[c.idx(x, z)] as 11) && distToRoads(x + 0.5, z + 0.5, c.roads) > 1.8;
+  const rowans: [number, number, number][] = [[142, 44, 4], [168, 48, 3], [183, 46, 3]];
+  rowans.forEach(([x, z, n], i) => scatterNodes(c, 'rowan', x, z, n, 6, seed ^ (0x20a0 + i), slope));
 
   // Boars on the heath below the crags; stalkers up among them; Greymane by the tower.
   spawnCreatures(c, 'bristleback', 160, 47, 8, 5, seed ^ 0xb0a1);

@@ -348,7 +348,7 @@ export class Hud {
     }
     // Trees and rocks as dots
     for (const r of map.resources) {
-      g.fillStyle = r.type === 'tree' ? '#2f7d2f' : r.type === 'oak' ? '#1f5f25' : r.type === 'willow' ? '#7f9f4a' : '#6b6560';
+      g.fillStyle = r.type === 'tree' ? '#2f7d2f' : r.type === 'oak' ? '#1f5f25' : r.type === 'willow' ? '#7f9f4a' : r.type === 'rowan' ? '#8a5a3a' : '#6b6560';
       g.fillRect(r.x, r.z, 1, 1);
     }
     this.minimapBase = c;

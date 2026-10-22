@@ -127,6 +127,12 @@ export const RECIPES: Record<string, RecipeDef> = {
   // Willow (Mirefen Marsh): a quick, whippy shortbow.
   willow_shortbow_u: r({ id: 'willow_shortbow_u', station: 'fletching', skill: 'fletching', level: 30, xp: 34, inputs: [{ item: 'willow_logs', qty: 1 }], output: { item: 'willow_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   willow_shortbow: r({ id: 'willow_shortbow', station: 'fletching', skill: 'fletching', level: 30, xp: 34, inputs: [{ item: 'willow_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'willow_shortbow', qty: 1 }, seconds: 1.2 }),
+  // Phase 4B: iron and steel arrows, and rowan bows (docs/PROGRESSION.md).
+  iron_arrow: r({ id: 'iron_arrow', station: 'fletching', skill: 'fletching', level: 15, xp: 30, inputs: [{ item: 'arrow_shafts', qty: 12 }, { item: 'iron_bar', qty: 1 }], output: { item: 'iron_arrow', qty: 12 }, seconds: 1.8 }),
+  steel_arrow: r({ id: 'steel_arrow', station: 'fletching', skill: 'fletching', level: 25, xp: 40, inputs: [{ item: 'arrow_shafts', qty: 12 }, { item: 'steel_bar', qty: 1 }], output: { item: 'steel_arrow', qty: 12 }, seconds: 1.8 }),
+  rowan_shortbow_u: r({ id: 'rowan_shortbow_u', station: 'fletching', skill: 'fletching', level: 40, xp: 50, inputs: [{ item: 'rowan_logs', qty: 1 }], output: { item: 'rowan_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
+  rowan_shortbow: r({ id: 'rowan_shortbow', station: 'fletching', skill: 'fletching', level: 40, xp: 50, inputs: [{ item: 'rowan_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'rowan_shortbow', qty: 1 }, seconds: 1.2 }),
+  rowan_longbow: r({ id: 'rowan_longbow', station: 'fletching', skill: 'fletching', level: 45, xp: 75, inputs: [{ item: 'rowan_logs', qty: 2 }, { item: 'bowstring', qty: 1 }], output: { item: 'rowan_longbow', qty: 1 }, seconds: 2.2, tool: 'knife' }),
   // ---- Crafting (needle and thread on leather; chisel on gems; flax at the spinning wheel)
   // Wolfhide set (recipe ids kept). The jerkin and breeches take two hides.
   leather_gloves: r({ id: 'leather_gloves', station: 'crafting', skill: 'crafting', level: 1, xp: 12, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_gloves', qty: 1 }, seconds: 1.8, tool: 'needle' }),
@@ -154,6 +160,24 @@ export const RECIPES: Record<string, RecipeDef> = {
   mirepearl_amulet: r({ id: 'mirepearl_amulet', station: 'furnace', skill: 'crafting', level: 34, xp: 86, inputs: [{ item: 'silver_bar', qty: 1 }, { item: 'marsh_pearl', qty: 1 }], output: { item: 'mirepearl_amulet', qty: 1 }, seconds: 2.4 }),
   garnet_pendant: r({ id: 'garnet_pendant', station: 'furnace', skill: 'crafting', level: 30, xp: 72, inputs: [{ item: 'cut_sapphire', qty: 1 }, { item: 'steel_bar', qty: 1 }], output: { item: 'garnet_pendant', qty: 1 }, seconds: 2.4 }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 18, xp: 46, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
+  // Phase 4B: hide armour for archers, robes for mages, and two magic weapons (docs/PROGRESSION.md).
+  linen: r({ id: 'linen', station: 'spinning_wheel', skill: 'crafting', level: 10, xp: 16, inputs: [{ item: 'flax', qty: 2 }], output: { item: 'linen', qty: 1 }, seconds: 1.8 }),
+  linen_hood: r({ id: 'linen_hood', station: 'crafting', skill: 'crafting', level: 12, xp: 20, inputs: [{ item: 'linen', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'linen_hood', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  linen_skirt: r({ id: 'linen_skirt', station: 'crafting', skill: 'crafting', level: 14, xp: 34, inputs: [{ item: 'linen', qty: 2 }, { item: 'thread', qty: 1 }], output: { item: 'linen_skirt', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  linen_robe: r({ id: 'linen_robe', station: 'crafting', skill: 'crafting', level: 16, xp: 50, inputs: [{ item: 'linen', qty: 3 }, { item: 'thread', qty: 1 }], output: { item: 'linen_robe', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  boarhide_vambraces: r({ id: 'boarhide_vambraces', station: 'crafting', skill: 'crafting', level: 28, xp: 40, inputs: [{ item: 'boar_leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'boarhide_vambraces', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  boarhide_coif: r({ id: 'boarhide_coif', station: 'crafting', skill: 'crafting', level: 30, xp: 44, inputs: [{ item: 'boar_leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'boarhide_coif', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  boarhide_chaps: r({ id: 'boarhide_chaps', station: 'crafting', skill: 'crafting', level: 32, xp: 84, inputs: [{ item: 'boar_leather', qty: 2 }, { item: 'thread', qty: 2 }], output: { item: 'boarhide_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  boarhide_body: r({ id: 'boarhide_body', station: 'crafting', skill: 'crafting', level: 34, xp: 126, inputs: [{ item: 'boar_leather', qty: 3 }, { item: 'thread', qty: 3 }], output: { item: 'boarhide_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  mireweave_hood: r({ id: 'mireweave_hood', station: 'crafting', skill: 'crafting', level: 30, xp: 46, inputs: [{ item: 'linen', qty: 1 }, { item: 'mire_oil', qty: 2 }, { item: 'thread', qty: 1 }], output: { item: 'mireweave_hood', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  mireweave_skirt: r({ id: 'mireweave_skirt', station: 'crafting', skill: 'crafting', level: 32, xp: 78, inputs: [{ item: 'linen', qty: 2 }, { item: 'mire_oil', qty: 3 }, { item: 'thread', qty: 1 }], output: { item: 'mireweave_skirt', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  mireweave_robe: r({ id: 'mireweave_robe', station: 'crafting', skill: 'crafting', level: 34, xp: 110, inputs: [{ item: 'linen', qty: 3 }, { item: 'mire_oil', qty: 4 }, { item: 'thread', qty: 2 }], output: { item: 'mireweave_robe', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  ridgehide_vambraces: r({ id: 'ridgehide_vambraces', station: 'crafting', skill: 'crafting', level: 40, xp: 62, inputs: [{ item: 'ridgehide', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'ridgehide_vambraces', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  ridgehide_coif: r({ id: 'ridgehide_coif', station: 'crafting', skill: 'crafting', level: 42, xp: 66, inputs: [{ item: 'ridgehide', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'ridgehide_coif', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  ridgehide_chaps: r({ id: 'ridgehide_chaps', station: 'crafting', skill: 'crafting', level: 44, xp: 128, inputs: [{ item: 'ridgehide', qty: 2 }, { item: 'thread', qty: 2 }], output: { item: 'ridgehide_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  ridgehide_body: r({ id: 'ridgehide_body', station: 'crafting', skill: 'crafting', level: 46, xp: 190, inputs: [{ item: 'ridgehide', qty: 3 }, { item: 'thread', qty: 3 }], output: { item: 'ridgehide_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  mirelight_wand: r({ id: 'mirelight_wand', station: 'crafting', skill: 'crafting', level: 38, xp: 90, inputs: [{ item: 'willow_logs', qty: 1 }, { item: 'marsh_pearl', qty: 1 }, { item: 'dull_spark', qty: 8 }], output: { item: 'mirelight_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
+  rowan_staff: r({ id: 'rowan_staff', station: 'crafting', skill: 'crafting', level: 45, xp: 120, inputs: [{ item: 'rowan_logs', qty: 2 }, { item: 'silver_bar', qty: 1 }, { item: 'dull_spark', qty: 20 }], output: { item: 'rowan_staff', qty: 1 }, seconds: 2.6, tool: 'chisel' }),
   // ---- Cooking
   // Brightfin (recipe id kept for saves and offers in progress).
   shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 28, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.32, stopLevel: 16, output: 'burnt_fish' } }),
@@ -185,11 +209,11 @@ export function failChance(rec: RecipeDef, level: number): number {
  * logs opens fletching.
  */
 export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
-  { a: 'knife', b: ['logs', 'oak_logs', 'willow_logs'], opens: 'fletching' },
-  { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u', 'willow_shortbow_u'], opens: 'fletching' },
-  { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
-  { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body', 'polished_agate'], opens: 'crafting' },
-  { a: 'chisel', b: ['sapphire', 'river_agate', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },
+  { a: 'knife', b: ['logs', 'oak_logs', 'willow_logs', 'rowan_logs'], opens: 'fletching' },
+  { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u', 'willow_shortbow_u', 'rowan_shortbow_u'], opens: 'fletching' },
+  { a: 'arrow_shafts', b: ['bronze_bar', 'iron_bar', 'steel_bar', 'glimsteel_bar'], opens: 'fletching' },
+  { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body', 'polished_agate', 'linen', 'boar_leather', 'ridgehide'], opens: 'crafting' },
+  { a: 'chisel', b: ['sapphire', 'river_agate', 'spark_quartz', 'emberglass_shard', 'marsh_pearl', 'rowan_logs'], opens: 'crafting' },
 ];
 
 export function useCombo(x: ItemId, y: ItemId): AnywhereKind | null {
