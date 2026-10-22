@@ -93,3 +93,5 @@ export function conflicts(a: PrayerDef, b: PrayerDef): boolean {
 
 /** Bones and the Devotion experience for burying one. */
 export const BONES: Partial<Record<ItemId, number>> = { bones: 5, big_bones: 18 };
+/** Devotion xp for each wardleaf burned as incense at the shrine or a waystone; each also restores a point. */
+export const WARDLEAF_XP = 4;

@@ -18,7 +18,7 @@ import type { Result as ExchangeResult, Side } from '../exchange/engine';
 import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
 import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
 import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
-import { BONES, BULWARK_DAMAGE, MENDING_REGEN_SECONDS, REGEN_SECONDS, conflicts, prayerDef, type PrayerId } from '../data/prayers';
+import { BONES, WARDLEAF_XP, BULWARK_DAMAGE, MENDING_REGEN_SECONDS, REGEN_SECONDS, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
@@ -135,6 +135,8 @@ export type Command =
   | { type: 'pray' }
   /** Charge dull spark chips into spark stones at the shrine or a waystone. */
   | { type: 'chargeSparks' }
+  /** Burn carried wardleaf as incense at the shrine or a waystone (Devotion). */
+  | { type: 'burnIncense' }
   /** Quench hot glimsteel blooms into bars in running water (stand at the river's edge). */
   | { type: 'quench' }
   /** Gameplay options that are part of the character (saved with it). */
@@ -1159,6 +1161,9 @@ export class GameWorld {
         break;
       case 'chargeSparks':
         this.chargeSparks();
+        break;
+      case 'burnIncense':
+        this.burnIncense();
         break;
       case 'quench':
         this.quench();
@@ -2500,7 +2505,7 @@ export class GameWorld {
 
   // ---------------------------------------------------------------- farming
 
-  /** The seed the player would plant now: the highest-level crop they can grow and have 3 seeds for. */
+  /** The seed the player would plant now: the highest-level crop they can grow and have enough seeds for. */
   plantableSeed(): ItemId | null {
     const p = this.player;
     const lvl = p.skills.level('farming');
@@ -2519,7 +2524,7 @@ export class GameWorld {
       return { what: 'growing', text: `${c.name} growing (${g.stage + 1}/${g.stages}) · ready in ${g.minutesLeft} min` };
     }
     if (f.weeds > 0) return { what: 'rake', text: `Weedy patch · rake it (${f.weeds} left)` };
-    return { what: 'plant', text: 'Empty patch · plant 3 seeds' };
+    return { what: 'plant', text: `Empty patch · plant ${SEEDS_PER_PATCH} seeds` };
   }
 
   /** Why the next step can't happen (null if it can). */
@@ -2530,7 +2535,7 @@ export class GameWorld {
     if (st.what === 'rake') why = this.toolFor('rake').tool ? null : this.toolFor('rake').why;
     else if (st.what === 'plant') {
       if (!this.toolFor('seed_dibber').tool) why = this.toolFor('seed_dibber').why;
-      else if (!this.plantableSeed()) why = `You need ${SEEDS_PER_PATCH} seeds of a crop you can grow (potato seeds from Farming 1; Tilly sells them).`;
+      else if (!this.plantableSeed()) why = `You need ${SEEDS_PER_PATCH} seeds of a crop you can grow (sunroot seeds from Farming 1; Tilly sells them).`;
     } else if (st.what === 'growing') why = `${st.text}.`;
     else if (!this.toolFor('spade').tool) why = this.toolFor('spade').why;
     else if (p.inventory.capacityFor(CROPS[f.crop!].produce) <= 0) why = 'Your inventory is full.';
@@ -2788,6 +2793,26 @@ export class GameWorld {
     this.grantXp('magic', n * 0.5);
     this.emit({ type: 'loot', item: 'air_rune', qty: n });
     this.message(`The ${altar.name}'s light fills the chips: ${n} spark stone${n === 1 ? '' : 's'}.`, 'good');
+  }
+
+  /** Wardleaf incense: every carried leaf burns at once, for Devotion xp and a point of devotion each. */
+  private burnIncense() {
+    const p = this.player;
+    const altar = this.nearAltar();
+    if (!altar) {
+      this.message('Wardleaf is burned at the shrine or a waystone.', 'warn');
+      return;
+    }
+    const n = p.inventory.count('onion');
+    if (n <= 0) {
+      this.message('You have no wardleaf. Grow it in the allotments (Farming 4).', 'warn');
+      return;
+    }
+    p.inventory.remove('onion', n);
+    p.prayerPoints = Math.min(p.skills.level('prayer'), p.prayerPoints + n);
+    this.grantXp('prayer', n * WARDLEAF_XP);
+    this.emit({ type: 'bury' });
+    this.message(`Sweet smoke rises from the ${altar.name}: ${n} wardleaf burned.`, 'good');
   }
 
   /** Whether there is open water within reach (a river or lake edge). */

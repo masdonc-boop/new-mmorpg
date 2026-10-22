@@ -82,7 +82,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
   farmer: {
     id: 'farmer', name: 'Farmer Wren', title: 'Farmer',
     look: { skin: '#e2b48c', hair: '#c4a060', hairStyle: 1, tunic: '#6a7a3a', trousers: '#5a4632' },
-    idleLines: ['Rake the weeds, plant your seeds, water and wait. That is farming.', 'Potatoes first. Everyone starts with potatoes.'],
+    idleLines: ['Rake the weeds, plant your seeds, water and wait. That is farming.', 'Sunroot first. Everyone starts with sunroot.', 'Burn a wardleaf at the shrine. The spirits like the smell.'],
     thieving: { level: 10, xp: 14.5, loot: [{ item: 'coins', min: 9, max: 9, weight: 3 }, { item: 'potato_seed', min: 1, max: 1, weight: 1 }], stunDamage: 10 },
   },
   sawyer: {

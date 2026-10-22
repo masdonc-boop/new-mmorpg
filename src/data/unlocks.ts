@@ -2,7 +2,7 @@ import { ITEMS, itemDef, type ItemId } from './items';
 import { RECIPES, STATION_INFO } from './recipes';
 import { RESOURCES } from './resources';
 import { FIRE_LOGS } from './firemaking';
-import { BONES, PRAYERS } from './prayers';
+import { BONES, PRAYERS, WARDLEAF_XP } from './prayers';
 import type { SkillId } from './skills';
 
 export interface Unlock {
@@ -18,6 +18,7 @@ export function skillUnlocks(skill: SkillId): Unlock[] {
   for (const r of Object.values(RESOURCES)) if (r.skill === skill) out.push({ level: r.levelReq, text: `${verb} ${r.name.toLowerCase()}`, icon: r.item });
   if (skill === 'prayer') {
     for (const [item] of Object.entries(BONES)) out.push({ level: 1, text: `Bury ${itemDef(item).name.toLowerCase()}`, icon: item as ItemId });
+    out.push({ level: 1, text: `Burn wardleaf at the shrine or a waystone (${WARDLEAF_XP} xp each)`, icon: 'onion' });
     for (const pr of PRAYERS) out.push({ level: pr.level, text: `Swear ${pr.name} (${pr.spirit}): ${pr.text.toLowerCase()}`, icon: 'bones' });
   }
   if (skill === 'firemaking') for (const [item, f] of Object.entries(FIRE_LOGS)) out.push({ level: f!.level, text: `Light ${itemDef(item).name.toLowerCase()}`, icon: item as ItemId });

@@ -38,11 +38,11 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   ember_vent: { id: 'ember_vent', name: 'Ember vent', skill: 'mining', levelReq: 35, xp: 45, item: 'emberglass_shard', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8 },
   // Spark quartz: the crystal behind Brightwater's magic (chipped, then charged at a shrine).
   spark_quartz_rock: { id: 'spark_quartz_rock', name: 'Spark quartz', skill: 'mining', levelReq: 5, xp: 14, item: 'spark_quartz', tool: 'pickaxe', baseChance: 0.5, depleteChance: 0.45, respawnSeconds: 7, actionSeconds: 1.8 },
-  // Picking flax needs no tool and gives no experience (as in OSRS); Crafting turns it into bowstrings.
-  flax: { id: 'flax', name: 'Flax', skill: 'crafting', levelReq: 1, xp: 0, item: 'flax', baseChance: 1, depleteChance: 0.17, respawnSeconds: 6, actionSeconds: 1.2 },
+  // Wild bluebell flax: picking needs no tool and gives no experience; Crafting turns it into bowstrings.
+  flax: { id: 'flax', name: 'Bluebell flax', skill: 'crafting', levelReq: 1, xp: 0, item: 'flax', baseChance: 1, depleteChance: 0.17, respawnSeconds: 6, actionSeconds: 1.2 },
   // Market stalls (Thieving): taking from one always works and empties it until it restocks.
   bakery_stall: { id: 'bakery_stall', name: 'Bakery stall', skill: 'thieving', levelReq: 5, xp: 16, item: 'bread', baseChance: 1, depleteChance: 1, respawnSeconds: 2.5, actionSeconds: 1.2 },
-  seed_stall: { id: 'seed_stall', name: 'Seed stall', skill: 'thieving', levelReq: 27, xp: 10, item: 'potato_seed', baseChance: 1, depleteChance: 1, respawnSeconds: 6, actionSeconds: 1.2, catches: [{ item: 'onion_seed', level: 27, xp: 10, chance: 0.35 }, { item: 'cabbage_seed', level: 27, xp: 10, chance: 0.25 }] },
+  seed_stall: { id: 'seed_stall', name: 'Seed stall', skill: 'thieving', levelReq: 27, xp: 10, item: 'potato_seed', baseChance: 1, depleteChance: 1, respawnSeconds: 6, actionSeconds: 1.2, catches: [{ item: 'onion_seed', level: 27, xp: 10, chance: 0.35 }, { item: 'cabbage_seed', level: 27, xp: 10, chance: 0.25 }, { item: 'bluebell_seed', level: 27, xp: 10, chance: 0.2 }] },
   // Shallows: brightfin from level 1; mudskipper eels from the muddy edges from level 12.
   net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 12, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, catches: [{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }] },
   iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 15, xp: 35, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },

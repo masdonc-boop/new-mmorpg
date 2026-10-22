@@ -1003,39 +1003,59 @@ export function itemIcon(id: string): string {
       g.fill();
       break;
     }
-    case 'potato':
-    case 'onion': {
+    case 'potato': {
+      // Sunroot: a knobbly root.
       g.fillStyle = color;
       g.beginPath();
-      if (shape === 'potato') g.ellipse(32, 36, 18, 13, -0.3, 0, Math.PI * 2);
-      else {
-        g.moveTo(32, 14);
-        g.quadraticCurveTo(52, 30, 44, 46);
-        g.quadraticCurveTo(32, 54, 20, 46);
-        g.quadraticCurveTo(12, 30, 32, 14);
-      }
+      g.ellipse(30, 36, 18, 11, -0.4, 0, Math.PI * 2);
+      g.ellipse(44, 28, 7, 5, -0.4, 0, Math.PI * 2);
       g.fill();
       outline();
       g.fillStyle = accent;
-      for (const [x, y] of shape === 'potato' ? [[24, 32], [36, 40], [40, 30]] : [[32, 20]]) {
+      for (const [x, y] of [[22, 38], [32, 34], [40, 30]]) {
         g.beginPath();
         g.arc(x, y, 2, 0, Math.PI * 2);
         g.fill();
       }
       break;
     }
-    case 'cabbage': {
+    case 'onion': {
+      // Wardleaf: a long pointed leaf with a pale midrib.
       g.fillStyle = color;
       g.beginPath();
-      g.arc(32, 36, 17, 0, Math.PI * 2);
+      g.moveTo(14, 50);
+      g.quadraticCurveTo(18, 20, 50, 12);
+      g.quadraticCurveTo(44, 42, 14, 50);
       g.fill();
       outline();
       g.strokeStyle = accent;
       g.lineWidth = 2;
-      for (const r of [0.6, 1.6, 2.6]) {
+      g.beginPath();
+      g.moveTo(14, 50);
+      g.quadraticCurveTo(30, 32, 50, 12);
+      g.stroke();
+      break;
+    }
+    case 'cabbage': {
+      // Glowcap: a pale mushroom with a soft glow.
+      const glow = g.createRadialGradient(32, 28, 4, 32, 30, 28);
+      glow.addColorStop(0, accent + '88');
+      glow.addColorStop(1, accent + '00');
+      g.fillStyle = glow;
+      g.fillRect(0, 0, 64, 64);
+      g.fillStyle = '#efe8d6';
+      g.fillRect(27, 30, 10, 20);
+      g.fillStyle = color;
+      g.beginPath();
+      g.ellipse(32, 30, 19, 12, 0, Math.PI, 0);
+      g.closePath();
+      g.fill();
+      outline();
+      g.fillStyle = accent;
+      for (const [x, y] of [[24, 26], [34, 22], [40, 27]]) {
         g.beginPath();
-        g.arc(32, 36, 12, r, r + 1.2);
-        g.stroke();
+        g.arc(x, y, 2, 0, Math.PI * 2);
+        g.fill();
       }
       break;
     }

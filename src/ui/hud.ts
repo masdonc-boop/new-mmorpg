@@ -1123,18 +1123,22 @@ export class Hud {
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
       for (const o of w.obstacles) consider(o.id, o.def.x1, o.def.z1, `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`, 1.8);
       for (const nd of w.nodes) if (nd.def.skill === 'thieving' && !nd.depleted) consider(nd.id, nd.x, nd.z, `🤏 ${nd.def.name} · steal (Thieving ${nd.def.levelReq})`, 2.4);
-      for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Flax · pick it to spin bowstrings', 2.2);
+      for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Bluebell flax · pick it to spin bowstrings', 2.2);
     }
     let b = best as Hint | null;
     this.promptCmd = b?.cmd ?? null;
     const altar = !p.dead && !this.openPanel && !p.action && !this.dialogueOpen ? w.nearAltar() : null;
     const chips = p.inventory.count('dull_spark');
+    const leaves = p.inventory.count('onion');
     const blooms = p.inventory.count('glimsteel_bloom');
     if (blooms > 0 && !p.dead && !this.openPanel && !p.action && w.nearWater()) {
       b = { id: -1, text: `💧 Quench ${blooms} hot glimsteel bloom${blooms === 1 ? '' : 's'} in the river`, d: 0, cmd: { type: 'quench' } };
       this.promptCmd = b.cmd!;
     } else if (altar && chips > 0) {
       b = { id: -1, text: `✨ ${altar.name} · charge ${chips} spark chip${chips === 1 ? '' : 's'}`, d: 0, cmd: { type: 'chargeSparks' } };
+      this.promptCmd = b.cmd!;
+    } else if (altar && leaves > 0) {
+      b = { id: -1, text: `🌿 ${altar.name} · burn ${leaves} wardleaf as incense`, d: 0, cmd: { type: 'burnIncense' } };
       this.promptCmd = b.cmd!;
     } else if (altar && p.prayerPoints < p.skills.level('prayer') && (!b || Math.hypot(altar.x - p.x, altar.z - p.z) < b.d)) {
       b = { id: -1, text: `🕯 ${altar.name} · restore devotion`, d: 0, cmd: { type: 'pray' } };

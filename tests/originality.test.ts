@@ -6,9 +6,10 @@ import { isBlocked } from '../src/sim/worldmap';
 import { xpForLevel } from '../src/data/skills';
 import { RESOURCES } from '../src/data/resources';
 import { RECIPES } from '../src/data/recipes';
+import { CROPS, SEEDS_PER_PATCH } from '../src/data/farming';
 
 /** RuneScape-specific names that must not appear in item names (grows with each originality batch). */
-const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i];
+const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i, /potato/i, /onion/i, /cabbage/i];
 
 describe('Originality guard', () => {
   it('no item uses a banned RuneScape-specific name', () => {
@@ -272,5 +273,51 @@ describe('Batch 5a: river fish', () => {
     expect(RECIPES.anchovies).toMatchObject({ level: 12, xp: 42, fail: { stopLevel: 30 } });
     expect(RECIPES.shrimps.fail?.stopLevel).toBe(16);
     expect([ITEMS.shrimps.heal, ITEMS.anchovies.heal, ITEMS.cooked_meat.heal, ITEMS.bread.heal]).toEqual([16, 24, 22, 28]);
+  });
+});
+
+describe('Batch 5b: crops', () => {
+  it('an old save’s potatoes, onions, cabbages and planted patches carry over unchanged', () => {
+    const w = new GameWorld();
+    w.player.inventory.add('potato', 2);
+    w.player.inventory.add('onion_seed', 5);
+    w.player.bank.add('cabbage', 4);
+    w.player.bank.add('baked_potato', 3);
+    w.patches[0].crop = 'onion';
+    w.patches[0].plantedAt = 1234;
+    w.patches[0].weeds = 0;
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    const w2 = new GameWorld({ save });
+    const p = w2.player;
+    expect([p.inventory.count('potato'), p.inventory.count('onion_seed'), p.bank.count('cabbage'), p.bank.count('baked_potato')]).toEqual([2, 5, 4, 3]);
+    expect(w2.patches[0]).toMatchObject({ crop: 'onion', plantedAt: 1234 });
+    expect([ITEMS.potato.name, ITEMS.onion.name, ITEMS.cabbage.name, ITEMS.baked_potato.name, ITEMS.flax.name])
+      .toEqual(['Sunroot', 'Wardleaf', 'Glowcap', 'Roasted sunroot', 'Bluebell flax']);
+  });
+
+  it('original crop table: own levels, growth and 2 seeds a patch; bluebell flax grows bowstring fibre', () => {
+    expect(Object.values(CROPS).map((c) => [c.name, c.level, c.stages * c.stageMinutes])).toEqual([
+      ['Sunroot', 1, 36], ['Wardleaf', 4, 40], ['Glowcaps', 8, 40], ['Bluebell flax', 12, 48],
+    ]);
+    expect(SEEDS_PER_PATCH).toBe(2);
+    expect(CROPS.bluebell).toMatchObject({ seed: 'bluebell_seed', produce: 'flax' });
+  });
+
+  it('wardleaf burns as incense at an altar: Devotion xp and a point of devotion per leaf', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('onion', 3);
+    w.issue({ type: 'burnIncense' });
+    expect(p.inventory.count('onion')).toBe(3);
+    const altar = w.map.checkpoints[0];
+    p.x = p.prevX = altar.x + 1;
+    p.z = p.prevZ = altar.z;
+    p.skills.addXp('prayer', xpForLevel(10));
+    p.prayerPoints = 2;
+    const xp = p.skills.xp.prayer;
+    w.issue({ type: 'burnIncense' });
+    expect(p.inventory.count('onion')).toBe(0);
+    expect(p.skills.xp.prayer - xp).toBe(12);
+    expect(p.prayerPoints).toBe(5);
   });
 });

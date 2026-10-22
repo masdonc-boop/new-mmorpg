@@ -355,10 +355,10 @@ describe('Farming', () => {
     p.inventory.add('potato_seed', 4);
     work(w, 0, 2);
     expect(f.crop).toBe('potato');
-    expect(p.inventory.count('potato_seed')).toBe(1);
-    expect(p.skills.xp.farming).toBe(20);
+    expect(p.inventory.count('potato_seed')).toBe(2);
+    expect(p.skills.xp.farming).toBe(19);
     expect(w.patchState(f).what).toBe('growing');
-    // 25 minutes later (saved and reloaded in between): still growing, stage 3 of 4.
+    // 25 minutes later (saved and reloaded in between): still growing, stage 3 of 4 (9 minutes a stage).
     t.now += 25 * 60_000;
     const { w: w2 } = farmWorld(JSON.parse(JSON.stringify(w.save())));
     (w2 as unknown as { clock: () => number }).clock = () => t.now;
@@ -384,7 +384,7 @@ describe('Farming', () => {
     w.drainEvents();
     work(w, 1, 2);
     expect(lastMessage(w)).toContain('seeds of a crop you can grow');
-    p.skills.addXp('farming', xpForLevel(7));
+    p.skills.addXp('farming', xpForLevel(8));
     delete p.toolbelt.slots.seed_dibber;
     work(w, 1, 2);
     expect(lastMessage(w)).toContain('seed dibber');
@@ -403,7 +403,7 @@ describe('Farming', () => {
     expect(f.weeds).toBe(2);
   });
 
-  it('potatoes bake on a range (Cooking 7) into food', () => {
+  it('sunroot roasts on a range (Cooking 5) into food', () => {
     const { w } = farmWorld();
     const p = w.player;
     p.inventory.add('potato', 1);
@@ -415,7 +415,7 @@ describe('Farming', () => {
     w.issue({ type: 'craft', recipe: 'baked_potato', count: 1 });
     run(w, 2.5);
     expect(p.inventory.count('baked_potato')).toBe(1);
-    expect(itemDef('baked_potato').heal).toBe(40);
+    expect(itemDef('baked_potato').heal).toBe(34);
   });
 });
 

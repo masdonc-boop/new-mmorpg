@@ -455,7 +455,7 @@ export function obstaclePrefab(kind: 'log' | 'wall' | 'rope' | 'beam' | 'hedge',
  * A farming patch: a soil bed with a wooden edge, plus weeds (1-3) or a crop at a growth stage
  * (0..stages; the last stage is ready to harvest).
  */
-export function patchPrefab(weeds: number, crop: 'potato' | 'onion' | 'cabbage' | null, stage: number, stages: number, seed: number): THREE.BufferGeometry {
+export function patchPrefab(weeds: number, crop: 'potato' | 'onion' | 'cabbage' | 'bluebell' | null, stage: number, stages: number, seed: number): THREE.BufferGeometry {
   const rng = mulberry32(seed);
   const parts: THREE.BufferGeometry[] = [part(Box(1.5, 0.12, 1.5), '#5a3f28', { y: 0.06, jitter: 0.05 })];
   for (const [x, z, w, d] of [[0, 0.78, 1.66, 0.08], [0, -0.78, 1.66, 0.08], [0.78, 0, 0.08, 1.5], [-0.78, 0, 0.08, 1.5]]) parts.push(part(Box(w, 0.16, d), '#8a5a34', { x, y: 0.08, z }));
@@ -474,13 +474,28 @@ export function patchPrefab(weeds: number, crop: 'potato' | 'onion' | 'cabbage' 
     for (const x of [-0.45, 0, 0.45]) {
       for (const z of [-0.45, 0, 0.45]) {
         if (crop === 'cabbage') {
-          parts.push(part(blob(0.17 * k + 0.04, 0, 0.12, rng()), '#8fc45a', { x, y: 0.15 + 0.12 * k, z, sy: 0.85, jitter: 0.06 }));
+          // Glowcaps: a cluster of pale stalks and domed caps.
+          for (let i = 0; i < 2; i++) {
+            const ox = x + (i ? 0.07 : -0.05);
+            const oz = z + (i ? -0.05 : 0.06);
+            const h = (0.08 + 0.14 * k) * (i ? 0.75 : 1);
+            parts.push(part(Cyl(0.025, 0.035, h, 5), '#efe8d6', { x: ox, y: 0.13 + h / 2, z: oz }));
+            parts.push(part(blob(0.05 + 0.07 * k, 0, 0.08, rng()), '#d8f0c0', { x: ox, y: 0.13 + h, z: oz, sy: 0.55 }));
+          }
         } else if (crop === 'onion') {
-          for (let i = 0; i < 3; i++) parts.push(part(Cyl(0.015, 0.02, 0.5 * k, 4), '#7fae4a', { x: x + (i - 1) * 0.04, y: 0.14 + 0.25 * k, z, rz: (i - 1) * 0.2 }));
-          if (stage >= stages) parts.push(part(blob(0.07, 0, 0.1, rng()), '#e8d6a0', { x, y: 0.16, z }));
+          // Wardleaf: silvery blades fanning out.
+          for (let i = 0; i < 4; i++) parts.push(part(Box(0.07, 0.4 * k + 0.05, 0.015), '#a8c4b8', { x: x + (i - 1.5) * 0.03, y: 0.14 + 0.2 * k, z, ry: i * 0.8, rz: (i - 1.5) * 0.35, jitter: 0.05 }));
+        } else if (crop === 'bluebell') {
+          // Bluebell flax: thin stems, blue flowers once grown.
+          for (let i = 0; i < 3; i++) {
+            const ox = x + (i - 1) * 0.06;
+            parts.push(part(Cyl(0.01, 0.014, 0.6 * k, 4), '#6f9e3c', { x: ox, y: 0.14 + 0.3 * k, z, rz: (i - 1) * 0.15 }));
+            if (stage >= stages - 1) parts.push(part(blob(0.04, 0, 0.1, rng()), '#7fa8e8', { x: ox + (i - 1) * 0.04, y: 0.14 + 0.6 * k, z }));
+          }
         } else {
-          parts.push(part(blob(0.2 * k + 0.05, 0, 0.18, rng()), '#4f8f3a', { x, y: 0.16 + 0.15 * k, z, sy: 0.7, jitter: 0.08 }));
-          if (stage >= stages) parts.push(part(blob(0.05, 0, 0.1, rng()), '#f2f2d0', { x: x + 0.08, y: 0.32, z }));
+          // Sunroot: broad leafy tops; the golden root shows when ready.
+          parts.push(part(blob(0.2 * k + 0.05, 0, 0.18, rng()), '#5f9a3a', { x, y: 0.16 + 0.15 * k, z, sy: 0.7, jitter: 0.08 }));
+          if (stage >= stages) parts.push(part(blob(0.07, 0, 0.15, rng()), '#e0b04a', { x: x + 0.1, y: 0.16, z: z + 0.06 }));
         }
       }
     }
