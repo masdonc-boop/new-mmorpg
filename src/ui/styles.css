@@ -2817,3 +2817,18 @@ button.danger {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Development performance overlay (?perf, Phase 4D). */
+.perf-overlay {
+  position: fixed;
+  left: 50%;
+  top: max(4px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #b8ffb0;
+  font: 10px/1.35 ui-monospace, monospace;
+  white-space: pre;
+  pointer-events: none;
+}

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bakeRigidParts, bakedMaterial } from './bake';
 import type { CombatStyle } from '../sim/combat';
 
 /** Small cache so many characters share materials of the same colour. */
@@ -146,6 +147,10 @@ export class Humanoid {
     this.root.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
     });
+    // One mesh per joint instead of dozens of boxes (Phase 4D; same look, far fewer draw calls).
+    const baked = bakedMaterial(uniqueMaterials);
+    if (uniqueMaterials) this.materials.push(baked);
+    bakeRigidParts(this.root, baked);
   }
 
   private buildHair(hm: THREE.Material, s: number) {
@@ -480,6 +485,9 @@ export class WolfModel {
     }
     this.root.add(this.body);
     this.root.scale.setScalar(scale);
+    const baked = bakedMaterial(true);
+    this.mats.push(baked);
+    bakeRigidParts(this.root, baked);
   }
 
   hitFlash() {

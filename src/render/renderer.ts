@@ -18,6 +18,7 @@ import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, campfireGeometry, exchangePrefab, furniturePrefab, houseShellPrefab, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
 import { HOUSE, furnitureDef } from '../data/construction';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
+import { PerfMonitor } from './perf';
 import { ART } from './art';
 import { makeWorldMaterial, merge } from './geom';
 import { HeroModel, type HeroGear, type HeroLook } from './hero';
@@ -97,6 +98,7 @@ export class GameRenderer {
 
   constructor(private canvas: HTMLCanvasElement, overlayParent: HTMLElement, private world: GameWorld) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.perf = new PerfMonitor(this.renderer);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -337,6 +339,11 @@ export class GameRenderer {
 
   // ---------------------------------------------------------------- per-frame
 
+  /** Development performance measurements (Phase 4D; shown with ?perf). */
+  readonly perf: PerfMonitor;
+  /** Creatures animated in the last frame. */
+  private animated = 0;
+
   render(dt: number, alpha: number) {
     this.time.value += dt;
     const t = this.time.value;
@@ -395,14 +402,19 @@ export class GameRenderer {
     this.updateOtherPlayers(dt, t);
 
     // Enemies
+    this.animated = 0;
     for (const v of this.enemyViews.values()) {
       const e = v.enemy;
       const ex = lerp(e.prevX, e.x, alpha);
       const ez = lerp(e.prevZ, e.z, alpha);
       const dead = !e.alive;
       const hideAfter = 1.6;
-      v.root.visible = !(dead && e.deadAge > hideAfter) && !this.world.offstage.has(e.id);
+      // Creatures far beyond the camera and fog (another region, another dungeon) are neither drawn
+      // nor animated: the world holds well over a hundred, and only a handful are ever in view.
+      const far = Math.abs(ex - px) > ANIMATE_RANGE || Math.abs(ez - pz) > ANIMATE_RANGE;
+      v.root.visible = !far && !(dead && e.deadAge > hideAfter) && !this.world.offstage.has(e.id);
       if (!v.root.visible) continue;
+      this.animated++;
       v.root.position.set(ex, groundHeight(map, ex, ez), ez);
       v.root.rotation.y = smoothAngle(v.root.rotation.y, e.facing, dt * 10);
       if (v.model instanceof Humanoid) {
@@ -479,6 +491,7 @@ export class GameRenderer {
 
     this.renderer.render(this.scene, this.camera);
     this.updateOverlay(dt);
+    this.perf.frame(dt * 1000, { particles: this.particles.live, projectiles: this.projectiles.live, animated: this.animated });
   }
 
   private updateGlows(t: number) {
@@ -552,6 +565,11 @@ export class GameRenderer {
     this.lantern.position.set(px, py + 1.7, pz);
     // No sea underground (its shader would show through the dark at the screen edges).
     this.water.visible = k < 0.5;
+    // Nor sun shadows: underground the sun is all but gone, so its shadow pass (every caster drawn a
+    // second time) buys nothing. Only toggled at the transition (it recompiles shadowed materials once,
+    // while the camera snaps through a passage anyway).
+    const sunShadows = this.quality !== 'low' && k < 0.5;
+    if (this.sun.castShadow !== sunShadows) this.sun.castShadow = sunShadows;
   }
 
   private selectedId(): number | null {
@@ -1291,6 +1309,9 @@ export class GameRenderer {
 }
 
 const SEA_FLOOR = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.6);
+
+/** Creatures further than this (in tiles, along either axis) from the player are not drawn or animated. */
+const ANIMATE_RANGE = 36;
 
 function enemyHeight(e: Enemy): number {
   if (e.def.model === 'slime') return 1.1 * e.def.scale;

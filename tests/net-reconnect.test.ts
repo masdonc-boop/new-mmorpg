@@ -67,6 +67,13 @@ describe('3B.4 reconnecting', () => {
     const c = client(url, { kind: 'guest', name: 'Ash' }, { now: () => performance.now() + fake });
     await c.connect();
     const said: string[] = [];
+    // The server goes genuinely silent on this socket (a dead link whose close hasn't arrived): it
+    // stops sending, and the connection stays open. Only then does the client's clock jump past the
+    // silence limit. (Faking the clock alone raced the server's 10 snapshots a second: any snapshot
+    // arriving before the next update reset "last heard" with the jumped clock.)
+    const session = [...server.sessions.values()].find((x) => x.name === 'Ash')!;
+    session.ws!.send = (() => {}) as never;
+    await pump(c, 300, said);
     fake = 9000;
     await pump(c, 1500, said);
     expect(said).toContain('The server stopped answering. Reconnecting…');

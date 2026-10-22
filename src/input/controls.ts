@@ -86,7 +86,8 @@ export class Controls {
     // Stops the browser from synthesising mouse events / double-tap zoom for world touches only.
     ev.preventDefault();
     for (const t of world) {
-      this.touches.set(t.identifier, { x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, t: performance.now(), moved: false });
+      // The browser's own timestamp (when the finger went down), not when this handler happened to run.
+      this.touches.set(t.identifier, { x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, t: ev.timeStamp, moved: false });
       if (this.joyId === null && this.inJoyZone(t.clientX, t.clientY) && this.touches.size === 1) {
         this.joyId = t.identifier;
         this.joyOrigin = { x: t.clientX, y: t.clientY };
@@ -187,7 +188,9 @@ export class Controls {
         continue;
       }
       const othersDown = Array.from(this.touches.keys()).filter((id) => id !== this.joyId).length;
-      if (s && !s.moved && performance.now() - s.t < 600 && othersDown === 0 && this.pinchDist === 0) this.h.tap(s.sx, s.sy);
+      // Tap vs long press from the events' own timestamps: a busy frame (a slow phone, a heavy scene)
+      // that delays this handler must not turn a quick tap into nothing.
+      if (s && !s.moved && ev.timeStamp - s.t < 600 && othersDown === 0 && this.pinchDist === 0) this.h.tap(s.sx, s.sy);
     }
     if (this.touches.size < 2) this.pinchDist = 0;
     if (this.touches.size === 2 && this.joyId === null) this.startPinch();

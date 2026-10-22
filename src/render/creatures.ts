@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bakeRigidParts, bakedMaterial } from './bake';
 
 /**
  * Eastreach creatures (Phase 4A, docs/WORLD_EXPANSION.md). Like the slime and the wolf, each is a
@@ -66,6 +67,10 @@ export class ToadModel implements BeastModel {
     }
     this.root.add(this.body);
     this.root.scale.setScalar(scale);
+    const baked = bakedMaterial(true);
+    this.mats.push(baked);
+    // The throat puffs on its own, so it stays separate.
+    bakeRigidParts(this.root, baked, new Set([this.throat]));
   }
 
   hitFlash() {
@@ -216,6 +221,9 @@ export class BoarModel implements BeastModel {
     this.body.add(tail);
     this.root.add(this.body);
     this.root.scale.setScalar(scale);
+    const baked = bakedMaterial(true);
+    this.mats.push(baked);
+    bakeRigidParts(this.root, baked);
   }
 
   hitFlash() {

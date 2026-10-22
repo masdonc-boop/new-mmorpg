@@ -149,7 +149,11 @@ const fixture = require(path.join(__dirname, '..', 'tests', 'fixtures', 'saves',
   await touch('touchStart', ground.x, ground.y);
   await page.waitForTimeout(60);
   await touch('touchEnd', ground.x, ground.y);
-  await page.waitForTimeout(1500);
+  // Wait for the outcome rather than a fixed time: on a slow machine the game's clock runs slower
+  // than the wall clock (the simulation caps its catch-up per frame).
+  await page
+    .waitForFunction(([x, z]) => { const p = window.game.world.player; return Math.hypot(p.x - x, p.z - z) > 0.5; }, [g0.x, g0.z], { timeout: 15000 })
+    .catch(() => {});
   const g1 = await state();
   check('Eastreach: tapping the ground walks there (chunked terrain picks)', Math.hypot(g1.x - g0.x, g1.z - g0.z) > 0.5, `${g0.x.toFixed(1)},${g0.z.toFixed(1)} -> ${g1.x.toFixed(1)},${g1.z.toFixed(1)}`);
   const eBefore = await state();

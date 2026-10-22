@@ -372,7 +372,14 @@ async function boot() {
   requestAnimationFrame(frame);
 
   // Expose for debugging / automated smoke tests.
-  (window as unknown as { game: unknown }).game = { world, renderer, hud, net };
+  (window as unknown as { game: unknown }).game = { world, renderer, hud, net, perf: renderer.perf };
+  // Development performance overlay (Phase 4D): add ?perf to the address.
+  if (params.has('perf')) {
+    const box = document.createElement('div');
+    box.className = 'perf-overlay';
+    app.appendChild(box);
+    setInterval(() => (box.textContent = renderer.perf.text()), 500);
+  }
 }
 
 boot().catch((err) => {
