@@ -632,7 +632,7 @@ export class GameRenderer {
     const d = o.def;
     const k = Math.min(1, a.t / (Math.hypot(d.x2 - d.x1, d.z2 - d.z1) / CROSS_SPEED));
     const arc = Math.sin(k * Math.PI);
-    return d.kind === 'log' ? 0.48 : d.kind === 'beam' ? 0.47 : d.kind === 'wall' ? arc * 0.95 : d.kind === 'rope' ? arc * 0.6 : 0;
+    return d.kind === 'stones' ? 0.22 + arc * 0.08 : d.kind === 'fallen' ? 0.5 : d.kind === 'log' ? 0.48 : d.kind === 'beam' ? 0.47 : d.kind === 'wall' ? arc * 0.95 : d.kind === 'rope' ? arc * 0.6 : 0;
   }
 
   private buildObstacles() {
@@ -729,7 +729,7 @@ export class GameRenderer {
     if (!this.graveGeo) {
       const a = new THREE.DodecahedronGeometry(0.14, 0).translate(0, 0.07, 0);
       const b = new THREE.DodecahedronGeometry(0.1, 0).translate(0.12, 0.05, 0.05);
-      this.graveGeo = merge([a.toNonIndexed(), b.toNonIndexed()]);
+      this.graveGeo = merge([a, b]);
       a.dispose();
       b.dispose();
     }

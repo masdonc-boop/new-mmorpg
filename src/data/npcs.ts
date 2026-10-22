@@ -1,6 +1,6 @@
 import type { ItemId } from './items';
 
-export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer' | 'clerk_pell' | 'clerk_imogen' | 'exbanker';
+export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer' | 'clerk_pell' | 'clerk_imogen' | 'exbanker' | 'gambler' | 'smuggler' | 'quartermaster';
 
 export interface NpcDef {
   id: NpcId;
@@ -97,6 +97,25 @@ export const NPCS: Record<NpcId, NpcDef> = {
     idleLines: ['Buy offers, sell offers, eight slots each. The board does the rest.'],
     service: 'exchange',
     reach: 2.5,
+  },
+  // Original pickpocket targets (docs/ORIGINALITY.md H9 follow-up).
+  gambler: {
+    id: 'gambler', name: 'Corwin Lightfinger', title: 'Dice Player',
+    look: { skin: '#e2b48c', hair: '#2b1d14', hairStyle: 0, tunic: '#7a2e4a', trousers: '#2c2430' },
+    idleLines: ['Knucklebones, friend? Double or nothing.', 'The inn is warm and the dice are kind. Mostly.'],
+    thieving: { level: 15, xp: 28, loot: [{ item: 'coins', min: 6, max: 18, weight: 5 }, { item: 'air_rune', min: 3, max: 6, weight: 1 }], stunDamage: 12 },
+  },
+  smuggler: {
+    id: 'smuggler', name: 'Nell Quickwater', title: 'River Trader',
+    look: { skin: '#c98e62', hair: '#c4482c', hairStyle: 3, tunic: '#3a5a4a', trousers: '#2a2e24' },
+    idleLines: ['Trader. Just a trader. What would I be smuggling, river water?', 'Boats come down from the north when the bridge-toll is high.'],
+    thieving: { level: 25, xp: 40, loot: [{ item: 'coins', min: 12, max: 30, weight: 4 }, { item: 'emberglass_shard', min: 1, max: 1, weight: 1 }, { item: 'steel_bar', min: 1, max: 1, weight: 1 }], stunDamage: 15 },
+  },
+  quartermaster: {
+    id: 'quartermaster', name: 'Snag', title: 'Goblin Quartermaster',
+    look: { skin: '#6f9e3c', hair: '#3a2a1c', hairStyle: 2, tunic: '#6b4a2c', trousers: '#3a2e24' },
+    idleLines: ['Snag counts the arrows. Snag counts the coins. Snag does NOT count you.', 'Warlord says no humans. Snag says humans pay for arrows.'],
+    thieving: { level: 40, xp: 62, loot: [{ item: 'coins', min: 20, max: 45, weight: 3 }, { item: 'bronze_arrow', min: 10, max: 25, weight: 2 }, { item: 'glimsteel_arrow', min: 3, max: 8, weight: 1 }], stunDamage: 22 },
   },
   clerk_imogen: {
     id: 'clerk_imogen', name: 'Clerk Imogen', title: 'Exchange Clerk',

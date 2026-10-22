@@ -267,7 +267,8 @@ describe('Agility', () => {
 
   it('every obstacle starts and ends on open ground reachable from the village', () => {
     const w = new GameWorld();
-    expect(w.obstacles.length).toBe(5);
+    expect(w.obstacles.filter((o) => !o.def.shortcut).length).toBe(5);
+    expect(w.obstacles.filter((o) => o.def.shortcut).length).toBe(2);
     for (const o of w.obstacles) {
       expect(isBlocked(w.map, o.def.x1, o.def.z1), `${o.def.id} start`).toBe(false);
       expect(isBlocked(w.map, o.def.x2, o.def.z2), `${o.def.id} end`).toBe(false);
@@ -295,7 +296,7 @@ describe('Agility', () => {
     stand(w, w.obstacles[0].def.x1, w.obstacles[0].def.z1);
     for (let i = 0; i < 5; i++) cross(w, i);
     expect(p.laps).toBe(1);
-    expect(p.skills.xp.agility).toBe(w.obstacles.reduce((a, o) => a + o.def.xp, 0) + LAP_BONUS);
+    expect(p.skills.xp.agility).toBe(w.obstacles.slice(0, 5).reduce((a, o) => a + o.def.xp, 0) + LAP_BONUS);
     // Second lap skipping the beam: no bonus.
     for (const i of [0, 1, 2, 4]) cross(w, i);
     expect(p.laps).toBe(1);

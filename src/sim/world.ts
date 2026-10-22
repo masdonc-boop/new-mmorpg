@@ -17,7 +17,7 @@ import { PRACTICE_ACCOUNT, PracticeMarket } from '../exchange/simulation';
 import type { Result as ExchangeResult, Side } from '../exchange/engine';
 import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
 import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
-import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef, agilitySpeedBonus } from '../data/agility';
+import { CROSS_SPEED, LAP_BONUS, SHORTCUTS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef, agilitySpeedBonus } from '../data/agility';
 import { BONES, WARDLEAF_XP, BULWARK_DAMAGE, MENDING_REGEN_SECONDS, REGEN_SECONDS, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
 import { GRAVE_SECONDS, KEEP_ON_DEATH, reclaimFee, takeLostOnDeath } from './death';
@@ -232,7 +232,7 @@ export type PlayerAction =
   | { type: 'grave'; grave: number }
   | { type: 'firemaking'; item: ItemId }
   | { type: 'pickpocket'; npc: number }
-  | { type: 'obstacle'; obstacle: number; crossing: boolean; t: number }
+  | { type: 'obstacle'; obstacle: number; crossing: boolean; t: number; reverse?: boolean }
   | { type: 'farm'; patch: number }
   | { type: 'hotspot'; hotspot: number }
   | { type: 'build'; hotspot: string; furniture: string; t: number }
@@ -309,6 +309,11 @@ export class Gravestone {
   get count(): number {
     return this.items.reduce((a, s) => a + s.qty, 0);
   }
+}
+
+/** Start and end of a crossing (a shortcut taken from its far end runs backwards). */
+export function crossingEnds(d: ObstacleDef, reverse: boolean): { x1: number; z1: number; x2: number; z2: number } {
+  return reverse ? { x1: d.x2, z1: d.z2, x2: d.x1, z2: d.z1 } : { x1: d.x1, z1: d.z1, x2: d.x2, z2: d.z2 };
 }
 
 /** An agility obstacle in the world. */
@@ -748,6 +753,11 @@ export class GameWorld {
     });
     VILLAGE_COURSE.forEach((def, i) => {
       const o = new Obstacle(4000 + i, def, i);
+      this.obstacles.push(o);
+      this.byId.set(o.id, o);
+    });
+    SHORTCUTS.forEach((def, i) => {
+      const o = new Obstacle(4400 + i, def, -1);
       this.obstacles.push(o);
       this.byId.set(o.id, o);
     });
@@ -2650,12 +2660,15 @@ export class GameWorld {
       p.action = null;
       return;
     }
-    if (!this.approach(o.def.x1, o.def.z1, 0.5, true)) return;
+    // Shortcuts work both ways: start from whichever end is nearer.
+    if (!a.crossing && a.t === 0 && a.reverse === undefined) a.reverse = !!o.def.shortcut && dist(p.x, p.z, o.def.x2, o.def.z2) < dist(p.x, p.z, o.def.x1, o.def.z1);
+    const d = crossingEnds(o.def, !!a.reverse);
+    if (!this.approach(d.x1, d.z1, 0.5, true)) return;
     a.crossing = true;
     a.t = 0;
-    p.x = p.prevX = o.def.x1;
-    p.z = p.prevZ = o.def.z1;
-    p.facing = Math.atan2(o.def.x2 - o.def.x1, o.def.z2 - o.def.z1);
+    p.x = p.prevX = d.x1;
+    p.z = p.prevZ = d.z1;
+    p.facing = Math.atan2(d.x2 - d.x1, d.z2 - d.z1);
     this.message(`You ${o.def.verb.toLowerCase()} the ${o.def.name.toLowerCase()}…`);
   }
 
@@ -2663,7 +2676,7 @@ export class GameWorld {
   private updateCrossing(a: Extract<PlayerAction, { type: 'obstacle' }>, dt: number) {
     const p = this.player;
     const o = this.byId.get(a.obstacle) as Obstacle;
-    const d = o.def;
+    const d = { ...o.def, ...crossingEnds(o.def, !!a.reverse) };
     const len = Math.hypot(d.x2 - d.x1, d.z2 - d.z1);
     const dur = len / CROSS_SPEED;
     const lvl = p.skills.level('agility');
@@ -2678,7 +2691,7 @@ export class GameWorld {
       p.combatTimer = 6;
       this.emit({ type: 'damage', target: p.id, source: p.id, amount: dealt, hit: true });
       this.message(`You slip and fall off the ${d.name.toLowerCase()}!`, 'bad');
-      p.lapNext = 0;
+      if (!d.shortcut) p.lapNext = 0;
       if (p.hp <= 0) this.killPlayer();
       return;
     }
@@ -2691,7 +2704,8 @@ export class GameWorld {
     p.action = null;
     this.grantXp('agility', d.xp);
     this.emit({ type: 'obstacle', obstacle: o.id });
-    const last = o.index === this.obstacles.length - 1;
+    if (o.def.shortcut) return;
+    const last = o.index === VILLAGE_COURSE.length - 1;
     if (o.index === p.lapNext && last) {
       p.laps++;
       p.lapNext = 0;

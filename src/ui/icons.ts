@@ -872,6 +872,26 @@ export function itemIcon(id: string): string {
       g.fill();
       break;
     }
+    case 'ring': {
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 9;
+      g.beginPath();
+      g.ellipse(32, 38, 14, 12, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = color;
+      g.lineWidth = 5;
+      g.stroke();
+      g.fillStyle = accent;
+      g.beginPath();
+      g.moveTo(32, 16);
+      g.lineTo(40, 24);
+      g.lineTo(32, 31);
+      g.lineTo(24, 24);
+      g.closePath();
+      g.fill();
+      outline(2);
+      break;
+    }
     case 'amulet': {
       g.strokeStyle = accent;
       g.lineWidth = 3;

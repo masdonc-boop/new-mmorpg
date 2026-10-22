@@ -582,6 +582,18 @@ export function generateWorld(seed = 1337): WorldMap {
   spawnIn('goblin', 86, 28, 6, 6);
   enemySpawns.push({ type: 'goblin_warlord', x: 87.5, z: 24.5 });
 
+  // Later townsfolk, placed after everything random so the rest of the world stays put: a dice
+  // player outside the inn, a river trader by the village bridge, and the goblins' quartermaster.
+  const laterNpcs: WorldMap['npcs'] = [
+    { id: 'gambler', x: 61.5, z: 59.5, facing: S / 2 },
+    { id: 'smuggler', x: 39.5, z: 61.5, facing: -S / 2 },
+    { id: 'quartermaster', x: 88.5, z: 33.5, facing: S },
+  ];
+  for (const n of laterNpcs) {
+    npcs.push(n);
+    blocked[idx(Math.floor(n.x), Math.floor(n.z))] = 1;
+  }
+
   return {
     seed,
     width: W,

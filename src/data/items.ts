@@ -33,6 +33,7 @@ export type IconShape =
   | 'spark'
   | 'wand'
   | 'eel'
+  | 'ring'
   | 'needle'
   | 'chisel'
   | 'thread'
@@ -214,6 +215,11 @@ export const ITEMS = {
   leather_body: def({ id: 'leather_body', name: 'Wolfhide jerkin', examine: 'A jerkin of two hides stitched double.', stackable: false, kind: 'armour', value: 34, equip: { slot: 'body', armour: 8, tint: '#a8743f' }, icon: { shape: 'platebody', color: '#a8743f', accent: '#5e3d1f' } }),
   sealed_jerkin: def({ id: 'sealed_jerkin', name: 'Gel-sealed jerkin', examine: 'A wolfhide jerkin sealed with slime gel. Rain and slime run straight off it.', stackable: false, kind: 'armour', value: 52, equip: { slot: 'body', armour: 11, tint: '#7a8a4a' }, icon: { shape: 'platebody', color: '#8a8a4a', accent: '#6fdc5a' } }),
   leather_chaps: def({ id: 'leather_chaps', name: 'Wolfhide breeches', examine: 'Hard-wearing breeches, patched at the knee.', stackable: false, kind: 'armour', value: 28, equip: { slot: 'legs', armour: 5, tint: '#a8743f' }, icon: { shape: 'platelegs', color: '#a8743f', accent: '#5e3d1f' } }),
+  // Gem jewellery (docs/ORIGINALITY.md M2 follow-up): river agate for steady hands, garnet for a harder blow.
+  agate_charm: def({ id: 'agate_charm', name: 'Agate charm', examine: 'A polished agate on a cord. Steadies the hand.', stackable: false, kind: 'armour', value: 70, equip: { slot: 'neck', accuracy: 2, armour: 1 }, icon: { shape: 'amulet', color: '#c9a06a', accent: '#8a5a34' } }),
+  agate_ring: def({ id: 'agate_ring', name: 'Agate band', examine: 'A bronze band set with river agate. Said to turn aside a blow.', stackable: false, kind: 'armour', value: 80, equip: { slot: 'ring', armour: 2 }, icon: { shape: 'ring', color: '#c98a4b', accent: '#e8c890' } }),
+  garnet_ring: def({ id: 'garnet_ring', name: 'Garnet ring', examine: 'An iron ring with an ironcrag garnet. Your blows land harder.', stackable: false, kind: 'armour', value: 170, equip: { slot: 'ring', power: 3 }, icon: { shape: 'ring', color: '#8d8d8d', accent: '#c8283a' } }),
+  garnet_pendant: def({ id: 'garnet_pendant', name: 'Garnet pendant', examine: 'A garnet in a steel setting, warm as a coal against the chest.', stackable: false, kind: 'armour', value: 240, equip: { slot: 'neck', accuracy: 4, power: 3 }, icon: { shape: 'amulet', color: '#c8283a', accent: '#b8c2cc' } }),
   fang_amulet: def({ id: 'fang_amulet', name: 'Fang amulet', examine: 'A wolf fang on a cord. Its wearer strikes a little truer.', stackable: false, kind: 'armour', value: 30, equip: { slot: 'neck', accuracy: 3, power: 1, armour: 1 }, icon: { shape: 'amulet', color: '#f1ecd9', accent: '#8a5a34' } }),
   travellers_cape: def({ id: 'travellers_cape', name: "Traveller's cape", examine: 'A warm woollen cape for the road.', stackable: false, kind: 'armour', value: 20, equip: { slot: 'cape', armour: 1 }, icon: { shape: 'cape', color: '#2f6f8a', accent: '#c9a06a' } }),
   rake: def({ id: 'rake', name: 'Rake', examine: 'Clears weeds from a farming patch.', stackable: false, kind: 'tool', tool: { category: 'rake', tier: 1 }, value: 6, icon: { shape: 'rake', color: '#8a5a34', accent: '#a3aab3' } }),

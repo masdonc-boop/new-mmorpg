@@ -460,3 +460,86 @@ describe('Batch 7b: gems, shrine wisps, Exchange limits, Agility and bows', () =
     expect(p.inventory.count('riverwood_longbow')).toBe(1);
   });
 });
+
+describe('Originality follow-ups: jewellery, shortcuts and new pickpocket targets', () => {
+  const tick = (w: GameWorld, seconds: number) => {
+    for (let t = 0; t < seconds * 30; t++) w.tick();
+  };
+  const place = (w: GameWorld, x: number, z: number) => {
+    w.player.x = w.player.prevX = x;
+    w.player.z = w.player.prevZ = z;
+  };
+
+  it('gem jewellery: an agate charm anywhere, rings and a pendant at the furnace', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('crafting', xpForLevel(30));
+    p.inventory.add('polished_agate', 2);
+    p.inventory.add('thread', 1);
+    p.inventory.add('bronze_bar', 1);
+    p.inventory.add('cut_sapphire', 1);
+    p.inventory.add('steel_bar', 1);
+    w.issue({ type: 'openAnywhere', kind: 'crafting' });
+    w.issue({ type: 'craft', recipe: 'agate_charm', count: 1 });
+    tick(w, 2.5);
+    expect(p.inventory.count('agate_charm')).toBe(1);
+    const furnace = w.stations.find((st) => st.kind === 'furnace')!;
+    place(w, furnace.x, furnace.z + 1.2);
+    w.issue({ type: 'interact', target: furnace.id });
+    tick(w, 0.5);
+    w.issue({ type: 'craft', recipe: 'agate_ring', count: 1 });
+    tick(w, 3);
+    w.issue({ type: 'craft', recipe: 'garnet_pendant', count: 1 });
+    tick(w, 3);
+    expect(p.inventory.count('agate_ring')).toBe(1);
+    expect(p.inventory.count('garnet_pendant')).toBe(1);
+    expect(ITEMS.garnet_ring.equip).toMatchObject({ slot: 'ring', power: 3 });
+    p.equipment.slots.ring = 'garnet_ring';
+    expect(p.equipment.bonuses('magic').extraPower).toBe(3);
+  });
+
+  it('river shortcuts: gated by Agility, crossed from either side, never break a lap', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const stones = w.obstacles.find((o) => o.def.id === 'stones')!;
+    place(w, stones.def.x1 - 1, stones.def.z1);
+    w.drainEvents();
+    w.issue({ type: 'interact', target: stones.id });
+    expect(w.drainEvents().some((e) => e.type === 'message' && e.text.includes('Agility level 10'))).toBe(true);
+    p.skills.addXp('agility', xpForLevel(30));
+    (w as unknown as { rng: () => number }).rng = () => 0.99;
+    p.lapNext = 2;
+    w.issue({ type: 'interact', target: stones.id });
+    tick(w, 8);
+    expect(Math.hypot(p.x - stones.def.x2, p.z - stones.def.z2)).toBeLessThan(0.05);
+    expect(p.lapNext).toBe(2);
+    // And back again from the far bank.
+    w.issue({ type: 'interact', target: stones.id });
+    tick(w, 8);
+    expect(Math.hypot(p.x - stones.def.x1, p.z - stones.def.z1)).toBeLessThan(0.05);
+    const fallen = w.obstacles.find((o) => o.def.id === 'fallen')!;
+    place(w, fallen.def.x2 + 1, fallen.def.z2);
+    w.issue({ type: 'interact', target: fallen.id });
+    tick(w, 10);
+    expect(Math.hypot(p.x - fallen.def.x1, p.z - fallen.def.z1)).toBeLessThan(0.05);
+  });
+
+  it('three new pickpocket targets stand somewhere you can reach, with their own levels', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('thieving', xpForLevel(40));
+    (w as unknown as { rng: () => number }).rng = () => 0.1;
+    for (const [id, level] of [['gambler', 15], ['smuggler', 25], ['quartermaster', 40]] as const) {
+      const n = w.npcs.find((x) => x.def.id === id)!;
+      expect(n.def.thieving?.level).toBe(level);
+      const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => ({ x: n.x + dx, z: n.z + dz })).find((s) => !isBlocked(w.map, s.x, s.z));
+      expect(spot, id).toBeTruthy();
+      place(w, spot!.x, spot!.z);
+      p.stunTimer = 0;
+      const xp = p.skills.xp.thieving;
+      w.issue({ type: 'pickpocket', target: n.id });
+      tick(w, 1.5);
+      expect(p.skills.xp.thieving - xp, id).toBe(n.def.thieving!.xp);
+    }
+  });
+});

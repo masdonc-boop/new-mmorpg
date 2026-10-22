@@ -1121,7 +1121,11 @@ export class Hud {
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net brightfin and eels (needs a hand net)', 2.6);
       for (const hs of w.hotspots) consider(hs.id, hs.x, hs.z, `🔨 ${p.furniture[hs.def.id] ? furnitureDef(p.furniture[hs.def.id])!.name : hs.def.name} · ${p.furniture[hs.def.id] ? 'remove' : 'build'}`, 1.6);
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
-      for (const o of w.obstacles) consider(o.id, o.def.x1, o.def.z1, `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`, 1.8);
+      for (const o of w.obstacles) {
+        const far = o.def.shortcut && Math.hypot(o.def.x2 - p.x, o.def.z2 - p.z) < Math.hypot(o.def.x1 - p.x, o.def.z1 - p.z);
+        const text = o.def.shortcut ? `🏃 ${o.def.name} · shortcut (Agility ${o.def.level})` : `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`;
+        consider(o.id, far ? o.def.x2 : o.def.x1, far ? o.def.z2 : o.def.z1, text, 1.8);
+      }
       for (const nd of w.nodes) if (nd.def.skill === 'thieving' && !nd.depleted) consider(nd.id, nd.x, nd.z, `🤏 ${nd.def.name} · steal (Thieving ${nd.def.levelReq})`, 2.4);
       for (const nd of w.nodes) if (nd.def.id === 'flax' && !nd.depleted) consider(nd.id, nd.x, nd.z, '🌿 Bluebell flax · pick it to spin bowstrings', 2.2);
     }

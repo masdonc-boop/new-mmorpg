@@ -134,6 +134,11 @@ export const RECIPES: Record<string, RecipeDef> = {
   emberglass_wand: r({ id: 'emberglass_wand', station: 'crafting', skill: 'crafting', level: 35, xp: 70, inputs: [{ item: 'emberglass_shard', qty: 2 }, { item: 'oak_logs', qty: 1 }], output: { item: 'emberglass_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
   // Gems: polish river agate (8) and cut ironcrag garnet (18; recipe id kept).
   polished_agate: r({ id: 'polished_agate', station: 'crafting', skill: 'crafting', level: 8, xp: 22, inputs: [{ item: 'river_agate', qty: 1 }], output: { item: 'polished_agate', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
+  // Jewellery: a charm on a cord anywhere; bands and settings at the furnace.
+  agate_charm: r({ id: 'agate_charm', station: 'crafting', skill: 'crafting', level: 10, xp: 24, inputs: [{ item: 'polished_agate', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'agate_charm', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  agate_ring: r({ id: 'agate_ring', station: 'furnace', skill: 'crafting', level: 12, xp: 30, inputs: [{ item: 'polished_agate', qty: 1 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'agate_ring', qty: 1 }, seconds: 2.2 }),
+  garnet_ring: r({ id: 'garnet_ring', station: 'furnace', skill: 'crafting', level: 22, xp: 55, inputs: [{ item: 'cut_sapphire', qty: 1 }, { item: 'iron_bar', qty: 1 }], output: { item: 'garnet_ring', qty: 1 }, seconds: 2.2 }),
+  garnet_pendant: r({ id: 'garnet_pendant', station: 'furnace', skill: 'crafting', level: 30, xp: 72, inputs: [{ item: 'cut_sapphire', qty: 1 }, { item: 'steel_bar', qty: 1 }], output: { item: 'garnet_pendant', qty: 1 }, seconds: 2.4 }),
   cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 18, xp: 46, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking
   // Brightfin (recipe id kept for saves and offers in progress).
@@ -163,7 +168,7 @@ export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
   { a: 'knife', b: ['logs', 'oak_logs'], opens: 'fletching' },
   { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
-  { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body'], opens: 'crafting' },
+  { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body', 'polished_agate'], opens: 'crafting' },
   { a: 'chisel', b: ['sapphire', 'river_agate', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },
 ];
 

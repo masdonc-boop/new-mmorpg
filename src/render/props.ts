@@ -427,7 +427,7 @@ export interface StaticWorld {
 /**
  * An agility obstacle, built along +x from -len/2 to +len/2 (the caller rotates and places it).
  */
-export function obstaclePrefab(kind: 'log' | 'wall' | 'rope' | 'beam' | 'hedge', len: number): THREE.BufferGeometry {
+export function obstaclePrefab(kind: 'log' | 'wall' | 'rope' | 'beam' | 'hedge' | 'stones' | 'fallen', len: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
   const h = len / 2;
   switch (kind) {
@@ -435,6 +435,23 @@ export function obstaclePrefab(kind: 'log' | 'wall' | 'rope' | 'beam' | 'hedge',
       parts.push(part(Cyl(0.17, 0.19, len, 8), '#8a5a34', { y: 0.32, rz: Math.PI / 2 }));
       for (const x of [-h + 0.3, h - 0.3]) parts.push(part(Box(0.2, 0.25, 0.5), '#6e4a2c', { x, y: 0.12 }));
       parts.push(part(Box(len - 0.6, 0.04, 1.0), '#4a7a3a', { y: 0.02, jitter: 0.04 }));
+      break;
+    case 'stones': {
+      // Flat mossy stones just above the water, a hop apart.
+      const n = Math.max(3, Math.round(len / 1.1));
+      for (let i = 0; i <= n; i++) {
+        const x = -h + (len * i) / n;
+        parts.push(part(Cyl(0.32, 0.38, 0.3, 7), i % 2 ? '#8a8478' : '#9a9184', { x, y: 0.04, z: (i % 2 ? 0.12 : -0.1), jitter: 0.06 }));
+        parts.push(part(Cyl(0.2, 0.24, 0.04, 7), '#5f8a3a', { x: x + 0.05, y: 0.2, z: (i % 2 ? 0.1 : -0.12), jitter: 0.04 }));
+      }
+      break;
+    }
+    case 'fallen':
+      // A fallen pine across the river: trunk, a root plate at one end, broken branches.
+      parts.push(part(Cyl(0.2, 0.26, len + 0.6, 8), '#6e4a2c', { y: 0.3, rz: Math.PI / 2, jitter: 0.03 }));
+      parts.push(part(Cyl(0.7, 0.7, 0.2, 9), '#5a3e28', { x: -h - 0.3, y: 0.45, rz: Math.PI / 2, jitter: 0.12 }));
+      for (let i = 0; i < 4; i++) parts.push(part(Cyl(0.04, 0.06, 0.6, 5), '#5a3e28', { x: -h + 1.2 + i * (len - 1.6) / 3, y: 0.55, z: i % 2 ? 0.25 : -0.25, rx: i % 2 ? 0.7 : -0.7 }));
+      parts.push(part(Cone(0.5, 1.0, 6), '#3f6f3a', { x: h + 0.4, y: 0.5, rz: -Math.PI / 2, jitter: 0.1 }));
       break;
     case 'wall':
       parts.push(part(Box(0.45, 0.9, 1.7), '#9a9184', { y: 0.45, jitter: 0.08 }));
