@@ -3,7 +3,7 @@ import { lerp } from '../core/math';
 import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
-import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
+import { BANK_COUNTER, EXCHANGE, groundHeight } from '../sim/worldmap';
 import { Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
@@ -12,7 +12,7 @@ import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
-import { buildStaticWorld, campfireGeometry, furniturePrefab, houseShellPrefab, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
+import { buildStaticWorld, campfireGeometry, exchangePrefab, furniturePrefab, houseShellPrefab, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
 import { HOUSE, furnitureDef } from '../data/construction';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
@@ -562,6 +562,11 @@ export class GameRenderer {
       shell.position.y = groundHeight(w.map, (HOUSE.x1 + HOUSE.x2) / 2, (HOUSE.z1 + HOUSE.z2) / 2);
       shell.castShadow = shell.receiveShadow = true;
       this.scene.add(shell);
+      // The Exchange plaza (built here too: both are static additions to the world).
+      const ex = new THREE.Mesh(exchangePrefab(EXCHANGE.radius, { x: EXCHANGE.booth.x - EXCHANGE.x, z: EXCHANGE.booth.z - EXCHANGE.z }), this.houseMat);
+      ex.position.set(EXCHANGE.x, groundHeight(w.map, EXCHANGE.x, EXCHANGE.z), EXCHANGE.z);
+      ex.castShadow = ex.receiveShadow = true;
+      this.scene.add(ex);
     }
     for (const h of w.hotspots) {
       const id = w.player.furniture[h.def.id] ?? null;
@@ -1018,7 +1023,7 @@ export class GameRenderer {
       const y = groundHeight(map, n.x, n.z);
       consider(n.id, n.x, y + 1, n.z);
       // Tapping the bank counter means the banker behind it.
-      if (n.def.service === 'bank') consider(n.id, BANK_COUNTER.x, y + 0.95, BANK_COUNTER.z, 0.9);
+      if (n.def.id === 'banker') consider(n.id, BANK_COUNTER.x, y + 0.95, BANK_COUNTER.z, 0.9);
     }
     for (const n of w.nodes) {
       if (Math.abs(n.x - w.player.x) > 30 || Math.abs(n.z - w.player.z) > 30) continue;

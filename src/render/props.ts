@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
 import type { ResourceType } from '../data/resources';
-import { T, groundHeight, terrainHeight, BANK_COUNTER, BRIDGE_Y, WATER_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
+import { T, groundHeight, terrainHeight, BANK_COUNTER, BRIDGE_Y, EXCHANGE, WATER_Y, type Building, type Decor, type WorldMap } from '../sim/worldmap';
 import type { ResourceNode } from '../sim/world';
 import { blob, makeWorldMaterial, merge, part, place, prism } from './geom';
 import { ART } from './art';
@@ -484,6 +484,53 @@ export function patchPrefab(weeds: number, crop: 'potato' | 'onion' | 'cabbage' 
   return merge(parts);
 }
 
+/**
+ * The Exchange plaza, centred on (0, 0): a round paved square, a kiosk with a ring counter under a
+ * blue-and-gold canopy, banner poles around it, and (at `booth`, relative) a bank booth.
+ */
+export function exchangePrefab(radius: number, booth: { x: number; z: number }): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  parts.push(part(Cyl(radius, radius, 0.06, 32), '#cfc6b2', { y: 0.03, jitter: 0.03 }));
+  parts.push(part(Cyl(radius + 0.2, radius + 0.2, 0.04, 32), '#9a9184', { y: 0.02 }));
+  // A compass rose of darker stones.
+  for (let i = 0; i < 8; i++) parts.push(part(Box(0.18, 0.02, radius - 1.6), i % 2 ? '#b0a690' : '#8a7f6c', { y: 0.065, ry: (i / 8) * Math.PI, jitter: 0 }));
+  // Ring counter (segments) with a gap on the north side for the clerks to come and go.
+  const R = 1.3;
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 16) * Math.PI * 2 + Math.PI / 2 + Math.PI / 8;
+    parts.push(part(Box(0.56, 0.95, 0.26), '#6e4a2c', { x: Math.cos(a) * R, y: 0.48, z: Math.sin(a) * R, ry: -a + Math.PI / 2 }));
+    parts.push(part(Box(0.62, 0.07, 0.38), '#c9a06a', { x: Math.cos(a) * R, y: 0.98, z: Math.sin(a) * R, ry: -a + Math.PI / 2 }));
+  }
+  // An open crown frame on four posts (open in the middle so the clerks stay visible from above),
+  // with blue-and-gold valance segments round the rim and a central sign post.
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    parts.push(part(Cyl(0.07, 0.08, 2.6, 6), '#5b3a22', { x: Math.cos(a) * 1.6, y: 1.3, z: Math.sin(a) * 1.6 }));
+  }
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    parts.push(part(Box(0.66, 0.34, 0.06), i % 2 ? '#2a4f7a' : '#e0b545', { x: Math.cos(a) * 1.68, y: 2.5, z: Math.sin(a) * 1.68, ry: -a + Math.PI / 2 }));
+  }
+  parts.push(part(Cyl(0.05, 0.06, 3.4, 6), '#5b3a22', { x: 0, y: 1.7, z: -0.55 }));
+  parts.push(part(Box(0.9, 0.5, 0.06), '#2a4f7a', { x: 0, y: 3.2, z: -0.55 }));
+  parts.push(part(Box(0.7, 0.08, 0.08), '#e0b545', { x: 0, y: 3.2, z: -0.51 }));
+  parts.push(part(blob(0.12, 0, 0.1, 3), '#e0b545', { x: 0, y: 3.5, z: -0.55 }));
+  // Banner poles with blue and gold pennants.
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const x = Math.cos(a) * (radius - 0.25);
+    const z = Math.sin(a) * (radius - 0.25);
+    parts.push(part(Cyl(0.04, 0.05, 2.4, 5), '#5b3a22', { x, y: 1.2, z }));
+    parts.push(part(Box(0.04, 0.7, 0.42), i % 2 ? '#2a4f7a' : '#e0b545', { x, y: 2.0, z: z + 0.22, ry: -a }));
+  }
+  // Bank booth: a small counter with an awning.
+  parts.push(part(Box(1.3, 0.95, 0.5), '#2f5d4a', { x: booth.x, y: 0.48, z: booth.z }));
+  parts.push(part(Box(1.4, 0.07, 0.62), '#c9a06a', { x: booth.x, y: 0.98, z: booth.z }));
+  for (const dx of [-0.6, 0.6]) parts.push(part(Cyl(0.04, 0.05, 2.0, 5), '#5b3a22', { x: booth.x + dx, y: 1.0, z: booth.z - 0.5 }));
+  parts.push(part(Box(1.5, 0.08, 1.2), '#2f5d4a', { x: booth.x, y: 2.0, z: booth.z - 0.4, rx: 0.18 }));
+  return merge(parts);
+}
+
 /** House furniture (plain wood or oak). */
 export function furniturePrefab(model: 'chair' | 'table' | 'bookcase' | 'bed', oak: boolean): THREE.BufferGeometry {
   const wood = oak ? '#7a4f2a' : '#b8865a';
@@ -725,7 +772,9 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
   }
 
   const indoors = (x: number, z: number) =>
-    (x > HOUSE.x1 && x < HOUSE.x2 + 1 && z > HOUSE.z1 && z < HOUSE.z2 + 1) || map.patches.some((pt) => Math.abs(x - pt.x) < 0.85 && Math.abs(z - pt.z) < 0.85);
+    (x > HOUSE.x1 && x < HOUSE.x2 + 1 && z > HOUSE.z1 && z < HOUSE.z2 + 1) ||
+    map.patches.some((pt) => Math.abs(x - pt.x) < 0.85 && Math.abs(z - pt.z) < 0.85) ||
+    Math.hypot(x - EXCHANGE.x, z - EXCHANGE.z) < EXCHANGE.radius + 0.2;
   // Grass tufts on green tiles
   const tuft = merge([
     part(Box(0.04, 0.32, 0.02), '#6fc04b', { x: -0.05, y: 0.14, rz: 0.25, sway: 1, jitter: 0.1 }),

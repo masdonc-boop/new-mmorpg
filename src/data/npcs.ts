@@ -1,6 +1,6 @@
 import type { ItemId } from './items';
 
-export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer';
+export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer' | 'clerk_pell' | 'clerk_imogen' | 'exbanker';
 
 export interface NpcDef {
   id: NpcId;
@@ -11,7 +11,7 @@ export interface NpcDef {
   /** Generic lines used when no quest dialogue applies. */
   idleLines: string[];
   /** Service this NPC provides when talked to (opens that interface instead of dialogue). */
-  service?: 'bank' | 'shop' | 'tanner' | 'sawmill';
+  service?: 'bank' | 'shop' | 'tanner' | 'sawmill' | 'exchange';
   /** How close the player must be to use the NPC (e.g. across a counter). Default 1.9. */
   reach?: number;
   /** Pickpocketing (Thieving): level, xp, what you can get, and the stun damage when caught. */
@@ -90,6 +90,27 @@ export const NPCS: Record<NpcId, NpcDef> = {
     look: { skin: '#d9a77c', hair: '#8a8478', hairStyle: 0, tunic: '#5a6f8a', trousers: '#3a2e24', beard: true },
     idleLines: ['Five coins a plank, fifteen for oak. Finest planks in the valley.'],
     service: 'sawmill',
+  },
+  clerk_pell: {
+    id: 'clerk_pell', name: 'Clerk Pell', title: 'Exchange Clerk',
+    look: { skin: '#e2b48c', hair: '#3b2a1c', hairStyle: 0, tunic: '#2a4f7a', trousers: '#2a2a33' },
+    idleLines: ['Buy offers, sell offers, eight slots each. The board does the rest.'],
+    service: 'exchange',
+    reach: 2.5,
+  },
+  clerk_imogen: {
+    id: 'clerk_imogen', name: 'Clerk Imogen', title: 'Exchange Clerk',
+    look: { skin: '#b07a52', hair: '#c4a060', hairStyle: 3, tunic: '#2a4f7a', trousers: '#2a2a33' },
+    idleLines: ['Until the trade routes open, the board runs as a practice market.'],
+    service: 'exchange',
+    reach: 2.5,
+  },
+  exbanker: {
+    id: 'exbanker', name: 'Hal Tallow', title: 'Banker',
+    look: { skin: '#d9a77c', hair: '#8a8478', hairStyle: 0, tunic: '#2f5d4a', trousers: '#2f2a26' },
+    idleLines: ['The Bank of Brightwater, at your service by the exchange.'],
+    service: 'bank',
+    reach: 2.4,
   },
   banker: {
     id: 'banker', name: 'Wendell Coinsworth', title: 'Banker',

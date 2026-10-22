@@ -11,6 +11,7 @@ import { clearKeepingScroll } from './dom';
 import { BankView } from './bankview';
 import { CraftView } from './craftview';
 import { ShopView } from './shopview';
+import { ExchangeView } from './exchangeview';
 import { SHOPS } from '../data/shops';
 import { RECIPES, STATION_INFO, isAnywhere, useCombo, usable, type AnywhereKind, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
@@ -29,7 +30,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer' | 'build';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer' | 'build' | 'exchange';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -79,6 +80,8 @@ export class Hud {
   private shopView: ShopView | null = null;
   private shopId = 'tilly';
   private shopDirty = false;
+  private exchangeView: ExchangeView | null = null;
+  private exchangeDirty = false;
   /** Inventory slot being "used" on another item (e.g. a knife, waiting for logs to be tapped). */
   private usingSlot: number | null = null;
   private prompt!: HTMLButtonElement;
@@ -338,6 +341,10 @@ export class Hud {
       this.shopDirty = false;
       this.shopView.refresh();
     }
+    if (settled && this.openPanel === 'exchange' && this.exchangeDirty && this.exchangeView && !this.exchangeView.busy) {
+      this.exchangeDirty = false;
+      this.exchangeView.refresh();
+    }
     if (settled && this.openPanel === 'tanner' && this.shopDirty) {
       this.shopDirty = false;
       this.renderTanner();
@@ -428,6 +435,7 @@ export class Hud {
     for (const n of this.world.npcs) {
       const m = this.world.npcMarker(n.def.id);
       if (n.def.service === 'bank') dot(n.x, n.z, '#f5c542', 1.3);
+      else if (n.def.service === 'exchange') dot(n.x, n.z, '#6fb8ff', 1.4);
       else dot(n.x, n.z, m === 'available' || m === 'ready' ? '#ffd84d' : '#fff59d', m ? 1.3 : 0.9);
     }
     for (const c of this.world.map.checkpoints) dot(c.x, c.z, this.world.player.checkpoints.has(c.id) ? '#6fe0ff' : '#9fb4bf', 1);
@@ -555,6 +563,18 @@ export class Hud {
       case 'shopOpen':
         this.shopId = e.shop;
         this.toggle('shop');
+        break;
+      case 'exchangeOpen':
+        if (this.openPanel !== 'exchange') this.toggle('exchange');
+        break;
+      case 'exchangeClose':
+        if (this.openPanel === 'exchange') this.toggle(null);
+        break;
+      case 'exchangeResult':
+        this.exchangeView?.onResult(e.nonce, e.result);
+        break;
+      case 'exchange':
+        this.exchangeDirty = true;
         break;
       case 'hotspotOpen':
         this.buildHotspot = e.hotspot;
@@ -772,6 +792,10 @@ export class Hud {
       this.cb.command({ type: 'shopClose' });
     }
     if (this.openPanel === 'tanner' && id !== 'tanner') this.cb.command({ type: 'tannerClose' });
+    if (this.openPanel === 'exchange' && id !== 'exchange') {
+      this.exchangeView = null;
+      this.cb.command({ type: 'exchangeClose' });
+    }
     if (this.openPanel === 'craft' && this.craftView) {
       // Closed by the player (not by starting production): release the station.
       this.craftView = null;
@@ -789,7 +813,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Prayer', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Prayer', exchange: 'Brightwater Exchange', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -803,6 +827,11 @@ export class Hud {
     else if (id === 'tanner') this.renderTanner();
     else if (id === 'prayer') this.renderPrayer();
     else if (id === 'build') this.renderBuild();
+    else if (id === 'exchange') {
+      clearKeepingScroll(this.panelBody);
+      this.exchangeView = new ExchangeView(this.world, (c) => this.cb.command(c), (key, btn, prompt) => this.confirmTap(key, btn, prompt));
+      this.panelBody.appendChild(this.exchangeView.root);
+    }
     else this.renderSettings();
   }
 
@@ -1085,6 +1114,7 @@ export class Hud {
         if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
         if (n.def.thieving && !n.def.service) consider(n.id, n.x, n.z, `🤏 ${n.def.name} · pickpocket (Thieving ${n.def.thieving.level})`, 2.4, { type: 'pickpocket', target: n.id });
         if (n.def.service === 'tanner') consider(n.id, n.x, n.z, '🧵 Rook the tanner · tan pelts into leather', (n.def.reach ?? 1.9) + 1);
+        if (n.def.service === 'exchange') consider(n.id, n.x, n.z, '⚖️ Exchange · buy and sell offers (practice market)', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'sawmill') consider(n.id, n.x, n.z, '🪚 Sawmill · turn logs into planks', (n.def.reach ?? 1.9) + 1);
       }
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);

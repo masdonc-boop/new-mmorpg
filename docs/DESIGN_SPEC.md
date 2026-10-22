@@ -45,7 +45,7 @@
 | Ground items | Drops on the ground, owner-only then public, then despawn | Same structure (shorter timers) | Timers differ (approved, 4.2) |
 | Death | Keep the 3 most valuable items; the rest go to a gravestone for 15 minutes of play (owner only), then are lost. Toolbelt is never at risk | Keep 3; gravestone, then Death's Office reclaim for a fee | No reclaim office; no protect-item prayer or skulls yet |
 | Quests | 1 quest with item and XP rewards | Many quests; quest points; requirements | More quests, quest points, quest requirements on content |
-| Economy | Coins, shop buy and sell | Player trading, Grand Exchange | Trading and an exchange arrive with multiplayer |
+| Economy | Coins, shop buy and sell; the Exchange plaza with a full order-book engine running as a clearly labelled **practice market** (simulated traders, practice balances) | Player trading, Grand Exchange | Live player-to-player trading and the real-wealth bridge need the multiplayer backend (see docs/EXCHANGE.md) |
 | Combat | Custom real-time system (section 5) | Tick-based OSRS combat | Intentional exception |
 | Movement | Joystick or tap-to-move, continuous | Click-to-move on 0.6 s ticks, run energy | Run energy not implemented (needs decision) |
 
@@ -119,6 +119,8 @@ Owner notes on P2 choices:
 - The house is free (OSRS charges for a house) and has fixed spaces rather than rooms. Planks cost 5 coins (oak 15).
 - Crops take OSRS-like real time (about 40 minutes). No disease, compost or watering yet.
 - Stall owners and guards don't catch thieves yet; Agility has no run-energy benefit because run energy doesn't exist.
+
+**Exchange (owner priority, built ahead of P3):** the engine (escrow, price-time matching, settlement, replay protection, audit chain), the Exchange plaza and the mobile interface are in, running on a local practice market. Architecture, rules and the migration path to live trading: `docs/EXCHANGE.md`.
 
 **P3: multiplayer-dependent (on hold, owner decision)**
 13. Server-authoritative simulation, player trading, an exchange, shop stock shared between players, account-wide bank storage.

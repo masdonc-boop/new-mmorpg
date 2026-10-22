@@ -12,6 +12,8 @@ import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { SERVICES, isConvertService } from '../data/tanning';
+import { PRACTICE_ACCOUNT, PracticeMarket } from '../exchange/simulation';
+import type { Result as ExchangeResult, Side } from '../exchange/engine';
 import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
 import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
 import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
@@ -46,6 +48,12 @@ export const DEFAULT_APPEARANCE: Appearance = {
   tunic: '#2f7fc1',
   trousers: '#4a3a2a',
 };
+
+/** What a client may ask the exchange to do (no account, balances or results: those are the server's). */
+export type ExchangeIntent =
+  | { op: 'place'; nonce: number; slot: number; side: Side; item: ItemId; qty: number; price: number }
+  | { op: 'cancel'; nonce: number; orderId: number }
+  | { op: 'collect'; nonce: number; orderId: number };
 
 /** Client → simulation commands. In multiplayer these become network messages to the authoritative server. */
 export type Command =
@@ -106,6 +114,14 @@ export type Command =
   | { type: 'tan'; item: ItemId; qty: number }
   | { type: 'tannerClose' }
   | { type: 'acceptQuest'; quest: string }
+  /**
+   * Exchange intents (place, cancel, collect). The account is never sent by the client: the
+   * simulation (later the server) supplies it. Today every request goes to the PRACTICE market.
+   */
+  | { type: 'exchange'; req: ExchangeIntent }
+  | { type: 'exchangeClose' }
+  /** Start the practice market over with fresh practice stock (practice only). */
+  | { type: 'exchangeResetPractice' }
   /** Construction: build a piece of furniture in a house space (must be beside it). */
   | { type: 'build'; hotspot: string; furniture: string }
   /** Construction: remove the furniture from a house space (no refund). */
@@ -164,6 +180,12 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** An Exchange clerk is serving the player (open the exchange interface). */
+  | { type: 'exchangeOpen' }
+  | { type: 'exchangeClose' }
+  /** The result of an exchange request (matched by nonce), and any change to the market. */
+  | { type: 'exchangeResult'; nonce: number; result: ExchangeResult }
+  | { type: 'exchange' }
   /** The player is at a house space (open the build interface). */
   | { type: 'hotspotOpen'; hotspot: string }
   /** House furniture changed. */
@@ -415,6 +437,8 @@ export class Player implements Mover {
   stationAt: number | null = null;
   /** Shopkeeper whose shop is open. */
   shopAt: number | null = null;
+  /** Exchange clerk serving the player. */
+  exchangeAt: number | null = null;
   /** Tanner or sawmill operator whose service is open. */
   tannerAt: number | null = null;
   /** One-time grants already given to this character (e.g. tools added after an update). */
@@ -617,6 +641,8 @@ export interface SaveData {
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** Size of the worn ammo stack. */
   ammoQty?: number;
+  /** The practice market (local simulation; never real wealth). Optional for older saves. */
+  exchangePractice?: unknown;
   /** House furniture by space (optional for older saves). */
   house?: Record<string, string>;
   /** Farming patches by index (optional for older saves). */
@@ -649,6 +675,9 @@ export class GameWorld {
   readonly obstacles: Obstacle[] = [];
   readonly patches: FarmPatch[] = [];
   readonly hotspots: Hotspot[] = [];
+  /** The PRACTICE market: simulated traders and practice balances, separate from real wealth. */
+  market: PracticeMarket;
+  private marketTimer = 0;
   /** Real-world clock in epoch ms (farming growth). Injected so tests and a server can control it. */
   readonly clock: () => number;
   /** Fires lit by players (also listed in `stations` while they burn). Not saved: they burn out. */
@@ -665,6 +694,7 @@ export class GameWorld {
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number } = {}) {
     this.clock = opts.clock ?? (() => Date.now());
     this.map = generateWorld(opts.seed ?? 1337);
+    this.market = PracticeMarket.restore(opts.save?.exchangePractice, this.clock) ?? new PracticeMarket(undefined, (opts.seed ?? 1337) ^ 0xe7c, this.clock);
     this.rng = mulberry32((opts.seed ?? 1337) ^ 0x5eed);
     const s = opts.save;
     this.player = new Player(s?.name ?? opts.name ?? 'Adventurer', s?.appearance ?? opts.appearance ?? DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z);
@@ -840,6 +870,7 @@ export class GameWorld {
       options: { autoGather: p.autoGather },
       laps: p.laps,
       house: { ...p.furniture },
+      exchangePractice: this.market.toJSON(),
       patches: this.patches.map((f) => ({ weeds: f.weeds, crop: f.crop, plantedAt: f.plantedAt, lives: f.lives, bareSince: f.bareSince })),
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
@@ -1093,6 +1124,22 @@ export class GameWorld {
       case 'build':
         this.startBuild(cmd.hotspot, cmd.furniture);
         break;
+      case 'exchange':
+        this.exchangeRequest(cmd.req);
+        break;
+      case 'exchangeClose':
+        if (p.exchangeAt !== null) {
+          p.exchangeAt = null;
+          this.emit({ type: 'exchangeClose' });
+        }
+        break;
+      case 'exchangeResetPractice':
+        if (this.activeClerk()) {
+          this.market = new PracticeMarket(undefined, Math.floor(this.rng() * 1e9), this.clock);
+          this.emit({ type: 'exchange' });
+          this.message('The practice market has been reset with fresh practice stock.');
+        }
+        break;
       case 'removeFurniture':
         this.removeFurniture(cmd.hotspot);
         break;
@@ -1129,6 +1176,17 @@ export class GameWorld {
     if (p.shopAt !== null && !this.activeShop()) {
       p.shopAt = null;
       this.emit({ type: 'shopClose' });
+    }
+    if (p.exchangeAt !== null && !this.activeClerk()) {
+      p.exchangeAt = null;
+      this.emit({ type: 'exchangeClose' });
+    }
+    // Simulated traders act every few seconds (their own random stream: world randomness is untouched).
+    this.marketTimer += dt;
+    if (this.marketTimer >= 4) {
+      this.marketTimer = 0;
+      this.market.step();
+      this.emit({ type: 'exchange' });
     }
     if (p.tannerAt !== null && !this.activeTanner()) {
       p.tannerAt = null;
@@ -1963,6 +2021,33 @@ export class GameWorld {
     this.emit({ type: 'shop' });
   }
 
+  // ---------------------------------------------------------------- exchange (practice market)
+
+  /** The Exchange clerk serving the player, while still at the counter. */
+  activeClerk(): Npc | null {
+    const p = this.player;
+    if (p.exchangeAt === null || p.dead) return null;
+    const n = this.byId.get(p.exchangeAt);
+    if (!(n instanceof Npc) || n.def.service !== 'exchange') return null;
+    return dist(p.x, p.z, n.x, n.z) <= (n.def.reach ?? 1.9) + BANK_LEAVE_MARGIN ? n : null;
+  }
+
+  /**
+   * Forwards a client intent to the practice market as the practice account. Only the intent's
+   * fields are used: the account comes from here, and balances and results come from the engine.
+   */
+  private exchangeRequest(req: ExchangeIntent) {
+    if (!req || typeof req !== 'object') return;
+    const nonce = Number(req.nonce);
+    let result: ExchangeResult;
+    if (!this.activeClerk()) result = { ok: false, error: 'You need to be at an Exchange clerk to do that.' };
+    else if (req.op === 'place') result = this.market.exchange.submit({ op: 'place', account: PRACTICE_ACCOUNT, nonce, slot: req.slot, side: req.side, item: req.item, qty: req.qty, price: req.price });
+    else if (req.op === 'cancel' || req.op === 'collect') result = this.market.exchange.submit({ op: req.op, account: PRACTICE_ACCOUNT, nonce, orderId: req.orderId });
+    else result = { ok: false, error: 'Unknown request.' };
+    this.emit({ type: 'exchangeResult', nonce, result });
+    this.emit({ type: 'exchange' });
+  }
+
   // ---------------------------------------------------------------- tanner
 
   /** The tanner the player is using, while still beside them. */
@@ -2251,6 +2336,11 @@ export class GameWorld {
     if (n.def.service === 'bank') {
       p.bankAt = n.id;
       this.emit({ type: 'bankOpen', npc: n.def.id });
+      return;
+    }
+    if (n.def.service === 'exchange') {
+      p.exchangeAt = n.id;
+      this.emit({ type: 'exchangeOpen' });
       return;
     }
     if (isConvertService(n.def.service)) {

@@ -2187,3 +2187,247 @@ button.danger {
   width: 22px;
   height: 22px;
 }
+
+/* ---- Exchange (practice market) */
+.gx {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gx-banner {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 170, 40, 0.16);
+  border: 1px solid rgba(255, 190, 80, 0.55);
+  color: #ffd99a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.gx-tabs {
+  display: flex;
+  gap: 6px;
+}
+.gx-notice {
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: rgba(90, 200, 120, 0.15);
+  color: #b8f5c8;
+  font-size: 13px;
+}
+.gx-notice.bad {
+  background: rgba(220, 80, 70, 0.18);
+  color: #ffb3a8;
+}
+.gx-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.gx-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(0, 0, 0, 0.28);
+  text-align: left;
+  min-height: 112px;
+  font-size: 12px;
+}
+.gx-slot.empty {
+  border-style: dashed;
+  justify-content: space-between;
+}
+.gx-slot.done {
+  border-color: #7dff8a;
+}
+.gx-slot.cancelled {
+  border-color: #ff9a8a;
+}
+.gx-slot-title {
+  color: var(--muted);
+  font-weight: 800;
+}
+.gx-slot-btns {
+  display: flex;
+  gap: 6px;
+}
+.gx-slot-btns .bank-btn {
+  flex: 1;
+}
+.gx-slot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.gx-side {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.gx-side.buy {
+  background: #2f6f3f;
+}
+.gx-side.sell {
+  background: #7a3b2e;
+}
+.gx-ready {
+  font-size: 10px;
+  font-weight: 900;
+  color: #1a1a1a;
+  background: var(--gold);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.gx-slot-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 900;
+  font-size: 13px;
+}
+.gx-slot-item img,
+.gx-row img,
+.gx-pick img {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+.gx-bar {
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.gx-bar.big {
+  height: 12px;
+  margin: 8px 0;
+}
+.gx-bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, #5fd07a, #e0b545);
+}
+.gx-slot-sub,
+.gx-slot-status {
+  color: var(--muted);
+  font-size: 11px;
+}
+.gx-detail,
+.gx-form,
+.gx-storage,
+.gx-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gx-detail-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.gx-detail-head img {
+  width: 44px;
+  height: 44px;
+}
+.gx-status {
+  font-weight: 900;
+}
+.gx-status.done {
+  color: #7dff8a;
+}
+.gx-status.cancelled {
+  color: #ff9a8a;
+}
+.gx-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.gx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+.gx-row.dim {
+  opacity: 0.7;
+}
+.gx-hold b {
+  margin-left: auto;
+}
+.gx-newhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gx-search {
+  width: 100%;
+}
+.gx-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gx-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(0, 0, 0, 0.22);
+  text-align: left;
+  min-height: 44px;
+}
+.gx-pick-name {
+  font-weight: 800;
+  flex: 1;
+}
+.gx-pick-price {
+  color: var(--muted);
+  font-size: 12px;
+}
+.gx-guide {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.22);
+}
+.gx-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 800;
+  font-size: 13px;
+}
+.gx-field > span {
+  width: 100%;
+}
+.gx-field .bank-qty {
+  width: 110px;
+}
+.gx-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.gx-total {
+  font-size: 13px;
+}
+.gx-total .miss {
+  color: #ff9a8a;
+}
+.gx-confirm {
+  min-height: 44px;
+  font-size: 15px;
+}

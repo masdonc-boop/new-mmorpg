@@ -142,7 +142,11 @@ export const REGIONS: Region[] = [
   { id: 'hills', name: 'Ironcrag Hills', x: 88, z: 62, radius: 16, levels: 'Mining', danger: 1 },
   { id: 'camp', name: 'Goblin Encampment', x: 86, z: 28, radius: 10, levels: 'Lv 10–25', danger: 3 },
   { id: 'fields', name: 'Southern Fields', x: 56, z: 90, radius: 10, levels: 'Safe', danger: 0 },
+  { id: 'exchange', name: 'Exchange Plaza', x: 80.5, z: 43.5, radius: 6, levels: 'Trading', danger: 0 },
 ];
+
+/** The Exchange plaza north-east of the village: a round kiosk with clerks, and a bank booth. */
+export const EXCHANGE = { x: 80.5, z: 43.5, radius: 3.8, booth: { x: 84.6, z: 40.6 } };
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = clamp((x - a) / (b - a), 0, 1);
@@ -458,7 +462,11 @@ export function generateWorld(seed = 1337): WorldMap {
 
   // Clear the agility course ground east of the smithy and the house plot north of the village
   // (trees and scenery there are removed).
-  const inCourse = (x: number, z: number) => (x >= 79 && x < 91 && z >= 73 && z < 81) || (x >= HOUSE.x1 - 1 && x < HOUSE.x2 + 2 && z >= HOUSE.z1 - 1 && z < HOUSE.z2 + 2);
+  const inCourse = (x: number, z: number) =>
+    (x >= 79 && x < 91 && z >= 73 && z < 81) ||
+    (x >= HOUSE.x1 - 1 && x < HOUSE.x2 + 2 && z >= HOUSE.z1 - 1 && z < HOUSE.z2 + 2) ||
+    Math.hypot(x - EXCHANGE.x, z - EXCHANGE.z) < EXCHANGE.radius + 1.5 ||
+    Math.hypot(x - EXCHANGE.booth.x, z - EXCHANGE.booth.z) < 1.8;
   for (let i = resources.length - 1; i >= 0; i--) {
     const r = resources[i];
     if (!inCourse(r.x, r.z)) continue;
@@ -479,6 +487,10 @@ export function generateWorld(seed = 1337): WorldMap {
       if (edge && !(z === HOUSE.z2 && x === HOUSE.doorX)) blocked[idx(x, z)] = occ[idx(x, z)] = 1;
     }
   }
+
+  // The exchange kiosk (3×3 tiles in the plaza's middle) and the bank booth counter.
+  for (let x = Math.floor(EXCHANGE.x) - 1; x <= Math.floor(EXCHANGE.x) + 1; x++) for (let z = Math.floor(EXCHANGE.z) - 1; z <= Math.floor(EXCHANGE.z) + 1; z++) blocked[idx(x, z)] = occ[idx(x, z)] = 1;
+  blocked[idx(Math.floor(EXCHANGE.booth.x), Math.floor(EXCHANGE.booth.z))] = 1;
 
   // Later content is placed with its own random stream, so adding it never reshuffles the trees,
   // rocks and scenery generated above (existing players keep the world they know).
@@ -528,6 +540,10 @@ export function generateWorld(seed = 1337): WorldMap {
     { id: 'banker', x: BANKER.x, z: BANKER.z, facing: S / 2 },
     { id: 'tanner', x: 70.5, z: 76.2, facing: S },
     { id: 'sawyer', x: 74.2, z: 46.5, facing: -S / 2 },
+    // Exchange clerks inside the kiosk, facing out; the banker behind the plaza's bank booth.
+    { id: 'clerk_pell', x: EXCHANGE.x - 0.9, z: EXCHANGE.z, facing: -S / 2 },
+    { id: 'clerk_imogen', x: EXCHANGE.x + 0.9, z: EXCHANGE.z, facing: S / 2 },
+    { id: 'exbanker', x: EXCHANGE.booth.x + 0.5, z: EXCHANGE.booth.z - 0.4, facing: -S * 0.75 },
     // Townsfolk strolling round the plaza, and the farmer by the fields.
     { id: 'townsman', x: 54.5, z: 70.0, facing: 0, patrol: [{ x: 54.5, z: 70.0 }, { x: 59.5, z: 70.0 }, { x: 60.5, z: 67.5 }] },
     { id: 'townswoman', x: 52.5, z: 64.0, facing: 0, patrol: [{ x: 52.5, z: 64.0 }, { x: 58.0, z: 63.6 }] },
