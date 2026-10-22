@@ -242,11 +242,12 @@ describe('Equipment slots', () => {
     expect(p.equipment.get('cape')).toBe('travellers_cape');
     expect(p.equipment.get('neck')).toBe('fang_amulet');
     expect(w.playerBonuses().armour).toBe(2 + 2 + 1 + 1);
-    // Training weapon (melee 12 accuracy) plus the amulet's 3; same for ranged with a real bow.
+    // Training weapon (melee 12 accuracy) plus the amulet's 3; same for ranged with a real bow, where
+    // the wolfhide wraps and boots add their ranged accuracy too (+1 each, Phase 4B).
     expect(w.playerBonuses().accuracy).toBe(12 + 3);
     p.inventory.add('shortbow');
     w.issue({ type: 'equip', slot: slotOf(p.inventory, 'shortbow') });
-    expect(w.playerBonuses().accuracy).toBe(itemDef('shortbow').equip!.accuracy! + 3);
+    expect(w.playerBonuses().accuracy).toBe(itemDef('shortbow').equip!.accuracy! + 3 + 2);
     // Gloves and vambraces share the hands slot: wearing one swaps the other into the bag.
     p.inventory.add('leather_vambraces');
     w.issue({ type: 'equip', slot: slotOf(p.inventory, 'leather_vambraces') });

@@ -61,8 +61,8 @@ export class Equipment {
       // Arrows only help bows.
       if (s === 'ammo' && style !== 'ranged') continue;
       if (s !== 'weapon') {
-        extraAccuracy += e?.accuracy ?? 0;
-        extraPower += e?.power ?? 0;
+        extraAccuracy += (e?.accuracy ?? 0) + (e?.styleBonus?.[style]?.accuracy ?? 0);
+        extraPower += (e?.power ?? 0) + (e?.styleBonus?.[style]?.power ?? 0);
       }
     }
     const w = this.slots.weapon;

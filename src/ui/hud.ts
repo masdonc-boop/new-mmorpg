@@ -1125,9 +1125,10 @@ export class Hud {
       info.innerHTML = `<div class="ii-name">${d.name}${sel.qty > 1 ? ` × ${sel.qty}` : ''}</div><div class="ii-desc">${d.examine}</div>`;
       const btns = el('div', 'ii-btns');
       if (d.equip) {
-        const req = Object.entries(d.equip.req ?? {}).map(([sk, l]) => `${SKILL_INFO[sk as SkillId].name} ${l}`).join(', ');
+        const req = Object.entries(d.equip.req ?? {}).map(([sk, l]) => `<span class="${this.world.player.skills.level(sk as SkillId) >= l ? 'req-ok' : 'req-no'}">${SKILL_INFO[sk as SkillId].name} ${l}</span>`).join(', ');
         const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
-        const stats = [d.equip.accuracy ? `${signed(d.equip.accuracy)} accuracy` : '', d.equip.power ? `${signed(d.equip.power)} power` : '', d.equip.armour ? `${signed(d.equip.armour)} armour` : ''].filter(Boolean).join(' · ');
+        const styled = Object.entries(d.equip.styleBonus ?? {}).flatMap(([st, v]) => [v.accuracy ? `${signed(v.accuracy)} ${st} accuracy` : '', v.power ? `${signed(v.power)} ${st} power` : '']);
+        const stats = [d.equip.accuracy ? `${signed(d.equip.accuracy)} accuracy` : '', d.equip.power ? `${signed(d.equip.power)} power` : '', d.equip.armour ? `${signed(d.equip.armour)} armour` : '', ...styled].filter(Boolean).join(' · ');
         info.innerHTML += `<div class="ii-stats">${stats}${d.equip.twoHanded ? ' · two-handed' : ''}${req ? ` · needs ${req}` : ''}</div>`;
         const wear = el('button', 'primary', d.equip.slot === 'weapon' ? 'Wield' : 'Wear');
         wear.addEventListener('click', () => {

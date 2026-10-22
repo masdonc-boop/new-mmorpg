@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { GameWorld, type Enemy, type SaveData } from '../src/sim/world';
 import { combatXp, TRAINING_FOCUSES } from '../src/sim/combat';
 import { validateCommand as parseCommand } from '../src/net/validate';
+import { ITEMS, itemDef, type ItemId } from '../src/data/items';
+import { RECIPES } from '../src/data/recipes';
+import { xpForLevel } from '../src/data/skills';
 
 const run = (w: GameWorld, s: number) => {
   for (let t = 0; t < s * 30; t++) w.tick();
@@ -49,5 +52,77 @@ describe('4B.1 combat skills train independently', () => {
   it('the server only accepts known focuses', () => {
     expect(parseCommand({ type: 'setFocus', focus: 'power' })).toBeTruthy();
     expect(parseCommand({ type: 'setFocus', focus: 'godlike' })).toBeNull();
+  });
+});
+
+const wear = (w: GameWorld, item: ItemId) => {
+  w.player.inventory.add(item, 1);
+  w.issue({ type: 'equip', slot: w.player.inventory.slots.findIndex((x) => x?.item === item) });
+  return w.player.equipment.slots[itemDef(item).equip!.slot] === item;
+};
+
+describe('4B.2 equipment: style bonuses, tiers and requirements', () => {
+  it('metal armour costs magic and ranged accuracy but not melee; hides help archers only', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('defence', xpForLevel(20));
+    const acc = (style: 'melee' | 'ranged' | 'magic') => {
+      p.style = style;
+      return w.playerBonuses().accuracy;
+    };
+    const bare = { melee: acc('melee'), ranged: acc('ranged'), magic: acc('magic') };
+    for (const it of ['steel_helm', 'steel_platebody', 'steel_platelegs'] as ItemId[]) expect(wear(w, it)).toBe(true);
+    expect(acc('melee')).toBe(bare.melee);
+    expect(acc('magic')).toBe(bare.magic - 12);
+    expect(acc('ranged')).toBe(bare.ranged - 6);
+    expect(w.playerBonuses().armour).toBe(12 + 30 + 21);
+    const w2 = new GameWorld();
+    for (const it of ['leather_cowl', 'leather_body', 'leather_chaps', 'leather_vambraces'] as ItemId[]) wear(w2, it);
+    w2.player.style = 'ranged';
+    const r = w2.playerBonuses().accuracy;
+    w2.player.style = 'melee';
+    expect(r - 14).toBe(2 + 4 + 3 + 3);
+    expect(w2.playerBonuses().accuracy).toBe(12);
+  });
+
+  it('each melee tier has a dagger, sword, helm, shield, greaves and breastplate, with rising requirements and stats', () => {
+    const tiers: [string, number][] = [['bronze', 0], ['iron', 10], ['steel', 20], ['glimsteel', 30], ['duskiron', 45]];
+    let prevArmour = 0;
+    for (const [t, lvl] of tiers) {
+      const body = itemDef(`${t}_platebody` as ItemId).equip!;
+      expect(body.req?.defence ?? 0, t).toBe(lvl);
+      expect(body.armour!, t).toBeGreaterThan(prevArmour);
+      prevArmour = body.armour!;
+      for (const piece of ['helm', 'shield', 'platelegs', 'platebody']) expect(RECIPES[`${t}_${piece}`], `${t}_${piece}`).toBeTruthy();
+      const blade = (t === 'duskiron' ? ['sword'] : ['dagger', 'sword']).map((b) => `${t}_${b}` as ItemId);
+      for (const b of blade) {
+        expect(ITEMS[b as keyof typeof ITEMS], b).toBeTruthy();
+        expect(itemDef(b).equip!.req?.attack ?? 0, b).toBe(lvl);
+        expect(RECIPES[b], b).toBeTruthy();
+      }
+    }
+  });
+
+  it('gear can only be worn at its level; the duskiron warhammer also needs Strength 45', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    expect(wear(w, 'iron_dagger')).toBe(false);
+    p.skills.addXp('attack', xpForLevel(10));
+    expect(wear(w, 'iron_dagger')).toBe(true);
+    p.skills.addXp('attack', xpForLevel(45));
+    expect(wear(w, 'duskiron_warhammer')).toBe(false);
+    p.skills.addXp('strength', xpForLevel(45));
+    expect(wear(w, 'duskiron_warhammer')).toBe(true);
+    expect(itemDef('glimsteel_arrow').equip!.req).toEqual({ ranged: 30 });
+  });
+
+  it('a save with gear the wearer no longer meets the level for keeps it worn (nothing is lost)', () => {
+    const w = new GameWorld();
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    save.equipment = { ...(save.equipment ?? {}), ammo: 'glimsteel_arrow' };
+    save.ammoQty = 40;
+    const w2 = new GameWorld({ save, map: w.map });
+    expect(w2.player.equipment.slots.ammo).toBe('glimsteel_arrow');
+    expect(w2.player.equipment.ammoQty).toBe(40);
   });
 });

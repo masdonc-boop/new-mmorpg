@@ -2801,3 +2801,10 @@ button.danger {
 .focus-seg button {
   flex: 1;
 }
+/* Gear requirements in the item card: met in green, unmet in red. */
+.req-ok {
+  color: #7dff8a;
+}
+.req-no {
+  color: #ff8a7a;
+}
