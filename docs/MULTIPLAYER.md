@@ -799,6 +799,50 @@ Checked and fine (from the same review):
 - wisps and loot moving 1:1;
 - parameterized SQL.
 
+### 3B.2 Moderation: done
+
+- **Roles:** accounts have a role (`player`, `moderator` or `admin`). Roles are given **only** with the local admin tool, `npm run admin -- grant <name> <moderator|admin>`, run on the server's computer against its database. Nothing a client sends can grant one. The server reads the role on every command, so revoking works at once.
+- **In the game,** commands are typed in the chat box, and the answers appear there:
+
+  | Who | Commands |
+  |---|---|
+  | Moderators | `/who`, `/kick name reason`, `/mute name minutes reason`, `/unmute name`, `/reports [open\|resolved\|all]`, `/resolve id note` |
+  | Admins | all of the above, plus `/ban name minutes\|forever reason`, `/unban name`, `/filter add\|remove\|list word`, `/audit [n]`, `/flags [n]`, `/exchange status\|freeze reason\|unfreeze` |
+
+  Moderators can't act on moderators or admins.
+- **Kick** saves the character and removes it at once.
+- **Bans** are checked at every sign-in, including sign-ins with a saved token.
+- **Mutes** are stored per account.
+- **The word filter** keeps the built-in list and adds words moderators choose. They are stored in the database and checked with the same look-alike rules.
+- **Reports** carry what the reporter actually received from the reported player, and are reviewed and resolved in the game or with the admin tool.
+- **Logging:** every moderator or admin command, including refused ones, goes to `admin_audit`.
+- **The local tool** also lists roles, reports, the audit log and Exchange flags, and can ban and unban. Those take effect at the next sign-in; to remove someone who is online now, use `/kick` or `/ban` in the game.
+- **Tests:** `tests/net-moderation.test.ts` (5).
+
+### 3B.3 Live Exchange safeguards: done
+
+The live Exchange stays **off by default**. Every rule is a server option (`exchangePolicy`):
+- **Rate limits per account:** 30 requests and 120 price lookups a minute. They are kept across reconnects, so dropping the connection doesn't reset them.
+- **Offer rules:**
+  - a price band around the guide: a fifth to five times the guide from recent trades, or a twentieth to twenty times the item's value before any trade;
+  - a largest offer (50 million coins);
+  - blocked items;
+  - a minimum account age.
+  
+  Refused offers change nothing and are logged.
+- **Unusual activity** is logged to `exchange_flags` for review, never blocked (honest players do all of these sometimes):
+  - trades three times above or below the guide;
+  - the same buyer and seller more than 6 times an hour;
+  - more than 20 offers placed or cancelled in ten minutes;
+  - rate limits hit and refusals.
+- **Integrity:**
+  - The books are verified before every save.
+  - Every minute, they are checked against the newest audit entry in the database.
+  - Any failure **freezes** the Exchange: reads still work, requests don't. It also logs the failure and tells online admins.
+  - Admins can freeze it by hand. They can unfreeze it only once the books balance again.
+  - Undoing a refused request puts back the earlier state exactly, even a broken one, which is then reported rather than replaced.
+- **Tests:** `tests/net-exchange-guard.test.ts` (7).
+
 ### 3B.4 Reconnecting, duplicate sign-ins and zone transfers: done
 
 Fixed:
@@ -894,3 +938,14 @@ Checked:
   - an account without the code was refused with a clear message;
   - the same account with the code was created and signed in;
   - a page from another origin was refused.
+
+### Phase 3B: open risks
+
+- **Imports trust the save.** With the default `full` policy, an edited browser save can bring more than was earned (up to the caps). Fingerprinting by character stops the same character coming twice, not a forged one. Use `progress` or `off` for anything beyond a trusted test (owner decision, section 7).
+- **Guest play** has no password: it is for one's own computer only, and is refused beyond it.
+- **No TLS.** Traffic isn't encrypted. That is acceptable over USB, a home network or Tailscale (whose links are encrypted), but not on the internet.
+- **One process and SQLite.** Saving the whole Exchange with every request suits a test server only. Regional servers, PostgreSQL and normalized Exchange tables remain future work (section 4.2).
+- **Moderation is basic:** no web dashboard, no appeals, no automatic spam detection beyond pacing and the word list. Bans and roles set with the local tool reach online players only at their next sign-in.
+- **Exchange monitoring** logs patterns but doesn't act on them, and nobody is alerted except admins who are online when it freezes.
+- **Timing-based tests** (the 50-bot tick budget, silence detection) can fail on a heavily loaded machine. They pass on an idle one.
+- **Not yet tried on real phones over a real network.** That is the first controlled test (`docs/ANDROID_TEST.md`).
