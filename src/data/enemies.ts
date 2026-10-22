@@ -58,6 +58,8 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'glimmerite_ore', min: 1, max: 1, chance: 0.15 },
       { item: 'cabbage', min: 1, max: 2, chance: 0.2 },
       { item: 'air_rune', min: 4, max: 10, chance: 0.3 },
+      { item: 'dull_spark', min: 4, max: 8, chance: 0.3 },
+      { item: 'iron_ore', min: 1, max: 1, chance: 0.15 },
     ],
   },
   wolf: {
@@ -70,6 +72,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'wolf_pelt', min: 1, max: 1, chance: 0.5 },
       { item: 'wolf_fang', min: 1, max: 1, chance: 0.2 },
       { item: 'coins', min: 5, max: 15, chance: 0.5 },
+      { item: 'bronze_helm', min: 1, max: 1, chance: 0.03 },
     ],
   },
   goblin: {
@@ -82,6 +85,9 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'bronze_arrow', min: 5, max: 15, chance: 0.35 },
       { item: 'air_rune', min: 5, max: 12, chance: 0.35 },
       { item: 'bread', min: 1, max: 1, chance: 0.15 },
+      { item: 'iron_arrow', min: 5, max: 10, chance: 0.15 },
+      { item: 'iron_dagger', min: 1, max: 1, chance: 0.03 },
+      { item: 'iron_helm', min: 1, max: 1, chance: 0.02 },
     ],
   },
   goblin_warlord: {
@@ -95,6 +101,8 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'glimsteel_arrow', min: 8, max: 20, chance: 0.3 },
       { item: 'bronze_arrow', min: 30, max: 60, chance: 0.6 },
       { item: 'air_rune', min: 30, max: 60, chance: 0.6 },
+      { item: 'steel_sword', min: 1, max: 1, chance: 0.15 },
+      { item: 'steel_platebody', min: 1, max: 1, chance: 0.08 },
     ],
   },
   // ---- Mirefen Marsh (Phase 4A, docs/WORLD_EXPANSION.md)
@@ -106,9 +114,13 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     drops: [
       { item: 'bones', min: 1, max: 1, chance: 1 },
       { item: 'raw_meat', min: 1, max: 1, chance: 0.5 },
-      { item: 'coins', min: 10, max: 28, chance: 0.7 },
+      { item: 'coins', min: 24, max: 50, chance: 0.8 },
       { item: 'slime_gel', min: 1, max: 2, chance: 0.3 },
       { item: 'marsh_pearl', min: 1, max: 1, chance: 0.01 },
+      { item: 'iron_arrow', min: 4, max: 10, chance: 0.15 },
+      { item: 'linen', min: 1, max: 1, chance: 0.1 },
+      { item: 'flax', min: 1, max: 2, chance: 0.1 },
+      { item: 'iron_helm', min: 1, max: 1, chance: 0.02 },
     ],
   },
   // Mire leeches: as long as a man, they hunt anything warm that wades into the deep marsh.
@@ -118,8 +130,11 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
     speed: 2.4, respawnSeconds: 22, model: 'leech', scale: 1, color: '#3a3226', accent: '#5e4c34',
     drops: [
       { item: 'mire_oil', min: 1, max: 2, chance: 0.75 },
-      { item: 'coins', min: 14, max: 34, chance: 0.7 },
+      { item: 'coins', min: 20, max: 45, chance: 0.75 },
       { item: 'marsh_pearl', min: 1, max: 1, chance: 0.02 },
+      { item: 'linen', min: 1, max: 1, chance: 0.12 },
+      { item: 'steel_arrow', min: 3, max: 8, chance: 0.1 },
+      { item: 'iron_dagger', min: 1, max: 1, chance: 0.02 },
     ],
   },
   // The Bog Mother: a croaker grown vast and old in the waters round the Sunken Shrine.
@@ -134,6 +149,8 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'mire_oil', min: 3, max: 6, chance: 0.6 },
       { item: 'raw_silverpike', min: 2, max: 4, chance: 0.4 },
       { item: 'willow_shortbow', min: 1, max: 1, chance: 0.05 },
+      { item: 'mireweave_hood', min: 1, max: 1, chance: 0.12 },
+      { item: 'mirelight_wand', min: 1, max: 1, chance: 0.03 },
     ],
   },
   // ---- Thornridge Highlands (Phase 4A, docs/WORLD_EXPANSION.md)
@@ -146,7 +163,9 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'bones', min: 1, max: 1, chance: 1 },
       { item: 'raw_meat', min: 1, max: 2, chance: 0.8 },
       { item: 'boar_hide', min: 1, max: 1, chance: 0.6 },
-      { item: 'coins', min: 16, max: 38, chance: 0.7 },
+      { item: 'coins', min: 22, max: 50, chance: 0.75 },
+      { item: 'steel_arrow', min: 3, max: 8, chance: 0.1 },
+      { item: 'steel_helm', min: 1, max: 1, chance: 0.02 },
     ],
   },
   // Ridge stalkers: lean grey hunters of the crags, quick and patient.
@@ -158,8 +177,11 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'bones', min: 1, max: 1, chance: 1 },
       { item: 'ridge_pelt', min: 1, max: 1, chance: 0.55 },
       { item: 'wolf_fang', min: 1, max: 1, chance: 0.25 },
-      { item: 'coins', min: 24, max: 52, chance: 0.7 },
+      { item: 'coins', min: 30, max: 65, chance: 0.75 },
       { item: 'silver_ore', min: 1, max: 1, chance: 0.1 },
+      { item: 'steel_arrow', min: 5, max: 12, chance: 0.15 },
+      { item: 'ridgehide_vambraces', min: 1, max: 1, chance: 0.02 },
+      { item: 'glimsteel_dagger', min: 1, max: 1, chance: 0.01 },
     ],
   },
   // Greymane: the stalkers' old pack-leader, denned in the ruins of the Old Watchtower.
@@ -173,6 +195,9 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'silver_bar', min: 1, max: 3, chance: 0.6 },
       { item: 'ridge_pelt', min: 2, max: 3, chance: 0.8 },
       { item: 'cut_sapphire', min: 1, max: 1, chance: 0.25 },
+      { item: 'ridgehide_body', min: 1, max: 1, chance: 0.05 },
+      { item: 'rowan_shortbow', min: 1, max: 1, chance: 0.05 },
+      { item: 'glimsteel_sword', min: 1, max: 1, chance: 0.04 },
     ],
   },
 };

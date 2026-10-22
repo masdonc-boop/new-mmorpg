@@ -1,7 +1,7 @@
 import type { TrainingFocus } from '../sim/combat';
 import type { ResourceType } from '../data/resources';
 import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } from '../data/items';
-import { QUESTS } from '../data/quests';
+import { QUESTS, requirementList } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, type CombatStyle } from '../sim/combat';
 import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type WorldMap } from '../sim/worldmap';
@@ -1604,7 +1604,12 @@ export class Hud {
           if (i < prog.stage || prog.done) steps += `<li class="done">${st.journal}</li>`;
           else if (i === prog.stage) steps += `<li class="cur">${st.journal}</li>`;
         });
-      } else steps = `<li class="cur">${q.stages[0].journal}</li>`;
+      } else {
+        steps = `<li class="cur">${q.stages[0].journal}</li>`;
+        const missing = new Set(w.questMissing(q));
+        const reqs = requirementList(q);
+        if (reqs.length) steps += `<li class="req">Requires: ${reqs.map((r) => `<span class="${missing.has(r) ? 'req-no' : 'req-ok'}">${r}</span>`).join(', ')}</li>`;
+      }
       card.innerHTML = `<div class="qc-head"><span class="qc-name">${q.name}</span><span class="qc-status">${status}</span></div>
         <div class="qc-sum">${q.summary}</div><ul class="qc-steps">${steps}</ul>
         <div class="qc-rewards">Rewards: ${q.rewards.text.join(' · ')}</div>`;

@@ -5,7 +5,7 @@ import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../
 import { RECIPES, STATION_INFO, failChance, isAnywhere, plural, recipeAt, type AnywhereKind, type RecipeDef, type StationKind } from '../data/recipes';
 import { SHOPS, sellPrice, shopFor, type ShopDef } from '../data/shops';
 import { NPCS, pickpocketChance, type NpcDef, type NpcId } from '../data/npcs';
-import { QUESTS, type QuestDef } from '../data/quests';
+import { QUESTS, missingRequirements, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, TRAINING_FOCUSES, combatXp, rollHit, type CombatStyle, type TrainingFocus } from './combat';
@@ -3646,7 +3646,7 @@ export class GameWorld {
     for (const q of Object.values(QUESTS)) {
       const prog = this.player.quests[q.id];
       if (!prog) {
-        if (q.giver === npcId) return 'available';
+        if (q.giver === npcId && this.questMissing(q).length === 0) return 'available';
         continue;
       }
       if (prog.done) continue;
@@ -3663,6 +3663,8 @@ export class GameWorld {
     for (const q of Object.values(QUESTS)) {
       const prog = p.quests[q.id];
       if (!prog && q.giver === n.def.id) {
+        const missing = this.questMissing(q);
+        if (missing.length) return { ...base, lines: [...(q.notYetLines ?? []), `(${q.name} needs ${missing.join(', ')}.)`] };
         return { ...base, lines: q.stages[0].completeLines, offer: { quest: q.id, label: `Accept quest: ${q.name}` } };
       }
       if (!prog || prog.done) continue;
@@ -3701,10 +3703,18 @@ export class GameWorld {
     return { ...base, lines: [line], pickpocket: n.def.thieving ? n.id : undefined };
   }
 
+  /** Requirements the current player is missing for a quest (empty when they can start it). */
+  questMissing(q: QuestDef): string[] {
+    const p = this.player;
+    return missingRequirements(q, (id) => p.quests[id]?.done === true, p.skills.combatLevel(), (s) => p.skills.level(s));
+  }
+
   private acceptQuest(id: string) {
     const q = QUESTS[id];
     const p = this.player;
     if (!q || p.quests[id]) return;
+    // The simulation checks requirements itself: a client can't skip them by sending the command.
+    if (this.questMissing(q).length) return;
     p.quests[id] = { stage: 1, kills: 0, done: false };
     this.emit({ type: 'quest', quest: id, stage: 1, complete: false });
     this.message(`Quest started: ${q.name}. ${q.stages[1].journal}`, 'good');

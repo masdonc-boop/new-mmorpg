@@ -33,6 +33,13 @@ const kill = (w: GameWorld, e: Enemy) => (w as unknown as { damageEnemy: (e: Ene
 const reachableFromSpawn = (w: GameWorld, x: number, z: number) =>
   SIDES.some(([a, b]) => !isBlocked(w.map, x + a, z + b) && !!findPath(w.map, w.map.spawn.x, w.map.spawn.z, x + a, z + b, 200_000));
 
+/** A character who meets the regional quests' requirements (The Elder's Request done, combat 20+). */
+function seasoned(w: GameWorld) {
+  w.player.quests.elders_request = { stage: 3, kills: 0, done: true };
+  for (const s of ['attack', 'strength', 'defence', 'hitpoints'] as const) w.player.skills.addXp(s, xpForLevel(25));
+  return w;
+}
+
 describe('4A.3 Cairnhold: a working outpost', () => {
   const w = new GameWorld();
 
@@ -166,7 +173,7 @@ describe('4A.3 Thornridge creatures', () => {
 
 describe('4A.3 The Ninefold Watch', () => {
   it('runs end to end, and its progress survives a save', () => {
-    const w = new GameWorld();
+    const w = seasoned(new GameWorld());
     const p = w.player;
     const warden = npc(w, 'warden');
     const offer = use(w, warden).find((e) => e.type === 'dialogue');
@@ -193,7 +200,7 @@ describe('4A.3 The Ninefold Watch', () => {
   });
 
   it('both regional quests can be in progress at once without crossing wires', () => {
-    const w = new GameWorld();
+    const w = seasoned(new GameWorld());
     use(w, npc(w, 'warden'));
     w.issue({ type: 'acceptQuest', quest: 'ninefold_watch' });
     use(w, npc(w, 'reeve'));

@@ -35,6 +35,13 @@ const kill = (w: GameWorld, e: Enemy) => (w as unknown as { damageEnemy: (e: Ene
 const reachableFromSpawn = (w: GameWorld, x: number, z: number) =>
   SIDES.some(([a, b]) => !isBlocked(w.map, x + a, z + b) && !!findPath(w.map, w.map.spawn.x, w.map.spawn.z, x + a, z + b, 200_000));
 
+/** A character who meets the regional quests' requirements (The Elder's Request done, combat 20+). */
+function seasoned(w: GameWorld) {
+  w.player.quests.elders_request = { stage: 3, kills: 0, done: true };
+  for (const s of ['attack', 'strength', 'defence', 'hitpoints'] as const) w.player.skills.addXp(s, xpForLevel(25));
+  return w;
+}
+
 describe('4A.2 Heronwick: a working village', () => {
   const w = new GameWorld();
 
@@ -205,7 +212,7 @@ describe('4A.2 Mirefen creatures', () => {
 
 describe('4A.2 Lanterns of Heronwick', () => {
   it('runs end to end, and its progress survives a save', () => {
-    const w = new GameWorld();
+    const w = seasoned(new GameWorld());
     const p = w.player;
     const reeve = npc(w, 'reeve');
     const offer = use(w, reeve).find((e) => e.type === 'dialogue');

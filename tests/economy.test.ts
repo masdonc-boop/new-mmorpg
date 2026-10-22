@@ -46,3 +46,64 @@ describe('4B.3 economy: no money from nothing', () => {
     for (const r of Object.values(RESOURCES)) expect(itemDef(r.item), r.id).toBeTruthy();
   });
 });
+
+describe('4B.4 loot tables', () => {
+  const value = (id: keyof typeof ENEMIES) => ENEMIES[id].drops.reduce((a, d) => a + d.chance * ((d.min + d.max) / 2) * (d.item === 'coins' ? 1 : itemDef(d.item).value), 0);
+  const regular = Object.values(ENEMIES).filter((e) => !e.boss).sort((a, b) => a.level - b.level);
+  const bosses = Object.values(ENEMIES).filter((e) => e.boss);
+
+  it('regular creatures are worth more the tougher they are (expected value per kill rises with level)', () => {
+    for (let i = 1; i < regular.length; i++) {
+      const [a, b] = [regular[i - 1], regular[i]];
+      expect(value(b.id), `${b.id} (${b.level}) vs ${a.id} (${a.level})`).toBeGreaterThanOrEqual(value(a.id) * 0.9);
+    }
+  });
+
+  it('every boss is worth several regular kills and has a signature drop no regular creature gives', () => {
+    for (const b of bosses) {
+      const peers = regular.filter((e) => Math.abs(e.level - b.level) <= 10);
+      const best = Math.max(...peers.map((e) => value(e.id)));
+      expect(value(b.id), b.id).toBeGreaterThan(best * 5);
+      const common = new Set(regular.flatMap((e) => e.drops.map((d) => d.item)));
+      expect(b.drops.some((d) => !common.has(d.item) && (itemDef(d.item).equip || itemDef(d.item).kind === 'trophy' || d.item === 'big_bones')), b.id).toBe(true);
+    }
+  });
+
+  it('gear dropped by a creature belongs to its tier (no top-tier gear from the weakest creatures)', () => {
+    for (const e of Object.values(ENEMIES)) for (const d of e.drops) {
+      const req = itemDef(d.item).equip?.req;
+      if (!req) continue;
+      const lvl = Math.max(...Object.values(req));
+      expect(lvl, `${d.item} from ${e.id}`).toBeLessThanOrEqual(e.level + 12);
+      if (!e.boss) expect(d.chance, `${d.item} from ${e.id}`).toBeLessThanOrEqual(0.2);
+    }
+  });
+});
+
+describe('4B.4 dungeon framework (ready for Phase 4C)', () => {
+  it('each dungeon sits at its landmark, asks for its region’s quest, and pays out real items', async () => {
+    const { DUNGEONS } = await import('../src/data/dungeons');
+    const { generateWorld } = await import('../src/sim/worldmap');
+    const map = generateWorld(1337);
+    for (const d of Object.values(DUNGEONS)) {
+      expect(d.status, d.id).toBe('sealed');
+      expect(map.decor.some((x) => x.kind === d.landmark), d.id).toBe(true);
+      for (const q of d.requirements.quests ?? []) expect(QUESTS[q], `${d.id} needs ${q}`).toBeTruthy();
+      expect(d.recommended.combat).toBeGreaterThanOrEqual(d.requirements.combat ?? 0);
+      expect(d.boss.level).toBeGreaterThan(d.recommended.combat);
+      for (const r of [...d.rewards.guaranteed, ...d.rewards.table]) expect(itemDef(r.item), `${d.id}: ${r.item}`).toBeTruthy();
+      for (const u of d.rewards.uniques) {
+        // Planned, not yet in the game (they arrive with the dungeon), with ids that won't clash.
+        expect(ITEMS[u.id as keyof typeof ITEMS], u.id).toBeUndefined();
+        expect(u.chance).toBeLessThan(0.05);
+        // A step above the best craftable gear of the same slot and style.
+        // Weapons are compared with weapons of their style, styled armour with armour that helps that style.
+        const helps = (i: (typeof ITEMS)[keyof typeof ITEMS]) => u.slot === 'weapon' ? i.equip?.style === u.style : !u.style || Object.entries(i.equip?.styleBonus ?? {}).some(([st, b]) => st === u.style && (b.accuracy ?? 0) > 0);
+        const peers = Object.values(ITEMS).filter((i) => i.equip?.slot === u.slot && helps(i));
+        const best = Math.max(0, ...peers.map((i) => (i.equip!.accuracy ?? 0) + (i.equip!.power ?? 0) + (i.equip!.armour ?? 0) + Object.values(i.equip!.styleBonus ?? {}).reduce((a, b) => a + (b.accuracy ?? 0) + (b.power ?? 0), 0)));
+        const t = u.target;
+        expect((t.accuracy ?? 0) + (t.power ?? 0) + (t.armour ?? 0), u.id).toBeGreaterThan(best);
+      }
+    }
+  });
+});

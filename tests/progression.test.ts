@@ -6,6 +6,7 @@ import { ITEMS, itemDef, type ItemId } from '../src/data/items';
 import { RECIPES } from '../src/data/recipes';
 import { xpForLevel } from '../src/data/skills';
 import { ENEMIES } from '../src/data/enemies';
+import { findPath } from '../src/sim/pathfinding';
 
 const run = (w: GameWorld, s: number) => {
   for (let t = 0; t < s * 30; t++) w.tick();
@@ -267,3 +268,42 @@ describe('4B.3 ranged and magic chains, end to end', () => {
 function ENEMIES_DROP(enemy: string, item: string) {
   return ENEMIES[enemy as keyof typeof ENEMIES].drops.some((d) => d.item === item);
 }
+
+describe('4B.4 quest requirements guide the journey without blocking the way', () => {
+  it('the regional quests wait for The Elder’s Request and a combat level; the simulation enforces it', () => {
+    const w = new GameWorld();
+    const reeve = w.npcs.find((n) => n.def.id === 'reeve')!;
+    expect(w.npcMarker('reeve')).toBeNull();
+    useAt(w, reeve);
+    const said = w.drainEvents().find((e) => e.type === 'dialogue');
+    expect(said && said.type === 'dialogue' && said.dialogue.offer).toBeUndefined();
+    expect(said && said.type === 'dialogue' && said.dialogue.lines.join(' ')).toMatch(/needs The Elder's Request, combat level 12/);
+    // Sending the command anyway does nothing.
+    w.issue({ type: 'acceptQuest', quest: 'lanterns_of_heronwick' });
+    expect(w.questProgress('lanterns_of_heronwick')).toBeNull();
+    w.player.quests.elders_request = { stage: 3, kills: 0, done: true };
+    for (const s of ['attack', 'strength', 'defence', 'hitpoints'] as const) w.player.skills.addXp(s, xpForLevel(12));
+    expect(w.player.skills.combatLevel()).toBeGreaterThanOrEqual(12);
+    expect(w.npcMarker('reeve')).toBe('available');
+    expect(w.npcMarker('warden')).toBeNull();
+    w.issue({ type: 'acceptQuest', quest: 'lanterns_of_heronwick' });
+    expect(w.questProgress('lanterns_of_heronwick')?.stage).toBe(1);
+  });
+
+  it('a quest already under way in an older save carries on even without the requirements', () => {
+    const w = new GameWorld();
+    w.player.quests.ninefold_watch = { stage: 2, kills: 0, done: false };
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    const w2 = new GameWorld({ save, map: w.map });
+    expect(w2.questProgress('ninefold_watch')?.stage).toBe(2);
+    expect(w2.npcMarker('warden')).toBe('progress');
+  });
+
+  it('nothing about requirements blocks walking: a fresh character can still reach Cairnhold and Heronwick', () => {
+    const w = new GameWorld();
+    for (const id of ['warden', 'reeve']) {
+      const n = w.npcs.find((x) => x.def.id === id)!;
+      expect(SIDES.some(([a, b]) => !!findPath(w.map, w.map.spawn.x, w.map.spawn.z, n.x + a, n.z + b, 200_000)), id).toBe(true);
+    }
+  });
+});

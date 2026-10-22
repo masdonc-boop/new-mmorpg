@@ -17,11 +17,21 @@ export interface QuestStage {
   completeLines: string[];
 }
 
+/** What a character needs before a quest can be started (walking anywhere is never blocked). */
+export interface QuestRequirements {
+  quests?: string[];
+  combat?: number;
+  skills?: Partial<Record<SkillId, number>>;
+}
+
 export interface QuestDef {
   id: string;
   name: string;
   giver: NpcId;
   summary: string;
+  requirements?: QuestRequirements;
+  /** What the giver says to someone who doesn't meet the requirements yet. */
+  notYetLines?: string[];
   stages: QuestStage[];
   rewards: { items: { item: ItemId; qty: number }[]; xp: Partial<Record<SkillId, number>>; text: string[] };
 }
@@ -81,6 +91,8 @@ export const QUESTS: Record<string, QuestDef> = {
     name: 'Lanterns of Heronwick',
     giver: 'reeve',
     summary: 'Help Reeve Fenn relight the boardwalk lanterns that keep the marsh at bay.',
+    requirements: { quests: ['elders_request'], combat: 12 },
+    notYetLines: ['Heronwick needs help, but the marsh would swallow you whole as you are.', 'Help Elder Maren in Brightwater first, and come back when you can hold your own in a fight.'],
     stages: [
       {
         journal: 'Speak with Reeve Fenn in Heronwick, in Mirefen Marsh.',
@@ -148,6 +160,8 @@ export const QUESTS: Record<string, QuestDef> = {
     name: 'The Ninefold Watch',
     giver: 'warden',
     summary: 'Help Warden Crane drive the stalkers from the high road and re-band the Ninefold Stones.',
+    requirements: { quests: ['elders_request'], combat: 20 },
+    notYetLines: ['The high road is no place for a fresh face. The stalkers would have you by sundown.', 'Prove yourself to Elder Maren in Brightwater, and come back when you are seasoned.'],
     stages: [
       {
         journal: 'Speak with Warden Crane in Cairnhold, in the Thornridge Highlands.',
@@ -201,3 +215,22 @@ export const QUESTS: Record<string, QuestDef> = {
     },
   },
 };
+
+/** The requirements a character is missing for a quest, as short phrases ("combat level 12"). */
+export function missingRequirements(q: QuestDef, done: (quest: string) => boolean, combat: number, level: (s: SkillId) => number): string[] {
+  const r = q.requirements;
+  if (!r) return [];
+  const out: string[] = [];
+  for (const id of r.quests ?? []) if (!done(id)) out.push(QUESTS[id]?.name ?? id);
+  if (r.combat && combat < r.combat) out.push(`combat level ${r.combat}`);
+  for (const [s, l] of Object.entries(r.skills ?? {}) as [SkillId, number][]) if (level(s) < l) out.push(`${s} ${l}`);
+  return out;
+}
+
+/** Every requirement of a quest, as short phrases (for the journal). */
+export function requirementList(q: QuestDef): string[] {
+  const r = q.requirements;
+  if (!r) return [];
+  return [...(r.quests ?? []).map((id) => QUESTS[id]?.name ?? id), ...(r.combat ? [`combat level ${r.combat}`] : []), ...Object.entries(r.skills ?? {}).map(([s, l]) => `${s} ${l}`)];
+}
+
