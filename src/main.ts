@@ -226,6 +226,13 @@ async function boot() {
     cameraYaw: () => renderer.camYaw,
     ...(net
       ? {
+          social: {
+            say: (text: string, to?: string) => net!.say(text, to),
+            block: (name: string, on: boolean) => net!.block(name, on),
+            report: (name: string, reason: string) => net!.report(name, reason),
+            blocked: () => net!.blocked,
+            trade: (playerId: number) => issue({ type: 'tradeRequest', target: playerId }),
+          },
           signOut: () => {
             net!.logout();
             const tokens = loadJson<Record<string, string>>(SESSION_KEY) ?? {};
@@ -248,7 +255,8 @@ async function boot() {
       if (hud.dialogueOpen) return;
       const hit = renderer.pick(x, y);
       if (!hit) return;
-      if (hit.kind === 'entity') issue({ type: 'interact', target: hit.id });
+      if (hit.kind === 'entity' && net && hit.id !== world.player.id && world.players.has(hit.id)) hud.openPlayerMenu(hit.id);
+      else if (hit.kind === 'entity') issue({ type: 'interact', target: hit.id });
       else {
         issue({ type: 'moveTo', x: hit.x, z: hit.z });
         renderer.showTapMarker(hit.x, hit.z);
@@ -336,6 +344,11 @@ async function boot() {
       if (steps === 9) acc = 0;
       alpha = acc / TICK_SECONDS;
     }
+    if (net)
+      for (const line of net.drainChat()) {
+        hud.addChat(line);
+        if (line.channel === 'local') renderer.speech(line.from, line.text);
+      }
     for (const e of net ? net.drainEvents() : world.drainEvents()) {
       renderer.handleEvent(e);
       hud.handleEvent(e);

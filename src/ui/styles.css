@@ -2507,3 +2507,247 @@ button.danger {
   font-size: 12px;
   text-decoration: underline;
 }
+
+/* ---------------------------------------------------------------- 3A.6 chat, player menu, trading */
+.log-line.chat {
+  color: #fffbe8;
+}
+.log-line.whisper {
+  color: #e0b3ff;
+}
+.floater.speech {
+  font-size: 13px;
+  font-weight: 800;
+  max-width: 220px;
+  white-space: normal;
+  text-align: center;
+  padding: 4px 9px;
+  border-radius: 10px;
+  background: rgba(255, 251, 232, 0.94);
+  color: #2a2233;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+.chat-btn {
+  position: absolute;
+  right: calc(14px + var(--safe-right));
+  bottom: calc(196px + var(--safe-bottom));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--edge);
+  background: var(--panel);
+  font-size: 20px;
+  color: var(--text);
+}
+.chat-btn[data-unread]:not([data-unread=''])::after {
+  content: attr(data-unread);
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--hp);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 18px;
+}
+.chat-box {
+  position: absolute;
+  left: calc(10px + var(--safe-left));
+  right: calc(10px + var(--safe-right));
+  top: calc(96px + var(--safe-top));
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  z-index: 30;
+}
+.chat-lines {
+  max-height: 32vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: pan-y;
+}
+.chat-line.private {
+  color: #e0b3ff;
+  cursor: pointer;
+}
+.chat-row {
+  display: flex;
+  gap: 6px;
+}
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.chat-send,
+.chat-close {
+  border-radius: 8px;
+  border: 1px solid var(--edge);
+  background: #3f8a4c;
+  color: var(--text);
+  font-weight: 800;
+  padding: 0 12px;
+}
+.chat-close {
+  background: transparent;
+}
+.player-menu,
+.trade-request {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  width: min(300px, calc(100vw - 32px));
+  padding: 12px;
+  border-radius: 14px;
+  border: 2px solid var(--edge);
+  background: var(--panel-solid);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 40;
+}
+.trade-request {
+  top: calc(120px + var(--safe-top));
+  transform: translateX(-50%);
+}
+.pm-name {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.pm-name .lvl {
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--gold);
+}
+.pm-hint,
+.tr-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.tr-text b {
+  color: var(--text);
+}
+.pm-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pm-btns .bank-btn {
+  flex: 1 1 40%;
+}
+.trade {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.trade-stage {
+  font-size: 13px;
+  color: var(--muted);
+}
+.trade-stage.final {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+}
+.trade-offers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.trade-offer {
+  min-height: 90px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--edge-soft);
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trade-offer-title {
+  font-weight: 900;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+}
+.trade-worth {
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--muted);
+}
+.trade-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+.trade-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 6px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+.trade-item img {
+  width: 24px;
+  height: 24px;
+}
+.trade-name {
+  flex: 1;
+  min-width: 0;
+}
+.trade-qty {
+  font-weight: 800;
+  color: var(--gold);
+}
+.trade-state {
+  min-height: 18px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--muted);
+}
+.trade-state.ready {
+  color: var(--good);
+}
+.trade-btns {
+  display: flex;
+  gap: 8px;
+}
+.trade-btns .bank-btn {
+  flex: 1;
+}
+.bank-btn.danger {
+  background: #7a2a2a;
+  border-color: #ff8a8a;
+}

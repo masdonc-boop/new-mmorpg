@@ -22,6 +22,9 @@ import { SERVICES, type ConvertService } from '../data/tanning';
 import { HOTSPOTS, furnitureDef } from '../data/construction';
 import { BONES, PRAYERS } from '../data/prayers';
 import type { Command } from '../sim/world';
+import type { TradeView } from '../sim/trade';
+import { TradeWindow } from './tradeview';
+import { ChatBox, PlayerMenu, TradeRequestCard, chatText, type ChatEntry, type SocialCallbacks } from './social';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -30,7 +33,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer' | 'build' | 'exchange';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer' | 'build' | 'exchange' | 'trade';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -49,6 +52,8 @@ export interface HudCallbacks {
   newCharacter(): void;
   /** Network play: sign out (the server saves the character). Replaces "New character". */
   signOut?(): void;
+  /** Network play: chat, blocking, reporting and trading with other players. */
+  social?: SocialCallbacks;
   cameraYaw(): number;
 }
 
@@ -116,6 +121,12 @@ export class Hud {
   private selectedSlot: number | null = null;
   private fpsEl!: HTMLDivElement;
   private fpsAcc = { frames: 0, t: 0 };
+  /** Trading and chat (network play). */
+  private trade: TradeView | null = null;
+  private tradeWindow: TradeWindow | null = null;
+  private chatBox: ChatBox | null = null;
+  private playerMenu: PlayerMenu | null = null;
+  private tradeCard: TradeRequestCard | null = null;
 
   constructor(parent: HTMLElement, private world: GameWorld, private cb: HudCallbacks) {
     this.root = el('div', 'hud');
@@ -127,6 +138,24 @@ export class Hud {
     this.buildDeath();
     this.buildMinimapBase(world.map);
     this.watchBagPresses();
+    const social = cb.social;
+    if (social) {
+      this.chatBox = new ChatBox(this.root, social);
+      this.playerMenu = new PlayerMenu(this.root, social, (name) => this.chatBox!.whisper(name));
+      this.tradeCard = new TradeRequestCard(this.root, (id) => social.trade(id));
+    }
+  }
+
+  /** A chat message from the server: into the chat box, and briefly into the message log. */
+  addChat(e: ChatEntry) {
+    this.chatBox?.add(e);
+    this.addLog(chatText(e), e.channel === 'private' ? 'whisper' : 'chat');
+  }
+
+  /** Tapped another player: trade, whisper, block or report. */
+  openPlayerMenu(id: number) {
+    const p = this.world.players.get(id);
+    if (p && p !== this.world.player) this.playerMenu?.open(p);
   }
 
   // ---------------------------------------------------------------- layout
@@ -590,6 +619,17 @@ export class Hud {
         this.shopId = e.shop;
         this.toggle('shop');
         break;
+      case 'tradeRequest':
+        this.tradeCard?.show(e.from, e.name);
+        break;
+      case 'trade':
+        this.trade = e.view;
+        if (e.view) {
+          this.tradeCard?.hide();
+          if (this.openPanel !== 'trade') this.toggle('trade');
+          else this.tradeWindow?.update(e.view);
+        } else if (this.openPanel === 'trade') this.toggle(null);
+        break;
       case 'exchangeOpen':
         if (this.openPanel !== 'exchange') this.toggle('exchange');
         break;
@@ -822,6 +862,12 @@ export class Hud {
       this.exchangeView = null;
       this.cb.command({ type: 'exchangeClose' });
     }
+    // Closing the trade window declines the trade (unless the trade has already ended).
+    if (this.openPanel === 'trade' && id !== 'trade') {
+      this.tradeWindow = null;
+      if (this.trade) this.cb.command({ type: 'tradeDecline' });
+    }
+    if (id === 'trade' && !this.trade) return;
     if (this.openPanel === 'craft' && this.craftView) {
       // Closed by the player (not by starting production): release the station.
       this.craftView = null;
@@ -839,7 +885,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Vows', exchange: 'Brightwater Exchange', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Vows', exchange: 'Brightwater Exchange', trade: 'Trade', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -853,6 +899,11 @@ export class Hud {
     else if (id === 'tanner') this.renderTanner();
     else if (id === 'prayer') this.renderPrayer();
     else if (id === 'build') this.renderBuild();
+    else if (id === 'trade') {
+      clearKeepingScroll(this.panelBody);
+      this.tradeWindow = new TradeWindow(this.world, this.trade!, (c) => this.cb.command(c));
+      this.panelBody.appendChild(this.tradeWindow.root);
+    }
     else if (id === 'exchange') {
       clearKeepingScroll(this.panelBody);
       this.exchangeView = new ExchangeView(this.world, (c) => this.cb.command(c), (key, btn, prompt) => this.confirmTap(key, btn, prompt));

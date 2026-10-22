@@ -84,12 +84,12 @@ export class WorldOverlay {
     this.plates.delete(id);
   }
 
-  float(text: string, cls: string, anchor: () => Anchor | null, life = 1.1, rise = 50) {
+  float(text: string, cls: string, anchor: () => Anchor | null, life = 1.1, rise = 50, drift = true) {
     const el = document.createElement('div');
     el.className = `floater ${cls}`;
     el.textContent = text;
     this.root.appendChild(el);
-    this.floaters.push({ el, age: 0, life, anchor, rise, dx: (Math.random() - 0.5) * 30 });
+    this.floaters.push({ el, age: 0, life, anchor, rise, dx: drift ? (Math.random() - 0.5) * 30 : 0 });
   }
 
   update(dt: number) {

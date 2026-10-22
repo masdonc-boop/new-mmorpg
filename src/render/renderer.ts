@@ -886,6 +886,18 @@ export class GameRenderer {
     return { x: (this.v.x * 0.5 + 0.5) * rect.width, y: (-this.v.y * 0.5 + 0.5) * rect.height, visible };
   }
 
+  /** A chat line shown over a player's head for a few seconds (local chat). */
+  speech(name: string, text: string) {
+    const who = [...this.world.players.values()].find((q) => q.name === name);
+    if (!who) return;
+    const id = who.id;
+    const anchor = () => {
+      const a = this.entityAnchor(id);
+      return a && { ...a, y: a.y - 26 };
+    };
+    this.overlay.float(text.length > 60 ? `${text.slice(0, 57)}…` : text, 'speech', anchor, 5, 6, false);
+  }
+
   entityAnchor(id: number): Anchor | null {
     const map = this.world.map;
     const p = this.world.player;
@@ -1184,6 +1196,12 @@ export class GameRenderer {
       consider(n.id, n.x, y + 1, n.z);
       // Tapping the bank counter means the banker behind it.
       if (n.def.id === 'banker') consider(n.id, BANK_COUNTER.x, y + 0.95, BANK_COUNTER.z, 0.9);
+    }
+    // Other players (network play): tapping one opens the player menu.
+    for (const v of this.otherViews.values()) {
+      if (v.player.dead) continue;
+      const r = v.model.root.position;
+      consider(v.player.id, r.x, r.y + 1.1, r.z, 0.85);
     }
     for (const n of w.nodes) {
       if (Math.abs(n.x - w.player.x) > 30 || Math.abs(n.z - w.player.z) > 30) continue;

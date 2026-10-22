@@ -504,7 +504,7 @@ Checked in two browsers: each sees the other, named and in their gear, and watch
 Left for later:
 - Dropped piles that nobody owns are not stored when the server stops (owned piles and wisps travel with their owner's record). They move to per-zone storage in 3A.8.
 - A player can't yet visit another player's house (an instanced house belongs to 3A.8).
-- No chat or trading yet (3A.6).
+- Chat and trading arrived in 3A.6.
 
 Planned scope (kept for reference):
 
@@ -517,7 +517,78 @@ Acceptance:
 - Bot test: 50 bots in one zone keep the tick under 10 ms on a laptop, with bandwidth under about 10 KB/s per client.
 - The fuzz conservation test with several players and disconnects passes.
 
-### 3A.6 Social basics and player trading
+### 3A.6 Social basics and player trading: done
+
+How trading works (`src/sim/trade.ts`, a rule of the shared world):
+1. A player taps another player and chooses Trade. The other sees "Ash wants to trade with you" and taps Trade (asking back opens it too). Players must be within 6 tiles; a request lapses after 30 seconds.
+2. Both offer items from their bag. Offered items **stay in the bag** until the very end, so a crash or disconnect can never leave them stranded. While a trade is open the bag is locked (only the trade, walking and the combat style work). Any change to either offer clears both acceptances, and taking something back is announced to the other player.
+3. Both accept: the offers are frozen and shown again on a **final screen** ("this is exactly what changes hands"), with a rough value for each side.
+4. Both confirm: the world checks again that each still has what they offered and room for what they get, and swaps both bags in one step.
+   - On the server, both characters and one ledger row per stack are saved in **one database transaction** before either player is told.
+   - If that save fails (for example a stale lease), the swap is undone exactly and the trade is cancelled.
+- Walking more than 12 tiles apart, dying, disconnecting or leaving cancels the trade, and nothing changes.
+- Guests can't trade: a trade must be saved to both accounts.
+
+How chat works (`server/chat.ts`, a server service, not a game rule):
+- **Channels:**
+  - local chat reaches players within 16 tiles and shows over the speaker's head;
+  - private chat goes to one player by name ("@Name message", or tap a whisper to reply).
+- **Cleaning:**
+  - control characters are removed and whitespace collapsed;
+  - messages are up to 120 characters;
+  - links become "[link]" (a common scam);
+  - a short word filter stars out listed words, including look-alike spellings (digits for letters, repeated letters).
+- **Pacing:** 5 messages at once, then one every 2 seconds; the same line at most twice in 15 seconds.
+- **Block:** stored per account (`blocks` table). A blocked player's local and private chat never arrives. To them, a blocked player looks the same as one who is offline.
+- **Report:** goes to the `reports` table with the reason and the reported player's recent messages that the reporter actually received (the server keeps the last 40 per player). Accounts only, one every 10 seconds.
+- **Mute:** `RunningServer.mute(name, minutes)` (stored as `accounts.muted_until`; guests until they leave). The admin role and moderation tools are still to come (5.4).
+
+Delivered:
+- `src/sim/trade.ts` (`TradeDesk`, `TradeView`, `TradeCommit`).
+- Commands `tradeRequest`, `tradeOffer`, `tradeRemove`, `tradeAccept` and `tradeDecline`, with their validators.
+- Events `tradeRequest` and `trade`, both `self`, addressed with the new `emitFor`.
+- **Database migration 3:**
+  - `item_ledger`: append-only, one row per stack moved, under the trade's reference;
+  - `blocks` and `reports`;
+  - `accounts.muted_until`.
+- `Repos.commitTrade`, `ledger`, `setBlocked`, `report` and `mute`.
+- **Protocol v4:** client messages `chat`, `block` and `report`; server messages `chat`, `social` (the block list) and `notice`.
+- **Client:**
+  - `NetClient.say`, `block`, `report` and `drainChat`;
+  - the trade window (`src/ui/tradeview.ts`);
+  - the chat box, player menu (Trade, Whisper, Block, Report) and trade request card (`src/ui/social.ts`);
+  - chat bubbles over heads;
+  - tapping another player opens the menu.
+- **Tests:**
+  - `tests/trade-sim.test.ts` (7):
+    - the full flow;
+    - acceptance clearing and the frozen final screen;
+    - offer limits;
+    - the bag lock;
+    - cancelling on distance, death and leaving;
+    - room checks;
+    - items gone at the end;
+    - a refused save undone exactly;
+    - a fuzz of 6,000 random trade commands between four players, with 10% of saves refused, where nothing is created or destroyed.
+  - `tests/net-social.test.ts` (20):
+    - the chat filter;
+    - local, private and blocked delivery (blocks remembered across sign-ins);
+    - pacing, reports with context, and mutes;
+    - a networked trade with both records and the ledger checked;
+    - guests refused;
+    - **chaos:** a disconnect by either player after each of the first 7 of 8 steps (14 cases), each leaving both saved bags exactly as before with no ledger rows;
+    - a server crash the instant a trade completes (kept for both, with ledger rows) and just before the final confirm (lost whole).
+
+Checked in two browsers: the player menu, the request card, offers on both sides, the final screen, "Trade complete." with both bags changed, and local chat over the speaker's head and in the log.
+
+Left for later:
+- The admin role, kick, ban and the moderation queue (5.4).
+- A word list that moderators can edit.
+- Friends lists.
+- Chat across zones (3A.8).
+- Trading coins from the bank (today only bag items can be offered).
+
+Planned scope (kept for reference):
 
 Goal: chat (local and private, filtered, rate-limited) and two-phase player trading.
 
