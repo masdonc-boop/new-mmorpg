@@ -120,6 +120,9 @@ export const RECIPES: Record<string, RecipeDef> = {
   glimsteel_arrow: r({ id: 'glimsteel_arrow', station: 'fletching', skill: 'fletching', level: 30, xp: 48, inputs: [{ item: 'arrow_shafts', qty: 12 }, { item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_arrow', qty: 12 }, seconds: 1.5 }),
   oak_shortbow_u: r({ id: 'oak_shortbow_u', station: 'fletching', skill: 'fletching', level: 16, xp: 19, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 16, xp: 19, inputs: [{ item: 'oak_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.2 }),
+  // Willow (Mirefen Marsh): a quick, whippy shortbow.
+  willow_shortbow_u: r({ id: 'willow_shortbow_u', station: 'fletching', skill: 'fletching', level: 30, xp: 34, inputs: [{ item: 'willow_logs', qty: 1 }], output: { item: 'willow_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
+  willow_shortbow: r({ id: 'willow_shortbow', station: 'fletching', skill: 'fletching', level: 30, xp: 34, inputs: [{ item: 'willow_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'willow_shortbow', qty: 1 }, seconds: 1.2 }),
   // ---- Crafting (needle and thread on leather; chisel on gems; flax at the spinning wheel)
   // Wolfhide set (recipe ids kept). The jerkin and breeches take two hides.
   leather_gloves: r({ id: 'leather_gloves', station: 'crafting', skill: 'crafting', level: 1, xp: 12, inputs: [{ item: 'leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'leather_gloves', qty: 1 }, seconds: 1.8, tool: 'needle' }),
@@ -154,6 +157,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   ember_carp: r({ id: 'ember_carp', station: 'range', skill: 'cooking', level: 35, xp: 80, inputs: [{ item: 'raw_ember_carp', qty: 1 }], output: { item: 'ember_carp', qty: 1 }, seconds: 2.4 }),
   // Glass trout: delicate, burns easily until you have the knack.
   glass_trout: r({ id: 'glass_trout', station: 'range', skill: 'cooking', level: 20, xp: 58, inputs: [{ item: 'raw_glass_trout', qty: 1 }], output: { item: 'glass_trout', qty: 1 }, seconds: 2, fail: { chance: 0.4, stopLevel: 42, output: 'burnt_fish' } }),
+  // Silverpike (Mirefen Marsh): oily and forgiving once you know it.
+  silverpike: r({ id: 'silverpike', station: 'range', skill: 'cooking', level: 26, xp: 72, inputs: [{ item: 'raw_silverpike', qty: 1 }], output: { item: 'silverpike', qty: 1 }, seconds: 2.2, fail: { chance: 0.36, stopLevel: 46, output: 'burnt_fish' } }),
   // Mudskipper eel: smoked slowly over the coals.
   anchovies: r({ id: 'anchovies', station: 'range', skill: 'cooking', level: 12, xp: 42, inputs: [{ item: 'raw_anchovies', qty: 1 }], output: { item: 'anchovies', qty: 1 }, seconds: 2.2, fail: { chance: 0.38, stopLevel: 30, output: 'burnt_fish' } }),
 };
@@ -173,8 +178,8 @@ export function failChance(rec: RecipeDef, level: number): number {
  * logs opens fletching.
  */
 export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
-  { a: 'knife', b: ['logs', 'oak_logs'], opens: 'fletching' },
-  { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
+  { a: 'knife', b: ['logs', 'oak_logs', 'willow_logs'], opens: 'fletching' },
+  { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u', 'willow_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
   { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body', 'polished_agate'], opens: 'crafting' },
   { a: 'chisel', b: ['sapphire', 'river_agate', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },

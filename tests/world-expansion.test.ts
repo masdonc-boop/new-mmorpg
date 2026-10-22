@@ -126,7 +126,8 @@ describe('4A.1 regions, zones and saves', () => {
     expect(regionAt(EAST.cairnhold.x, EAST.cairnhold.z)?.name).toBe('Cairnhold');
     expect(regionAt(EAST.heronwick.x, EAST.heronwick.z)?.name).toBe('Heronwick');
     expect(regionAt(EAST.ninefold.x, EAST.ninefold.z)?.name).toBe('Thornridge Highlands');
-    expect(regionAt(EAST.shrine.x, EAST.shrine.z)?.name).toBe('Mirefen Marsh');
+    expect(regionAt(EAST.shrine.x, EAST.shrine.z)?.name).toBe('Sunken Shrine');
+    expect(regionAt(160, 100)?.name).toBe('Mirefen Marsh');
     expect(regionAt(110, 62.5)?.name).toBe('Saltwind Causeway');
     for (const p of [EAST.cairnhold, EAST.heronwick, EAST.shrine]) expect(zoneFor(p.x, p.z, 7)).toBe('brightwater');
   });

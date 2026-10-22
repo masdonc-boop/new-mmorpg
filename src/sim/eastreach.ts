@@ -2,6 +2,8 @@ import { fbm } from '../core/noise';
 import { mulberry32 } from '../core/rng';
 import { clamp, distToSegment, lerp } from '../core/math';
 import { T, WATER_Y, inIslandBox, type DecorKind, type TileType, type WorldMap } from './worldmap';
+import type { ResourceType } from '../data/resources';
+import type { EnemyType } from '../data/enemies';
 
 /**
  * Eastreach (Phase 4A, docs/WORLD_EXPANSION.md): the land east of the island, across the strait.
@@ -108,7 +110,7 @@ export function generateEastreach(map: WorldMap, occ: Uint8Array, seed: number) 
       h = lerp(h, -0.9, 1 - smoothstep(e.tarn.r - 1.5, e.tarn.r + 1.2, Math.hypot(vx - e.tarn.x, vz - e.tarn.z)));
       // Level ground for the settlements and the fork.
       h = lerp(h, 1.65, 1 - smoothstep(6, 10, Math.hypot(vx - e.cairnhold.x, vz - e.cairnhold.z)));
-      h = lerp(h, 0.42, 1 - smoothstep(6, 10, Math.hypot(vx - e.heronwick.x, vz - e.heronwick.z)));
+      h = lerp(h, 0.42, 1 - smoothstep(8.5, 12, Math.hypot(vx - e.heronwick.x, vz - e.heronwick.z)));
       h = lerp(h, 0.5, 1 - smoothstep(5, 9, Math.hypot(vx - e.fork.x, vz - e.fork.z)));
       h = lerp(h, 0.45, 1 - smoothstep(3, 7, Math.hypot(vx - e.tollhouse.x, vz - e.tollhouse.z)));
       // Roads are gentler (in the marsh they stay low: across pools they become boardwalks).
@@ -134,7 +136,7 @@ export function generateEastreach(map: WorldMap, occ: Uint8Array, seed: number) 
       if (avg < WATER_Y + 0.05) t = pd < 1.3 && eD < 0.9 ? T.Bridge : T.Water;
       else if (pd < 1.1) t = T.Path;
       else if (Math.hypot(mx - e.cairnhold.x, mz - e.cairnhold.z) < 4.5) t = T.Plaza;
-      else if (Math.hypot(mx - e.heronwick.x, mz - e.heronwick.z) < 3.5) t = T.Plaza;
+      else if (Math.hypot(mx - e.heronwick.x, mz - e.heronwick.z) < 4.5) t = T.Plaza;
       else if (eD > 0.86) t = T.Sand;
       else if (north > 0.55) t = avg > 3.2 ? T.Snow : avg > 2.4 || fbm(mx * 0.3, mz * 0.3, seed + 71) > 0.68 ? T.Rocky : T.Heath;
       else if (north > 0.3) t = fbm(mx * 0.12, mz * 0.12, seed + 81) > 0.52 ? T.Forest : T.Grass;
@@ -177,6 +179,8 @@ export function generateEastreach(map: WorldMap, occ: Uint8Array, seed: number) 
     occ[i] = 1;
     if (block) blocked[i] = 1;
   };
+  const ctx: Ctx = { map, occ, idx, free, add, roads: list };
+  buildHeronwick(ctx, seed);
   // Signposts: at the island end of the trail, where the causeway lands, and at the fork.
   add('signpost', 100.5, 61.5, true, -Math.PI / 2, 1, 0);
   add('signpost', e.fork.x + 1.5, e.fork.z - 1.5, true, 0, 1, 0);
@@ -213,4 +217,121 @@ export function generateEastreach(map: WorldMap, occ: Uint8Array, seed: number) 
       }
     }
   }
+}
+
+interface Ctx {
+  map: WorldMap;
+  occ: Uint8Array;
+  idx: (x: number, z: number) => number;
+  free: (x: number, z: number) => boolean;
+  add: (kind: DecorKind, x: number, z: number, block: boolean, rot?: number, scale?: number, variant?: number) => void;
+  roads: Pt[][];
+}
+
+const S = Math.PI;
+const near4 = (c: Ctx, x: number, z: number, t: TileType) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => c.map.tiles[c.idx(x + a, z + b)] === t);
+
+/** Blocks a building's footprint (as the island's buildings do) and adds it to the map. */
+function building(c: Ctx, b: WorldMap['buildings'][number]) {
+  const rotated = Math.abs(Math.sin(b.facing)) > 0.5;
+  const w = rotated ? b.d : b.w;
+  const d = rotated ? b.w : b.d;
+  for (let z = Math.floor(b.z - d / 2); z < Math.ceil(b.z + d / 2); z++) {
+    for (let x = Math.floor(b.x - w / 2); x < Math.ceil(b.x + w / 2); x++) {
+      c.map.blocked[c.idx(x, z)] = 1;
+      c.occ[c.idx(x, z)] = 1;
+    }
+  }
+  c.map.buildings.push(b);
+}
+
+function npc(c: Ctx, n: WorldMap['npcs'][number]) {
+  c.map.npcs.push(n);
+  if (!n.patrol) c.map.blocked[c.idx(Math.floor(n.x), Math.floor(n.z))] = c.occ[c.idx(Math.floor(n.x), Math.floor(n.z))] = 1;
+}
+
+/**
+ * Resources near a centre on tiles that pass `ok` (each from its own stream, so tuning one never
+ * moves another). Returns how many were placed.
+ */
+function scatterNodes(c: Ctx, type: ResourceType, cx: number, cz: number, n: number, r: number, salt: number, ok: (x: number, z: number) => boolean) {
+  const lr = mulberry32(salt);
+  let placed = 0;
+  for (let tries = 0; tries < 400 && placed < n; tries++) {
+    const a = lr() * Math.PI * 2;
+    const d = Math.sqrt(lr()) * r;
+    const x = Math.floor(cx + Math.cos(a) * d);
+    const z = Math.floor(cz + Math.sin(a) * d);
+    if (!ok(x, z)) continue;
+    c.map.resources.push({ type, x, z });
+    c.map.blocked[c.idx(x, z)] = c.occ[c.idx(x, z)] = 1;
+    placed++;
+  }
+  return placed;
+}
+
+function spawnCreatures(c: Ctx, type: EnemyType, cx: number, cz: number, r: number, n: number, salt: number) {
+  const lr = mulberry32(salt);
+  let placed = 0;
+  for (let tries = 0; tries < 400 && placed < n; tries++) {
+    const a = lr() * Math.PI * 2;
+    const d = Math.sqrt(lr()) * r;
+    const x = Math.floor(cx + Math.cos(a) * d);
+    const z = Math.floor(cz + Math.sin(a) * d);
+    const t = c.map.tiles[c.idx(x, z)];
+    if (c.map.blocked[c.idx(x, z)] || t === T.Bridge || t === T.Path || t === T.Plaza) continue;
+    c.map.enemySpawns.push({ type, x: x + 0.5, z: z + 0.5 });
+    placed++;
+  }
+}
+
+/**
+ * Heronwick, a fishing village on a dry rise in Mirefen Marsh, and the marsh around it: willows
+ * and mire pools, croakers and leeches, and the Bog Mother by the Sunken Shrine.
+ */
+function buildHeronwick(c: Ctx, seed: number) {
+  const { map } = c;
+  // The reeve's house (door west onto the plaza), the bank's strongroom (door east onto the road),
+  // and three stilt-cottages.
+  building(c, { x: 153, z: 79.5, w: 5, d: 4, facing: -S / 2, style: 'inn', wall: '#d8cdb0', roof: '#5a7a4a' });
+  building(c, { x: 138, z: 80.5, w: 5, d: 4, facing: S / 2, style: 'house', wall: '#e2d6bc', roof: '#2f5d4a' });
+  building(c, { x: 144, z: 91, w: 4, d: 4, facing: S, style: 'house', wall: '#d6c8a8', roof: '#7a6a3a' });
+  building(c, { x: 139, z: 88, w: 4, d: 4, facing: S / 2, style: 'house', wall: '#e0d2b4', roof: '#4a6a7a' });
+  building(c, { x: 156, z: 86, w: 4, d: 4, facing: -S / 2, style: 'house', wall: '#d2c4a4', roof: '#8a5a3a' });
+
+  npc(c, { id: 'reeve', x: 149.5, z: 79.5, facing: -S / 2 });
+  c.add('stall', 149.5, 82.5, true, S / 2, 1, 3);
+  npc(c, { id: 'provisioner', x: 150.5, z: 82.5, facing: -S / 2 });
+  npc(c, { id: 'heron_banker', x: 140.5, z: 80.5, facing: S / 2 });
+  npc(c, { id: 'fisher', x: 158.5, z: 88.5, facing: S / 2 });
+
+  // The village fire (cook silverpike here) and the waystone.
+  c.add('campfire', 145.5, 86.5, true, 0, 1, 0);
+  map.stations.push({ kind: 'fire', x: 145.5, z: 86.5, facing: 0 });
+  c.add('waystone', 143.5, 84.5, true, 0, 1, 0);
+  map.checkpoints.push({ id: 'heronwick', name: 'Heronwick Waystone', x: 143.5, z: 84.5, respawnX: 144.5, respawnZ: 85.5 });
+  // Lantern posts along the road through the village, and a few stores by the stall.
+  for (const [x, z] of [[138.5, 76.5], [145.5, 79.5], [149.5, 88.5], [152.5, 93.5]]) c.add('lamp', x, z, true, 0, 1, 0);
+  c.add('barrel', 151.5, 84.5, true);
+  c.add('crate', 147.5, 79.5, true);
+  c.add('barrel', 141.5, 86.5, true);
+
+  // Willows lean over the pools round the village; mire pools hold the silverpike.
+  const marshBank = (x: number, z: number) => c.free(x, z) && map.tiles[c.idx(x, z)] === T.Marsh && near4(c, x, z, T.Water) && distToRoads(x + 0.5, z + 0.5, c.roads) > 1.8;
+  const groves: [number, number, number][] = [[135, 85, 4], [160, 84, 3], [148, 97, 3], [139, 72, 3]];
+  groves.forEach(([x, z, n], i) => scatterNodes(c, 'willow', x, z, n, 6, seed ^ (0x3170 + i), marshBank));
+  const poolEdge = (x: number, z: number) =>
+    map.tiles[c.idx(x, z)] === T.Water && !c.occ[c.idx(x, z)] && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => map.tiles[c.idx(x + a, z + b)] === T.Marsh && !map.blocked[c.idx(x + a, z + b)]);
+  const pools: [number, number][] = [[161, 87], [134, 85], [148, 98], [163, 79], [176, 97], [157, 100]];
+  pools.forEach(([x, z], i) => scatterNodes(c, 'mire_pool', x, z, 1, 4, seed ^ (0x9001 + i), poolEdge));
+
+  // Croakers near the village; leeches in the deep marsh; the Bog Mother by the shrine.
+  spawnCreatures(c, 'bog_croaker', 156, 96, 7, 5, seed ^ 0xc40a);
+  spawnCreatures(c, 'bog_croaker', 137, 96, 5, 3, seed ^ 0xc40b);
+  spawnCreatures(c, 'mire_leech', 166, 103, 7, 6, seed ^ 0x1eec);
+  map.enemySpawns.push({ type: 'bog_mother', x: 171.5, z: 107.5 });
+
+  // The Sunken Shrine: a ring of drowned pillars round a sealed door, half in the sea.
+  c.add('sunken_shrine', 178.5, 109.5, true, (-3 * S) / 4, 1, 0);
+  for (let z = 108; z <= 110; z++) for (let x = 177; x <= 179; x++) map.blocked[c.idx(x, z)] = c.occ[c.idx(x, z)] = 1;
 }

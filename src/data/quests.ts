@@ -75,4 +75,71 @@ export const QUESTS: Record<string, QuestDef> = {
       text: ['250 coins', '50 bronze arrows', '50 spark stones', '3 bread', '200 Attack xp', '150 Woodcutting xp', '100 Hitpoints xp'],
     },
   },
+  // Heronwick, Mirefen Marsh (Phase 4A, docs/WORLD_EXPANSION.md).
+  lanterns_of_heronwick: {
+    id: 'lanterns_of_heronwick',
+    name: 'Lanterns of Heronwick',
+    giver: 'reeve',
+    summary: 'Help Reeve Fenn relight the boardwalk lanterns that keep the marsh at bay.',
+    stages: [
+      {
+        journal: 'Speak with Reeve Fenn in Heronwick, in Mirefen Marsh.',
+        objective: { type: 'talk', npc: 'reeve' },
+        pendingLines: [],
+        completeLines: [
+          'You came over the causeway? Then you have seen our lanterns, or what is left of them.',
+          'Every post on the boardwalks held a light once. The leeches won’t cross a lit path. Now half the posts are rotten and the oil is gone.',
+          'Start with the posts. Bring me 4 willow logs from the groves round the pools (Woodcutting 25).',
+        ],
+      },
+      {
+        journal: 'Cut 4 willow logs in Mirefen Marsh and bring them to Reeve Fenn.',
+        objective: { type: 'collect', item: 'willow_logs', count: 4, consume: true, returnTo: 'reeve' },
+        pendingLines: ['Willows grow by the pools all round the village. Four logs will make four good posts.'],
+        completeLines: [
+          'Straight and sound. The carpenters will have them up by nightfall.',
+          'Now the lanterns need oil, and the only oil the marsh gives is the leeches’. They lie in the deep marsh, south-east, on the way to the shrine.',
+          'Thin them out first: defeat 5 mire leeches.',
+        ],
+      },
+      {
+        journal: 'Defeat 5 mire leeches in the deep marsh, then return to Reeve Fenn.',
+        objective: { type: 'kill', enemy: 'mire_leech', count: 5, returnTo: 'reeve' },
+        pendingLines: ['The leeches lie in the deep marsh, south-east along the boardwalk. Mind they don’t latch on.'],
+        completeLines: [
+          'Five fewer. The fishers will sleep easier.',
+          'Leeches render down into a good, slow-burning oil. Bring me 4 flasks of mire oil.',
+        ],
+      },
+      {
+        journal: 'Collect 4 mire oil from mire leeches and bring them to Reeve Fenn.',
+        objective: { type: 'collect', item: 'mire_oil', count: 4, consume: true, returnTo: 'reeve' },
+        pendingLines: ['Leeches carry the oil. Four flasks will fill every lantern on the boardwalk.'],
+        completeLines: [
+          'Smell that! Heronwick has light again.',
+          'One thing more. The leeches breed in the waters round the Sunken Shrine, and something guards them there: the Bog Mother, a croaker older than this village.',
+          'While she lives, the leeches will keep coming. Defeat her, and the boardwalks will stay lit.',
+        ],
+      },
+      {
+        journal: 'Defeat the Bog Mother by the Sunken Shrine, then return to Reeve Fenn.',
+        objective: { type: 'kill', enemy: 'bog_mother', count: 1, returnTo: 'reeve' },
+        pendingLines: ['The Bog Mother lurks where the boardwalk ends, by the Sunken Shrine. Bring food. Bring friends, if you have them.'],
+        completeLines: [
+          'The Bog Mother, gone? Then the marsh will be quiet for a season at least.',
+          'Heronwick owes you its lights. Take these, and know you are welcome at any fire in Mirefen.',
+          'They say the shrine’s door is not as sealed as it looks. But that is a tale for another day.',
+        ],
+      },
+    ],
+    rewards: {
+      items: [
+        { item: 'coins', qty: 1500 },
+        { item: 'silverpike', qty: 5 },
+        { item: 'marsh_pearl', qty: 1 },
+      ],
+      xp: { woodcutting: 1200, firemaking: 1200, hitpoints: 1500 },
+      text: ['1,500 coins', '5 silverpike', '1 marsh pearl', '1,200 Woodcutting xp', '1,200 Firemaking xp', '1,500 Hitpoints xp'],
+    },
+  },
 };

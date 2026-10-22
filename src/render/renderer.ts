@@ -11,6 +11,7 @@ import { RECIPES } from '../data/recipes';
 import { CROSS_SPEED } from '../data/agility';
 import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
+import { LeechModel, ToadModel } from './creatures';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
 import { buildStaticWorld, campfireGeometry, exchangePrefab, furniturePrefab, houseShellPrefab, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
@@ -22,7 +23,7 @@ import { HeroModel, type HeroGear, type HeroLook } from './hero';
 
 export type Quality = 'high' | 'balanced' | 'low';
 
-type EnemyModel = Humanoid | SlimeModel | WolfModel;
+type EnemyModel = Humanoid | SlimeModel | WolfModel | ToadModel | LeechModel;
 
 interface EnemyView {
   enemy: Enemy;
@@ -258,6 +259,8 @@ export class GameRenderer {
     let model: EnemyModel;
     if (d.model === 'slime') model = new SlimeModel(d.color, d.accent, d.scale);
     else if (d.model === 'wolf') model = new WolfModel(d.color, d.accent, d.scale);
+    else if (d.model === 'toad') model = new ToadModel(d.color, d.accent, d.scale);
+    else if (d.model === 'leech') model = new LeechModel(d.color, d.accent, d.scale);
     else {
       const boss = d.id === 'goblin_warlord';
       model = new Humanoid(
@@ -1260,6 +1263,8 @@ const SEA_FLOOR = new THREE.Plane(new THREE.Vector3(0, 1, 0), 1.6);
 function enemyHeight(e: Enemy): number {
   if (e.def.model === 'slime') return 1.1 * e.def.scale;
   if (e.def.model === 'wolf') return 1.25 * e.def.scale;
+  if (e.def.model === 'toad') return 0.95 * e.def.scale;
+  if (e.def.model === 'leech') return 0.7 * e.def.scale;
   return 2.0 * e.def.scale;
 }
 

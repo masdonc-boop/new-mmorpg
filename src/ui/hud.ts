@@ -1,3 +1,4 @@
+import type { ResourceType } from '../data/resources';
 import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { QUESTS } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
@@ -59,6 +60,14 @@ export interface HudCallbacks {
   liveMarket?(): MarketSource | null;
   cameraYaw(): number;
 }
+
+/** What a fishing spot's tap hint says. */
+const FISHING_LABELS: Partial<Record<ResourceType, string>> = {
+  net_spot: '🎣 Fishing spot · net brightfin and eels (needs a hand net)',
+  rod_spot: '🎣 Clear pool · glass trout (rod, Fishing 20)',
+  warm_spring: '🎣 Warm spring · ember carp (rod, Fishing 35)',
+  mire_pool: '🎣 Mire pool · silverpike (rod, Fishing 28)',
+};
 
 export class Hud {
   readonly root: HTMLDivElement;
@@ -330,7 +339,7 @@ export class Hud {
     }
     // Trees and rocks as dots
     for (const r of map.resources) {
-      g.fillStyle = r.type === 'tree' ? '#2f7d2f' : r.type === 'oak' ? '#1f5f25' : '#6b6560';
+      g.fillStyle = r.type === 'tree' ? '#2f7d2f' : r.type === 'oak' ? '#1f5f25' : r.type === 'willow' ? '#7f9f4a' : '#6b6560';
       g.fillRect(r.x, r.z, 1, 1);
     }
     this.minimapBase = c;
@@ -489,7 +498,7 @@ export class Hud {
       g.arc(x, z, r, 0, Math.PI * 2);
       g.fill();
     };
-    for (const e of this.world.enemies) if (e.alive && inHollow(e.x, e.z) === underground && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.id === 'goblin_warlord' ? '#ff2d2d' : '#ff7043', e.def.id === 'goblin_warlord' ? 1.4 : 0.8);
+    for (const e of this.world.enemies) if (e.alive && inHollow(e.x, e.z) === underground && Math.abs(e.x - p.x) < 30 && Math.abs(e.z - p.z) < 30) dot(e.x, e.z, e.def.boss ? '#ff2d2d' : '#ff7043', e.def.boss ? 1.4 : 0.8);
     for (const n of this.world.npcs) {
       const m = this.world.npcMarker(n.def.id);
       if (n.def.service === 'bank') dot(n.x, n.z, '#f5c542', 1.3);
@@ -1204,7 +1213,7 @@ export class Hud {
         if (n.def.service === 'exchange') consider(n.id, n.x, n.z, '⚖️ Exchange · buy and sell offers (practice market)', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'sawmill') consider(n.id, n.x, n.z, '🪚 Sawmill · turn logs into planks', (n.def.reach ?? 1.9) + 1);
       }
-      for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, nd.def.id === 'rod_spot' ? '🎣 Clear pool · glass trout (rod, Fishing 20)' : nd.def.id === 'warm_spring' ? '🎣 Warm spring · ember carp (rod, Fishing 35)' : '🎣 Fishing spot · net brightfin and eels (needs a hand net)', 2.6);
+      for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, FISHING_LABELS[nd.def.id] ?? FISHING_LABELS.net_spot!, 2.6);
       for (const hs of w.hotspots) consider(hs.id, hs.x, hs.z, `🔨 ${p.furniture[hs.def.id] ? furnitureDef(p.furniture[hs.def.id])!.name : hs.def.name} · ${p.furniture[hs.def.id] ? 'remove' : 'build'}`, 1.6);
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
       for (const dw of w.doorways) consider(dw.id, dw.x, dw.z, dw.def.id === 'hollow_mouth' ? (w.hasLantern() ? '⛏️ Glimmer Hollow · climb down' : '⛏️ Glimmer Hollow · dark: bring a lantern') : '🪜 Way up · climb back to daylight', 2.2);

@@ -1,7 +1,7 @@
 import type { ItemId } from './items';
 
-export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime';
-export type EnemyModel = 'slime' | 'wolf' | 'goblin';
+export type EnemyType = 'slime' | 'wolf' | 'goblin' | 'goblin_warlord' | 'gloom_slime' | 'bog_croaker' | 'mire_leech' | 'bog_mother';
+export type EnemyModel = 'slime' | 'wolf' | 'goblin' | 'toad' | 'leech';
 
 export interface DropEntry {
   item: ItemId;
@@ -32,6 +32,8 @@ export interface EnemyDef {
   color: string;
   accent: string;
   drops: DropEntry[];
+  /** A region's boss: always fights whoever comes near, however strong (and shows larger on the minimap). */
+  boss?: boolean;
 }
 
 export const ENEMIES: Record<EnemyType, EnemyDef> = {
@@ -85,7 +87,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
   goblin_warlord: {
     id: 'goblin_warlord', name: 'Grukk the Warlord', level: 24, maxHp: 420, attack: 22, strength: 22, defence: 20, maxHit: 20,
     attackSeconds: 2.6, attackRange: 1.8, aggressive: true, aggroRange: 6, leashRange: 10, wanderRadius: 2,
-    speed: 2.6, respawnSeconds: 60, model: 'goblin', scale: 1.45, color: '#4f7d2e', accent: '#b8322b',
+    speed: 2.6, respawnSeconds: 60, model: 'goblin', scale: 1.45, color: '#4f7d2e', accent: '#b8322b', boss: true,
     drops: [
       { item: 'big_bones', min: 1, max: 1, chance: 1 },
       { item: 'coins', min: 150, max: 400, chance: 1 },
@@ -93,6 +95,45 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'glimsteel_arrow', min: 8, max: 20, chance: 0.3 },
       { item: 'bronze_arrow', min: 30, max: 60, chance: 0.6 },
       { item: 'air_rune', min: 30, max: 60, chance: 0.6 },
+    ],
+  },
+  // ---- Mirefen Marsh (Phase 4A, docs/WORLD_EXPANSION.md)
+  // Bog croakers: giant marsh toads. Mostly they sit and boom; poke one and it fights back.
+  bog_croaker: {
+    id: 'bog_croaker', name: 'Bog Croaker', level: 16, maxHp: 130, attack: 15, strength: 14, defence: 13, maxHit: 12,
+    attackSeconds: 2.4, attackRange: 1.5, aggressive: false, aggroRange: 0, leashRange: 10, wanderRadius: 4,
+    speed: 2.2, respawnSeconds: 20, model: 'toad', scale: 1, color: '#6f8a3a', accent: '#d8d27a',
+    drops: [
+      { item: 'bones', min: 1, max: 1, chance: 1 },
+      { item: 'raw_meat', min: 1, max: 1, chance: 0.5 },
+      { item: 'coins', min: 10, max: 28, chance: 0.7 },
+      { item: 'slime_gel', min: 1, max: 2, chance: 0.3 },
+      { item: 'marsh_pearl', min: 1, max: 1, chance: 0.01 },
+    ],
+  },
+  // Mire leeches: as long as a man, they hunt anything warm that wades into the deep marsh.
+  mire_leech: {
+    id: 'mire_leech', name: 'Mire Leech', level: 21, maxHp: 150, attack: 20, strength: 18, defence: 15, maxHit: 14,
+    attackSeconds: 2.0, attackRange: 1.4, aggressive: true, aggroRange: 4, leashRange: 9, wanderRadius: 3,
+    speed: 2.4, respawnSeconds: 22, model: 'leech', scale: 1, color: '#3a3226', accent: '#5e4c34',
+    drops: [
+      { item: 'mire_oil', min: 1, max: 2, chance: 0.75 },
+      { item: 'coins', min: 14, max: 34, chance: 0.7 },
+      { item: 'marsh_pearl', min: 1, max: 1, chance: 0.02 },
+    ],
+  },
+  // The Bog Mother: a croaker grown vast and old in the waters round the Sunken Shrine.
+  bog_mother: {
+    id: 'bog_mother', name: 'The Bog Mother', level: 30, maxHp: 560, attack: 28, strength: 27, defence: 25, maxHit: 22,
+    attackSeconds: 2.8, attackRange: 2.2, aggressive: true, aggroRange: 5, leashRange: 9, wanderRadius: 2,
+    speed: 2.3, respawnSeconds: 90, model: 'toad', scale: 2.7, color: '#4f6a2c', accent: '#e0c86a', boss: true,
+    drops: [
+      { item: 'big_bones', min: 1, max: 1, chance: 1 },
+      { item: 'coins', min: 220, max: 480, chance: 1 },
+      { item: 'marsh_pearl', min: 1, max: 2, chance: 0.6 },
+      { item: 'mire_oil', min: 3, max: 6, chance: 0.6 },
+      { item: 'raw_silverpike', min: 2, max: 4, chance: 0.4 },
+      { item: 'willow_shortbow', min: 1, max: 1, chance: 0.05 },
     ],
   },
 };

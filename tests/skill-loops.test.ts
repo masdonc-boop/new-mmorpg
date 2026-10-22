@@ -77,13 +77,13 @@ describe('Skill audit: every listed skill has a complete, reachable loop', () =>
     for (const type of Object.keys(RESOURCES)) {
       const node = w.nodes.find((n) => n.def.id === type);
       expect(node, type).toBeTruthy();
-      const ok = SIDES.some(([a, b]) => !isBlocked(w.map, node!.x + a, node!.z + b) && !!findPath(w.map, spawn.x, spawn.z, node!.x + a, node!.z + b));
+      const ok = SIDES.some(([a, b]) => !isBlocked(w.map, node!.x + a, node!.z + b) && !!findPath(w.map, spawn.x, spawn.z, node!.x + a, node!.z + b, 200_000));
       expect(ok, `${type} reachable`).toBe(true);
     }
     for (const kind of ['furnace', 'anvil', 'range', 'fire', 'spinning_wheel']) {
       const st = w.stations.find((s) => s.kind === kind);
       expect(st, kind).toBeTruthy();
-      expect(SIDES.some(([a, b]) => !isBlocked(w.map, st!.x + a, st!.z + b) && !!findPath(w.map, spawn.x, spawn.z, st!.x + a, st!.z + b)), `${kind} reachable`).toBe(true);
+      expect(SIDES.some(([a, b]) => !isBlocked(w.map, st!.x + a, st!.z + b) && !!findPath(w.map, spawn.x, spawn.z, st!.x + a, st!.z + b, 200_000)), `${kind} reachable`).toBe(true);
     }
   });
 

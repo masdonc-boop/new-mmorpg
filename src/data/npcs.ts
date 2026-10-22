@@ -1,6 +1,8 @@
 import type { ItemId } from './items';
 
-export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer' | 'clerk_pell' | 'clerk_imogen' | 'exbanker' | 'gambler' | 'smuggler' | 'quartermaster';
+export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer' | 'clerk_pell' | 'clerk_imogen' | 'exbanker' | 'gambler' | 'smuggler' | 'quartermaster'
+  // Heronwick, Mirefen Marsh (Phase 4A)
+  | 'reeve' | 'provisioner' | 'heron_banker' | 'fisher';
 
 export interface NpcDef {
   id: NpcId;
@@ -130,6 +132,40 @@ export const NPCS: Record<NpcId, NpcDef> = {
     idleLines: ['The Bank of Brightwater, at your service by the exchange.'],
     service: 'bank',
     reach: 2.4,
+  },
+  // ---- Heronwick, Mirefen Marsh (Phase 4A, docs/WORLD_EXPANSION.md)
+  reeve: {
+    id: 'reeve', name: 'Reeve Odalys Fenn', title: 'Reeve of Heronwick',
+    look: { skin: '#c99a72', hair: '#9a9488', hairStyle: 3, tunic: '#4a6a5a', trousers: '#3a3a2e', robe: true },
+    idleLines: [
+      'Heronwick keeps its lanterns lit, and the marsh keeps its distance. That is the bargain.',
+      'The Sunken Shrine was old when the first stilt-house went up. Its door has been sealed for longer than anyone remembers.',
+      'Croakers are harmless if you leave them be. Leeches are not, and the Bog Mother is worse.',
+    ],
+  },
+  provisioner: {
+    id: 'provisioner', name: 'Brannoc Tull', title: 'Provisioner',
+    look: { skin: '#e2b48c', hair: '#5a3a22', hairStyle: 0, tunic: '#8a6a2e', trousers: '#4a3a2a', beard: true },
+    service: 'shop',
+    reach: 2.2,
+    idleLines: ['Rods, lines, knives, flint and bread. Everything a body needs in a bog.', 'I buy fish, oil and willow. Pearls too, though you’d get more from a silversmith.'],
+  },
+  heron_banker: {
+    id: 'heron_banker', name: 'Hesper Vane', title: 'Banker',
+    look: { skin: '#b07a52', hair: '#2b1d14', hairStyle: 3, tunic: '#2f5d4a', trousers: '#2f2a26' },
+    idleLines: ['The Bank of Brightwater keeps a strongroom here. Same vaults, same ledgers, drier boots.'],
+    service: 'bank',
+    reach: 2.2,
+  },
+  fisher: {
+    id: 'fisher', name: 'Wyn Silverhook', title: 'Pool Fisher',
+    look: { skin: '#d9a77c', hair: '#c4a060', hairStyle: 1, tunic: '#3a5a6a', trousers: '#3a3a2e' },
+    idleLines: [
+      'Silverpike lie still under the lily pads. Patience, a rod, and a fair bit of Fishing know-how.',
+      'Now and then a mussel pearl comes up on the hook. Keep those, they’re worth a fair bit.',
+      'Silverpike cook best over Heronwick’s fire. Burns easy if you hurry it.',
+    ],
+    thieving: { level: 30, xp: 46, loot: [{ item: 'coins', min: 14, max: 30, weight: 4 }, { item: 'raw_silverpike', min: 1, max: 1, weight: 2 }, { item: 'bowstring', min: 1, max: 2, weight: 1 }], stunDamage: 16 },
   },
   banker: {
     id: 'banker', name: 'Wendell Coinsworth', title: 'Banker',

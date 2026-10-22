@@ -4,6 +4,7 @@ import type { ItemId } from './items';
 export const FIRE_LOGS: Partial<Record<ItemId, { level: number; xp: number }>> = {
   logs: { level: 1, xp: 30 },
   oak_logs: { level: 12, xp: 48 },
+  willow_logs: { level: 25, xp: 70 },
 };
 
 /** Seconds per attempt to light (keep trying until it catches). */

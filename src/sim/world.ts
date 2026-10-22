@@ -3412,7 +3412,7 @@ export class GameWorld {
       for (const q of this.players.values()) {
         const d = dist(e.x, e.z, q.x, q.z);
         if (q.dead || d >= best) continue;
-        if (q.skills.combatLevel() < def.level * 2 + 2 || def.id === 'goblin_warlord') {
+        if (q.skills.combatLevel() < def.level * 2 + 2 || def.boss) {
           pick = q;
           best = d;
         }

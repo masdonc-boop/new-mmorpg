@@ -37,6 +37,22 @@ export const SHOPS: Record<string, ShopDef> = {
       { item: 'saw', price: 8 },
     ],
   },
+  // Heronwick's provisioner (Mirefen Marsh): fishing and fire gear for the marsh.
+  heronwick: {
+    name: 'Tull’s Provisions',
+    npc: 'provisioner',
+    stock: [
+      { item: 'fishing_rod', price: 18 },
+      { item: 'knife', price: 6 },
+      { item: 'tinderbox', price: 4 },
+      { item: 'bronze_axe', price: 16 },
+      { item: 'bowstring', price: 5 },
+      { item: 'bronze_arrow', price: 2 },
+      { item: 'needle', price: 2 },
+      { item: 'thread', price: 1 },
+      { item: 'bread', price: 8 },
+    ],
+  },
 };
 
 export function shopFor(npc: NpcId): ShopDef | null {

@@ -59,7 +59,8 @@ export type DecorKind =
   | 'cave_mouth'
   | 'light_shaft'
   // Eastreach (Phase 4A)
-  | 'heather';
+  | 'heather'
+  | 'sunken_shrine';
 
 export interface Decor {
   kind: DecorKind;
@@ -204,6 +205,7 @@ export const REGIONS: Region[] = [
   { id: 'cairnhold', name: 'Cairnhold', x: 150, z: 34, radius: 7, levels: 'Outpost', danger: 0 },
   { id: 'mirefen', name: 'Mirefen Marsh', x: 162, z: 98, radius: 30, levels: 'Lv 15–30', danger: 2 },
   { id: 'heronwick', name: 'Heronwick', x: 147, z: 84, radius: 7, levels: 'Village', danger: 0 },
+  { id: 'sunken_shrine', name: 'Sunken Shrine', x: 177, z: 108, radius: 6, levels: 'Sealed · Lv 30', danger: 3 },
 ];
 
 /** The Exchange plaza north-east of the village: a round kiosk with clerks, and a bank booth. */
@@ -224,15 +226,12 @@ function distToPaths(x: number, z: number): number {
   return best;
 }
 
+/** The region a point is in; where places overlap (a village inside a wider region) the smallest wins. */
 export function regionAt(x: number, z: number): Region | null {
   let best: Region | null = null;
-  let bestD = Infinity;
   for (const r of REGIONS) {
-    const d = Math.hypot(x - r.x, z - r.z) / r.radius;
-    if (d < 1 && d < bestD) {
-      best = r;
-      bestD = d;
-    }
+    if (Math.hypot(x - r.x, z - r.z) >= r.radius) continue;
+    if (!best || r.radius < best.radius) best = r;
   }
   return best;
 }

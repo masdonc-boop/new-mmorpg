@@ -50,6 +50,26 @@ function treePrefab(seed: number, oak: boolean): THREE.BufferGeometry {
   return merge(parts);
 }
 
+/** Mirefen willow: a squat pale trunk under a wide crown, with long strands hanging to the ground. */
+function willowPrefab(seed: number): THREE.BufferGeometry {
+  const rng = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [part(Cyl(0.2, 0.32, 1.5, 6), '#9a8a66', { y: 0.75, rz: (rng() - 0.5) * 0.15 })];
+  const greens = ['#9bbf5a', '#a8c866', '#8db352'];
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + rng();
+    const r = i === 0 ? 0 : 0.55;
+    parts.push(part(blob(i === 0 ? 0.9 : 0.65, 1, 0.14, rng()), greens[i % 3], { x: Math.cos(a) * r, y: 2.0 + (i === 0 ? 0.3 : 0), z: Math.sin(a) * r, sy: 0.6, jitter: 0.06 }));
+  }
+  // Hanging strands round the crown's rim.
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2 + rng() * 0.3;
+    const r = 0.95 + rng() * 0.25;
+    const h = 1.1 + rng() * 0.5;
+    parts.push(part(Box(0.07, h, 0.12), greens[(i + 1) % 3], { x: Math.cos(a) * r, y: 2.0 - h / 2, z: Math.sin(a) * r, ry: -a, sway: 1, jitter: 0.06 }));
+  }
+  return merge(parts);
+}
+
 function stumpPrefab(oak: boolean): THREE.BufferGeometry {
   return merge([
     part(Cyl(oak ? 0.26 : 0.2, oak ? 0.32 : 0.25, 0.35, 7), oak ? '#6e4a2c' : '#86592f', { y: 0.17 }),
@@ -339,6 +359,26 @@ function decorPrefab(kind: Decor['kind'], variant: number, seed: number): THREE.
         part(Cyl(0.13, 0.15, 1.7, 5), '#6e4a2c', { x: 0.2, y: 0.85, rz: -0.1 }),
         part(Cone(0.13, 0.4, 5), '#c9a87a', { x: 0.29, y: 1.88, rz: -0.1 }),
       ]);
+    // Mirefen's Sunken Shrine: drowned pillars round a sealed stone door, green with weed.
+    case 'sunken_shrine': {
+      const stone = ['#8f9a8a', '#9aa494', '#848e7e'];
+      const parts: THREE.BufferGeometry[] = [part(Cyl(1.7, 1.9, 0.9, 9), '#6f7a6a', { y: -0.35, jitter: 0.08 })];
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + 0.3;
+        const h = [2.4, 1.1, 2.0, 0.7, 1.7, 2.2][i];
+        parts.push(part(Cyl(0.22, 0.26, h, 6), stone[i % 3], { x: Math.cos(a) * 1.45, y: h / 2 - 0.2, z: Math.sin(a) * 1.45, rz: (rng() - 0.5) * 0.25, jitter: 0.07 }));
+        parts.push(part(blob(0.2, 0, 0.3, rng()), '#5f8a4a', { x: Math.cos(a) * 1.45, y: 0.1 + rng() * 0.3, z: Math.sin(a) * 1.45, sy: 0.5 }));
+      }
+      // The door: two posts, a lintel and a dark sealed slab carved with a heron.
+      parts.push(part(Box(0.3, 1.9, 0.35), '#a4ac9a', { x: -0.55, y: 0.85 }));
+      parts.push(part(Box(0.3, 1.9, 0.35), '#a4ac9a', { x: 0.55, y: 0.85 }));
+      parts.push(part(Box(1.5, 0.32, 0.45), '#b0b8a4', { y: 1.9, rz: 0.04 }));
+      parts.push(part(Box(0.82, 1.6, 0.16), '#3c4440', { y: 0.72, jitter: 0.02 }));
+      parts.push(part(Box(0.08, 0.5, 0.04), '#9fd8c8', { y: 0.95, z: 0.09, jitter: 0 }));
+      parts.push(part(Box(0.3, 0.06, 0.04), '#9fd8c8', { x: 0.08, y: 1.18, z: 0.09, rz: 0.4, jitter: 0 }));
+      parts.push(part(blob(0.3, 0, 0.3, rng()), '#5f8a4a', { x: 0.4, y: 2.05, sy: 0.35 }));
+      return merge(parts);
+    }
     case 'fountain': {
       const parts: THREE.BufferGeometry[] = [];
       parts.push(part(Cyl(1.45, 1.55, 0.5, 10), '#c4bcae', { y: 0.25 }));
@@ -963,8 +1003,9 @@ export class ResourceView {
       byType.set(n.def.id, arr);
     }
     for (const [type, list] of byType) {
-      const isTree = type === 'tree' || type === 'oak';
-      if (type === 'net_spot' || type === 'rod_spot' || type === 'warm_spring') {
+      const isTree = type === 'tree' || type === 'oak' || type === 'willow';
+      if (type === 'net_spot' || type === 'rod_spot' || type === 'warm_spring' || type === 'mire_pool') {
+        if (type === 'mire_pool') this.addLilyPads(list);
         if (type === 'warm_spring') this.addSpringPools(list);
         this.addFishingSpots(list);
         continue;
@@ -977,11 +1018,11 @@ export class ResourceView {
       }
       const flax = type === 'flax';
       const variants = isTree
-        ? [0, 1, 2].map((v) => treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak'))
+        ? [0, 1, 2].map((v) => (type === 'willow' ? willowPrefab(760 + v * 17) : treePrefab(700 + v * 13 + (type === 'oak' ? 50 : 0), type === 'oak')))
         : flax
           ? [0, 1].map((v) => flaxPrefab(400 + v * 11, false))
           : [0, 1].map((v) => rockPrefab(900 + v * 7 + type.length, ORE_COLORS[type] ?? null, false));
-      const depletedGeo = isTree ? stumpPrefab(type === 'oak') : flax ? flaxPrefab(450, true) : rockPrefab(950, null, true);
+      const depletedGeo = isTree ? stumpPrefab(type !== 'tree') : flax ? flaxPrefab(450, true) : rockPrefab(950, null, true);
       // Split each type by variant so silhouettes vary.
       variants.forEach((geo, v) => {
         const subset = list.filter((_, i) => i % variants.length === v);
@@ -1042,6 +1083,21 @@ export class ResourceView {
 
   /** Fishing spots: expanding ripple rings and a few rising bubbles on the water surface. */
   private spots: { rings: THREE.Mesh[]; bubbles: THREE.Mesh[]; seed: number }[] = [];
+
+  /** Lily pads round the mire pools (where the silverpike lie), one merged mesh. */
+  private addLilyPads(list: ResourceNode[]) {
+    const parts: THREE.BufferGeometry[] = [];
+    list.forEach((n, k) => {
+      const rnd = mulberry32(4400 + k);
+      for (let i = 0; i < 6; i++) {
+        const a = rnd() * Math.PI * 2;
+        const r = 0.35 + rnd() * 0.5;
+        parts.push(part(Cyl(0.16 + rnd() * 0.08, 0.16, 0.02, 7), rnd() < 0.5 ? '#5f9a44' : '#6faa4c', { x: n.x + Math.cos(a) * r, y: WATER_Y + 0.02, z: n.z + Math.sin(a) * r, jitter: 0.05 }));
+        if (rnd() < 0.25) parts.push(part(blob(0.05), '#f4e8f0', { x: n.x + Math.cos(a) * r, y: WATER_Y + 0.07, z: n.z + Math.sin(a) * r }));
+      }
+    });
+    if (parts.length) this.group.add(new THREE.Mesh(merge(parts), makeWorldMaterial()));
+  }
 
   private addFishingSpots(list: ResourceNode[]) {
     const ringGeo = new THREE.RingGeometry(0.3, 0.36, 24).rotateX(-Math.PI / 2);

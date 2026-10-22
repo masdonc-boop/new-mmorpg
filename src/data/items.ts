@@ -260,6 +260,18 @@ export const ITEMS = {
   shrimps: def({ id: 'shrimps', name: 'Brightfin', examine: 'Crisp, golden and sweet. Heals 16 HP.', stackable: false, kind: 'food', value: 6, heal: 16, icon: { shape: 'fish', color: '#e0b060', accent: '#fff2c8' } }),
   raw_anchovies: def({ id: 'raw_anchovies', name: 'Raw mudskipper eel', examine: 'A slippery eel from the muddy banks. It wriggles even now. Cook it first.', stackable: false, kind: 'material', value: 7, icon: { shape: 'eel', color: '#6a6a4a', accent: '#c9c08a' } }),
   anchovies: def({ id: 'anchovies', name: 'Smoked mudskipper', examine: 'Rich, smoky eel. Heals 24 HP.', stackable: false, kind: 'food', value: 12, heal: 24, icon: { shape: 'eel', color: '#8a5a34', accent: '#e6c48f' } }),
+  // ---- Mirefen Marsh (Phase 4A, docs/WORLD_EXPANSION.md)
+  // Marsh willow: pale, whippy wood from the groves round Heronwick's pools.
+  willow_logs: def({ id: 'willow_logs', name: 'Willow logs', examine: 'Pale, supple wood from the Mirefen willows. Bends a long way before it breaks.', stackable: false, kind: 'material', value: 22, icon: { shape: 'log', color: '#a89a6a', accent: '#efe6c0' } }),
+  willow_shortbow_u: def({ id: 'willow_shortbow_u', name: 'Unstrung willow shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 55, icon: { shape: 'unbow', color: '#a89a6a', accent: '#a89a6a' } }),
+  willow_shortbow: def({ id: 'willow_shortbow', name: 'Willow shortbow', examine: 'A quick, whippy marsh bow. Heronwick’s lantern-keepers swear by them.', stackable: false, kind: 'weapon', value: 150, equip: { slot: 'weapon', style: 'ranged', accuracy: 36, power: 23, twoHanded: true, req: { ranged: 25 }, tint: '#a89a6a' }, icon: { shape: 'bow', color: '#a89a6a', accent: '#efe8d6' } }),
+  // Silverpike: long, lean and quick, it hunts the still mire pools. Rod-caught.
+  raw_silverpike: def({ id: 'raw_silverpike', name: 'Raw silverpike', examine: 'A long, lean pool-hunter with a mirror-bright flank. Cook it first.', stackable: false, kind: 'material', value: 34, icon: { shape: 'fish', color: '#b8c6cc', accent: '#eef6f8' } }),
+  silverpike: def({ id: 'silverpike', name: 'Silverpike', examine: 'Firm white flesh with a peaty tang. Heals 32 HP.', stackable: false, kind: 'food', value: 56, heal: 32, icon: { shape: 'fish', color: '#d8b888', accent: '#fff2d8' } }),
+  // Marsh pearls: grown by mire mussels in the pools; now and then one comes up on a line.
+  marsh_pearl: def({ id: 'marsh_pearl', name: 'Marsh pearl', examine: 'A soft green-white pearl from a mire mussel. A silversmith could set it.', stackable: false, kind: 'material', value: 90, icon: { shape: 'gem', color: '#e6efe0', accent: '#a8c8a0' } }),
+  // Mire oil: rendered from leeches. It reeks, but it burns clean and long in a lantern.
+  mire_oil: def({ id: 'mire_oil', name: 'Mire oil', examine: 'A stoppered flask of dark leech oil. Heronwick’s lanterns burn it.', stackable: true, kind: 'material', value: 9, icon: { shape: 'gel', color: '#4a3a24', accent: '#d8a84a' } }),
   burnt_fish: def({ id: 'burnt_fish', name: 'Burnt fish', examine: 'Charred to a crisp.', stackable: false, kind: 'material', value: 0, icon: { shape: 'fish', color: '#2e2622', accent: '#6a5a50' } }),
 } satisfies Record<string, ItemDef>;
 
