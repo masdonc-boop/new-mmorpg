@@ -1,6 +1,6 @@
 import type { ItemId } from './items';
 
-export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer';
+export type NpcId = 'elder' | 'merchant' | 'guard' | 'smith' | 'banker' | 'tanner' | 'townsman' | 'townswoman' | 'farmer' | 'sawyer';
 
 export interface NpcDef {
   id: NpcId;
@@ -11,7 +11,7 @@ export interface NpcDef {
   /** Generic lines used when no quest dialogue applies. */
   idleLines: string[];
   /** Service this NPC provides when talked to (opens that interface instead of dialogue). */
-  service?: 'bank' | 'shop' | 'tanner';
+  service?: 'bank' | 'shop' | 'tanner' | 'sawmill';
   /** How close the player must be to use the NPC (e.g. across a counter). Default 1.9. */
   reach?: number;
   /** Pickpocketing (Thieving): level, xp, what you can get, and the stun damage when caught. */
@@ -84,6 +84,12 @@ export const NPCS: Record<NpcId, NpcDef> = {
     look: { skin: '#e2b48c', hair: '#c4a060', hairStyle: 1, tunic: '#6a7a3a', trousers: '#5a4632' },
     idleLines: ['Rake the weeds, plant your seeds, water and wait. That is farming.', 'Potatoes first. Everyone starts with potatoes.'],
     thieving: { level: 10, xp: 14.5, loot: [{ item: 'coins', min: 9, max: 9, weight: 3 }, { item: 'potato_seed', min: 1, max: 1, weight: 1 }], stunDamage: 10 },
+  },
+  sawyer: {
+    id: 'sawyer', name: 'Bertram Ashby', title: 'Sawmill',
+    look: { skin: '#d9a77c', hair: '#8a8478', hairStyle: 0, tunic: '#5a6f8a', trousers: '#3a2e24', beard: true },
+    idleLines: ['Five coins a plank, fifteen for oak. Finest planks in the valley.'],
+    service: 'sawmill',
   },
   banker: {
     id: 'banker', name: 'Wendell Coinsworth', title: 'Banker',

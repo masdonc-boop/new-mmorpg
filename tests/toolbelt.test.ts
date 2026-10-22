@@ -45,7 +45,7 @@ const allTools = (w: GameWorld) => {
 describe('Toolbelt rules', () => {
   it('has a slot for every tool kind; future kinds are shown but locked', () => {
     for (const d of Object.values(ITEMS)) if (d.tool) expect(TOOL_SLOTS.find((s) => s.id === d.tool!.category)?.available).toBe(true);
-    for (const id of ['saw', 'fishing_rod']) expect(TOOL_SLOTS.find((s) => s.id === id)?.available).toBe(false);
+    for (const id of ['fishing_rod']) expect(TOOL_SLOTS.find((s) => s.id === id)?.available).toBe(false);
   });
 
   it('adds a tool from the bag (freeing its slot) and swaps a replaced tool into that same slot', () => {

@@ -17,6 +17,7 @@ export const SKILL_IDS = [
   'thieving',
   'agility',
   'farming',
+  'construction',
 ] as const;
 
 export type SkillId = (typeof SKILL_IDS)[number];
@@ -50,6 +51,7 @@ export const SKILL_INFO: Record<SkillId, SkillInfo> = {
   thieving: { name: 'Thieving', color: '#8a6cb0', glyph: '🤏', category: 'gathering', available: true, howTo: 'Pickpocket townsfolk in the plaza (Farmer Wren from 10, Captain Bram from 40), or steal from the bakery stall (5) and the seed stall by the fields (27). A failed pickpocket stuns you.' },
   agility: { name: 'Agility', color: '#3a6fb0', glyph: '🏃', category: 'gathering', available: true, howTo: 'Run laps of the village obstacle course, east of the smithy: log, wall, rope swing, balance beam, hedge tunnel. Finish all five in order for a lap bonus.' },
   farming: { name: 'Farming', color: '#5aa842', glyph: '🌱', category: 'gathering', available: true, howTo: 'At the allotments east of the plaza (north of the smithy): rake the weeds (rake), plant 3 seeds (seed dibber), wait for them to grow (about 40 minutes, even while away), then harvest with a spade. Potatoes 1, onions 5, cabbages 7.' },
+  construction: { name: 'Construction', color: '#b8865a', glyph: '🔨', category: 'production', available: true, howTo: 'Saw logs into planks at Bertram’s sawmill, smith nails at the anvil, then build furniture in your house north of the village (needs a hammer and a saw). Remove and rebuild to train.' },
   cooking: { name: 'Cooking', color: '#e07a3a', glyph: '🍳', category: 'production', available: true, howTo: 'Cook raw fish or meat at the range outside the inn or the campfire by the river.' },
 };
 

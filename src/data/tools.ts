@@ -22,7 +22,7 @@ export const TOOL_SLOTS: ToolSlotDef[] = [
   { id: 'needle', label: 'Needle', skill: 'Crafting', available: true },
   { id: 'chisel', label: 'Chisel', skill: 'Crafting', available: true },
   { id: 'fishing_rod', label: 'Fishing rod', skill: 'Fishing', available: false, note: 'Rod fishing is not in the game yet.' },
-  { id: 'saw', label: 'Saw', skill: 'Construction', available: false, note: 'Arrives with Construction.' },
+  { id: 'saw', label: 'Saw', skill: 'Construction', available: true },
   { id: 'rake', label: 'Rake', skill: 'Farming', available: true },
   { id: 'seed_dibber', label: 'Seed dibber', skill: 'Farming', available: true },
   { id: 'spade', label: 'Spade', skill: 'Farming', available: true },

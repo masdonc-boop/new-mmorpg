@@ -1029,6 +1029,73 @@ export function itemIcon(id: string): string {
       }
       break;
     }
+    case 'saw': {
+      g.save();
+      g.translate(32, 32);
+      g.rotate(-0.6);
+      g.fillStyle = color;
+      g.beginPath();
+      g.moveTo(-20, -6);
+      g.lineTo(14, -8);
+      g.lineTo(14, 6);
+      g.lineTo(-20, 4);
+      g.closePath();
+      g.fill();
+      outline(2);
+      g.fillStyle = 'rgba(20,12,6,0.85)';
+      for (let x = -18; x < 14; x += 4) {
+        g.beginPath();
+        g.moveTo(x, 4);
+        g.lineTo(x + 2, 8);
+        g.lineTo(x + 4, 4);
+        g.fill();
+      }
+      g.fillStyle = accent;
+      g.beginPath();
+      g.roundRect(12, -12, 14, 22, 5);
+      g.fill();
+      outline(2);
+      g.restore();
+      break;
+    }
+    case 'plank': {
+      g.save();
+      g.translate(32, 34);
+      g.rotate(-0.45);
+      g.fillStyle = color;
+      g.beginPath();
+      g.rect(-24, -7, 48, 14);
+      g.fill();
+      outline();
+      g.strokeStyle = accent;
+      g.lineWidth = 1.5;
+      for (const y of [-2, 3]) {
+        g.beginPath();
+        g.moveTo(-22, y);
+        g.lineTo(22, y + 1);
+        g.stroke();
+      }
+      g.restore();
+      break;
+    }
+    case 'nails': {
+      for (const [x, r] of [[22, -0.4], [32, 0.1], [42, 0.5]] as const) {
+        g.save();
+        g.translate(x, 34);
+        g.rotate(r);
+        g.fillStyle = color;
+        g.fillRect(-1.8, -12, 3.6, 22);
+        g.beginPath();
+        g.moveTo(-1.8, 10);
+        g.lineTo(0, 16);
+        g.lineTo(1.8, 10);
+        g.fill();
+        g.fillStyle = accent;
+        g.fillRect(-5, -14, 10, 3.5);
+        g.restore();
+      }
+      break;
+    }
   }
   const url = c.toDataURL();
   cache.set(id, url);

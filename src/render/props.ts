@@ -5,6 +5,7 @@ import { T, groundHeight, terrainHeight, BANK_COUNTER, BRIDGE_Y, WATER_Y, type B
 import type { ResourceNode } from '../sim/world';
 import { blob, makeWorldMaterial, merge, part, place, prism } from './geom';
 import { ART } from './art';
+import { HOUSE } from '../data/construction';
 import { bridgePiers } from './bridges';
 import { addShowcaseDetail, buildBankV2, buildHallV2, copperOreMaterial, copperRockV2 } from './showcase';
 
@@ -483,6 +484,63 @@ export function patchPrefab(weeds: number, crop: 'potato' | 'onion' | 'cabbage' 
   return merge(parts);
 }
 
+/** House furniture (plain wood or oak). */
+export function furniturePrefab(model: 'chair' | 'table' | 'bookcase' | 'bed', oak: boolean): THREE.BufferGeometry {
+  const wood = oak ? '#7a4f2a' : '#b8865a';
+  const dark = oak ? '#5a3a20' : '#8a6238';
+  const parts: THREE.BufferGeometry[] = [];
+  const legs = (w: number, d: number, h: number, r = 0.035) => {
+    for (const [x, z] of [[-w, -d], [w, -d], [-w, d], [w, d]]) parts.push(part(Box(r * 2, h, r * 2), dark, { x, y: h / 2, z }));
+  };
+  if (model === 'chair') {
+    legs(0.17, 0.17, 0.42);
+    parts.push(part(Box(0.42, 0.06, 0.42), wood, { y: 0.44 }));
+    parts.push(part(Box(0.42, 0.5, 0.06), wood, { y: 0.72, z: -0.19 }));
+  } else if (model === 'table') {
+    legs(0.62, 0.32, 0.62, 0.045);
+    parts.push(part(Box(1.4, 0.08, 0.8), wood, { y: 0.66 }));
+  } else if (model === 'bookcase') {
+    parts.push(part(Box(0.9, 1.5, 0.32), dark, { y: 0.75 }));
+    const colors = ['#b8322b', '#2f5d8a', '#3f7f34', '#c9a06a', '#6a3a8a'];
+    for (let s = 0; s < 3; s++) {
+      parts.push(part(Box(0.82, 0.05, 0.3), wood, { y: 0.25 + s * 0.45, z: 0.02 }));
+      for (let b = 0; b < 6; b++) parts.push(part(Box(0.1, 0.32, 0.22), colors[(b + s) % colors.length], { x: -0.32 + b * 0.13, y: 0.43 + s * 0.45, z: 0.04, jitter: 0 }));
+    }
+  } else {
+    legs(0.45, 0.85, 0.3, 0.05);
+    parts.push(part(Box(1.0, 0.16, 1.9), wood, { y: 0.32 }));
+    parts.push(part(Box(0.92, 0.12, 1.75), '#efe8d6', { y: 0.45, z: 0.04 }));
+    parts.push(part(Box(0.5, 0.1, 0.3), '#ffffff', { y: 0.55, z: -0.68 }));
+    parts.push(part(Box(0.92, 0.06, 1.1), '#8a3a3a', { y: 0.52, z: 0.35 }));
+    parts.push(part(Box(1.0, 0.6, 0.08), wood, { y: 0.5, z: -0.95 }));
+  }
+  return merge(parts);
+}
+
+/** The house shell: plank floor and low stone walls with a doorway (no roof, so you can see in). */
+export function houseShellPrefab(x1: number, z1: number, x2: number, z2: number, doorX: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const w = x2 - x1 + 1;
+  const d = z2 - z1 + 1;
+  const cx = (x1 + x2 + 1) / 2;
+  const cz = (z1 + z2 + 1) / 2;
+  parts.push(part(Box(w - 0.4, 0.08, d - 0.4), '#a0703f', { x: cx, y: 0.04, z: cz, jitter: 0.04 }));
+  for (let x = x1; x < x1 + w - 1.5; x += 0.5) parts.push(part(Box(0.04, 0.01, d - 0.5), '#7a5232', { x: x + 0.5, y: 0.085, z: cz }));
+  const wallH = 1.1;
+  const stone = '#9a9184';
+  // North, east and west walls; the south wall leaves a gap at the door.
+  parts.push(part(Box(w, wallH, 0.3), stone, { x: cx, y: wallH / 2, z: z1 + 0.15, jitter: 0.06 }));
+  parts.push(part(Box(0.3, wallH, d), stone, { x: x1 + 0.15, y: wallH / 2, z: cz, jitter: 0.06 }));
+  parts.push(part(Box(0.3, wallH, d), stone, { x: x2 + 0.85, y: wallH / 2, z: cz, jitter: 0.06 }));
+  const leftW = doorX - x1;
+  const rightW = x2 - doorX;
+  parts.push(part(Box(leftW, wallH, 0.3), stone, { x: x1 + leftW / 2, y: wallH / 2, z: z2 + 0.85, jitter: 0.06 }));
+  parts.push(part(Box(rightW, wallH, 0.3), stone, { x: doorX + 1 + rightW / 2, y: wallH / 2, z: z2 + 0.85, jitter: 0.06 }));
+  for (const x of [doorX - 0.05, doorX + 1.05]) parts.push(part(Box(0.16, 1.5, 0.36), '#6e4a2c', { x, y: 0.75, z: z2 + 0.85 }));
+  parts.push(part(Box(1.3, 0.14, 0.36), '#6e4a2c', { x: doorX + 0.5, y: 1.5, z: z2 + 0.85 }));
+  return merge(parts);
+}
+
 /** The ring of stones and crossed logs of a campfire (for fires players light). */
 export function campfireGeometry(): THREE.BufferGeometry {
   return decorPrefab('campfire', 0, 1)!;
@@ -666,6 +724,8 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
     addShowcaseDetail(map, solid, soft);
   }
 
+  const indoors = (x: number, z: number) =>
+    (x > HOUSE.x1 && x < HOUSE.x2 + 1 && z > HOUSE.z1 && z < HOUSE.z2 + 1) || map.patches.some((pt) => Math.abs(x - pt.x) < 0.85 && Math.abs(z - pt.z) < 0.85);
   // Grass tufts on green tiles
   const tuft = merge([
     part(Box(0.04, 0.32, 0.02), '#6fc04b', { x: -0.05, y: 0.14, rz: 0.25, sway: 1, jitter: 0.1 }),
@@ -682,7 +742,11 @@ export function buildStaticWorld(map: WorldMap, time: { value: number }): Static
         const px = x + rng();
         const pz = z + rng();
         const tint = t === T.Forest ? 0.8 : 0.95 + rng() * 0.15;
-        soft.add(px, pz, place(tuft, px, terrainHeight(map, px, pz) - 0.03, pz, rng() * 6, 0.8 + rng() * 0.6, tint));
+        const rot = rng() * 6;
+        const sc = 0.8 + rng() * 0.6;
+        // No grass poking through the house floor or the farming beds.
+        if (indoors(px, pz)) continue;
+        soft.add(px, pz, place(tuft, px, terrainHeight(map, px, pz) - 0.03, pz, rot, sc, tint));
       }
     }
   }

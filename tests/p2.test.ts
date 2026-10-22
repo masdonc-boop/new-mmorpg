@@ -405,3 +405,94 @@ describe('Farming', () => {
     expect(itemDef('baked_potato').heal).toBe(40);
   });
 });
+
+describe('Construction', () => {
+  const at = (w: GameWorld, id: string) => {
+    const h = w.hotspots.find((x) => x.def.id === id)!;
+    stand(w, h.x, h.z + 0.9);
+    return h;
+  };
+  const sawyer = (w: GameWorld) => w.npcs.find((n) => n.def.id === 'sawyer')!;
+
+  it('the house has walls with a door; every space is reachable through it', () => {
+    const w = new GameWorld();
+    expect(w.hotspots.length).toBe(4);
+    for (const h of w.hotspots) expect(isBlocked(w.map, h.x, h.z), h.def.id).toBe(false);
+    // The door tile is open and its neighbours in the wall are not.
+    expect(isBlocked(w.map, 69.5, 47.5)).toBe(false);
+    expect(isBlocked(w.map, 68.5, 47.5)).toBe(true);
+    const h = w.hotspots[0];
+    w.issue({ type: 'interact', target: h.id });
+    run(w, 25);
+    expect(w.drainEvents().some((e) => e.type === 'hotspotOpen' && e.hotspot === h.def.id)).toBe(true);
+  });
+
+  it('Bertram saws logs into planks (5 coins) and oak logs into oak planks (15)', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('logs', 3);
+    const s = sawyer(w);
+    stand(w, s.x - 1.2, s.z);
+    w.issue({ type: 'interact', target: s.id });
+    run(w, 0.5);
+    w.issue({ type: 'tan', item: 'logs', qty: 3 });
+    // 25 starting coins: 3 planks for 15.
+    expect(p.inventory.count('plank')).toBe(3);
+    expect(p.inventory.count('coins')).toBe(10);
+  });
+
+  it('nails come from the anvil (15 per bar)', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('bronze_bar', 1);
+    p.skills.addXp('smithing', xpForLevel(4));
+    const anvil = w.stations.find((s) => s.kind === 'anvil')!;
+    stand(w, anvil.x - 1, anvil.z);
+    w.issue({ type: 'interact', target: anvil.id });
+    run(w, 0.3);
+    w.issue({ type: 'craft', recipe: 'bronze_nails', count: 1 });
+    run(w, 3);
+    expect(p.inventory.count('bronze_nails')).toBe(15);
+  });
+
+  it('builds a crude chair with planks, nails, a hammer and a saw; remove and rebuild for more xp', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('plank', 4);
+    p.inventory.add('bronze_nails', 3);
+    p.inventory.add('iron_nails', 5);
+    at(w, 'chair');
+    w.issue({ type: 'build', hotspot: 'chair', furniture: 'crude_chair' });
+    run(w, 3);
+    expect(p.furniture.chair).toBe('crude_chair');
+    expect(p.skills.xp.construction).toBe(58);
+    expect(p.inventory.count('plank')).toBe(2);
+    // Bronze nails are used first.
+    expect(p.inventory.count('bronze_nails')).toBe(1);
+    expect(reload(w).player.furniture.chair).toBe('crude_chair');
+    w.issue({ type: 'removeFurniture', hotspot: 'chair' });
+    expect(p.furniture.chair).toBeUndefined();
+    w.issue({ type: 'build', hotspot: 'chair', furniture: 'crude_chair' });
+    run(w, 3);
+    expect(p.skills.xp.construction).toBe(116);
+    expect(p.inventory.count('bronze_nails')).toBe(0);
+    expect(p.inventory.count('iron_nails')).toBe(4);
+  });
+
+  it('checks level, tools, materials and that you are beside the space', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.inventory.add('plank', 4);
+    p.inventory.add('bronze_nails', 10);
+    expect(w.buildBlocker('table', 'wood_table')).toBe('You need to be beside that space.');
+    at(w, 'table');
+    expect(w.buildBlocker('table', 'wood_table')).toContain('Construction level 10');
+    p.skills.addXp('construction', xpForLevel(10));
+    delete p.toolbelt.slots.saw;
+    expect(w.buildBlocker('table', 'wood_table')).toContain('saw');
+    p.toolbelt.slots.saw = 'saw';
+    expect(w.buildBlocker('table', 'wood_table')).toBeNull();
+    expect(w.buildBlocker('table', 'oak_table')).toContain('Construction level 22');
+    expect(w.buildBlocker('table', 'crude_chair')).toBe('You can’t build that there.');
+  });
+});

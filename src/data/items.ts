@@ -50,7 +50,10 @@ export type IconShape =
   | 'potato'
   | 'onion'
   | 'cabbage'
-  | 'weeds';
+  | 'weeds'
+  | 'plank'
+  | 'nails'
+  | 'saw';
 
 export type EquipSlot = 'weapon' | 'shield' | 'head' | 'body' | 'legs' | 'ammo' | 'cape' | 'neck' | 'hands' | 'feet' | 'ring';
 /** Display order (two rows of the equipment box). */
@@ -188,6 +191,12 @@ export const ITEMS = {
   cabbage: def({ id: 'cabbage', name: 'Cabbage', examine: 'Crunchy and green. Heals 10 HP.', stackable: false, kind: 'food', value: 6, heal: 10, icon: { shape: 'cabbage', color: '#8fc45a', accent: '#5a7a34' } }),
   baked_potato: def({ id: 'baked_potato', name: 'Baked potato', examine: 'Hot and fluffy. Heals 40 HP.', stackable: false, kind: 'food', value: 12, heal: 40, icon: { shape: 'potato', color: '#a8743f', accent: '#f6e2a0' } }),
   burnt_potato: def({ id: 'burnt_potato', name: 'Burnt potato', examine: 'A lump of charcoal.', stackable: false, kind: 'material', value: 0, icon: { shape: 'potato', color: '#2e2622', accent: '#6a5a50' } }),
+  saw: def({ id: 'saw', name: 'Saw', examine: 'For cutting planks to size when building.', stackable: false, kind: 'tool', tool: { category: 'saw', tier: 1 }, value: 8, icon: { shape: 'saw', color: '#a3aab3', accent: '#8a5a34' } }),
+  plank: def({ id: 'plank', name: 'Plank', examine: 'A sawn plank. Builds basic furniture.', stackable: false, kind: 'material', value: 8, icon: { shape: 'plank', color: '#c9a06a', accent: '#8a6238' } }),
+  oak_plank: def({ id: 'oak_plank', name: 'Oak plank', examine: 'A sturdy oak plank.', stackable: false, kind: 'material', value: 25, icon: { shape: 'plank', color: '#8a5a34', accent: '#5a3a20' } }),
+  bronze_nails: def({ id: 'bronze_nails', name: 'Bronze nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 1, icon: { shape: 'nails', color: '#c98a4b', accent: '#7a4f2a' } }),
+  iron_nails: def({ id: 'iron_nails', name: 'Iron nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 2, icon: { shape: 'nails', color: '#a3aab3', accent: '#4e5560' } }),
+  steel_nails: def({ id: 'steel_nails', name: 'Steel nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 3, icon: { shape: 'nails', color: '#d3d9df', accent: '#5c646e' } }),
   small_fishing_net: def({ id: 'small_fishing_net', name: 'Small fishing net', examine: 'For netting shrimps and anchovies at fishing spots.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),

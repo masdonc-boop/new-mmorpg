@@ -32,6 +32,7 @@ export const SHOPS: Record<string, ShopDef> = {
       { item: 'rake', price: 6 },
       { item: 'seed_dibber', price: 6 },
       { item: 'spade', price: 6 },
+      { item: 'saw', price: 8 },
     ],
   },
 };

@@ -4,6 +4,7 @@ import { clamp, distToSegment, lerp } from '../core/math';
 import type { ResourceType } from '../data/resources';
 import type { EnemyType } from '../data/enemies';
 import type { NpcId } from '../data/npcs';
+import { HOUSE } from '../data/construction';
 import type { StationKind } from '../data/recipes';
 
 /** Terrain tile types. */
@@ -455,8 +456,9 @@ export function generateWorld(seed = 1337): WorldMap {
     }
   }
 
-  // Clear the agility course ground east of the smithy (trees and scenery there are removed).
-  const inCourse = (x: number, z: number) => x >= 79 && x < 91 && z >= 73 && z < 81;
+  // Clear the agility course ground east of the smithy and the house plot north of the village
+  // (trees and scenery there are removed).
+  const inCourse = (x: number, z: number) => (x >= 79 && x < 91 && z >= 73 && z < 81) || (x >= HOUSE.x1 - 1 && x < HOUSE.x2 + 2 && z >= HOUSE.z1 - 1 && z < HOUSE.z2 + 2);
   for (let i = resources.length - 1; i >= 0; i--) {
     const r = resources[i];
     if (!inCourse(r.x, r.z)) continue;
@@ -468,6 +470,14 @@ export function generateWorld(seed = 1337): WorldMap {
     if (!inCourse(d.x, d.z)) continue;
     decor.splice(i, 1);
     blocked[idx(Math.floor(d.x), Math.floor(d.z))] = occ[idx(Math.floor(d.x), Math.floor(d.z))] = 0;
+  }
+
+  // The house walls (with a door in the south wall); the furniture inside is built by the player.
+  for (let x = HOUSE.x1; x <= HOUSE.x2; x++) {
+    for (let z = HOUSE.z1; z <= HOUSE.z2; z++) {
+      const edge = x === HOUSE.x1 || x === HOUSE.x2 || z === HOUSE.z1 || z === HOUSE.z2;
+      if (edge && !(z === HOUSE.z2 && x === HOUSE.doorX)) blocked[idx(x, z)] = occ[idx(x, z)] = 1;
+    }
   }
 
   // Later content is placed with its own random stream, so adding it never reshuffles the trees,
@@ -517,6 +527,7 @@ export function generateWorld(seed = 1337): WorldMap {
     { id: 'smith', x: 62.6, z: 73.4, facing: -S / 2 },
     { id: 'banker', x: BANKER.x, z: BANKER.z, facing: S / 2 },
     { id: 'tanner', x: 70.5, z: 76.2, facing: S },
+    { id: 'sawyer', x: 74.2, z: 46.5, facing: -S / 2 },
     // Townsfolk strolling round the plaza, and the farmer by the fields.
     { id: 'townsman', x: 54.5, z: 70.0, facing: 0, patrol: [{ x: 54.5, z: 70.0 }, { x: 59.5, z: 70.0 }, { x: 60.5, z: 67.5 }] },
     { id: 'townswoman', x: 52.5, z: 64.0, facing: 0, patrol: [{ x: 52.5, z: 64.0 }, { x: 58.0, z: 63.6 }] },

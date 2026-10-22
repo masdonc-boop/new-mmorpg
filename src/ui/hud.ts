@@ -17,7 +17,8 @@ import { skillUnlocks } from '../data/unlocks';
 import { TOOL_SLOTS } from '../data/tools';
 import { GRAVE_SECONDS, KEEP_ON_DEATH } from '../sim/death';
 import { FIRE_LOGS } from '../data/firemaking';
-import { TANNING } from '../data/tanning';
+import { SERVICES, type ConvertService } from '../data/tanning';
+import { HOTSPOTS, furnitureDef } from '../data/construction';
 import { BONES, PRAYERS } from '../data/prayers';
 import type { Command } from '../sim/world';
 
@@ -28,7 +29,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: 
   return e;
 };
 
-type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer';
+type PanelId = 'inventory' | 'skills' | 'quests' | 'map' | 'settings' | 'bank' | 'craft' | 'shop' | 'toolbelt' | 'tanner' | 'prayer' | 'build';
 
 const STYLE_ICON: Record<CombatStyle, string> = { melee: '⚔️', ranged: '🏹', magic: '✨' };
 
@@ -82,6 +83,10 @@ export class Hud {
   private usingSlot: number | null = null;
   private prompt!: HTMLButtonElement;
   private promptTarget: number | null = null;
+  /** Which conversion service the 'tanner' panel shows (tanner or sawmill). */
+  private serviceKind: ConvertService = 'tanner';
+  /** The house space the build panel is for. */
+  private buildHotspot = 'chair';
   /** A prompt that issues a command instead of interacting (e.g. pray at the shrine). */
   private promptCmd: Command | null = null;
   private panel!: HTMLDivElement;
@@ -373,6 +378,8 @@ export class Hud {
     else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
     else if (a?.type === 'firemaking') text = '🔥 Lighting a fire…';
     else if (a?.type === 'pickpocket') text = '🤏 Pickpocketing…';
+    else if (a?.type === 'build') text = `🔨 Building ${furnitureDef(a.furniture)?.name.toLowerCase() ?? ''}…`;
+    else if (a?.type === 'hotspot') text = '🔨 Walking over…';
     else if (a?.type === 'farm') {
       const f = w.patches.find((x) => x.id === a.patch);
       const what = f ? w.patchState(f).what : null;
@@ -549,7 +556,17 @@ export class Hud {
         this.shopId = e.shop;
         this.toggle('shop');
         break;
+      case 'hotspotOpen':
+        this.buildHotspot = e.hotspot;
+        if (this.openPanel === 'build') this.renderBuild();
+        else this.toggle('build');
+        break;
+      case 'house':
+        this.invDirty = true;
+        if (this.openPanel === 'build') this.renderBuild();
+        break;
       case 'tannerOpen':
+        this.serviceKind = e.service;
         this.toggle('tanner');
         break;
       case 'tannerClose':
@@ -772,7 +789,7 @@ export class Hud {
     this.panel.classList.remove('hidden');
     this.panel.dataset.panel = id;
     this.root.querySelectorAll<HTMLElement>('.menu-btn').forEach((b) => b.classList.toggle('active', b.dataset.panel === id));
-    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: 'Tannery', prayer: 'Prayer' };
+    const titles: Record<PanelId, string> = { inventory: 'Inventory', skills: 'Skills', quests: 'Quest Journal', map: 'World Map', settings: 'Settings', bank: 'Bank of Brightwater', craft: STATION_INFO[this.craftStation].name, shop: SHOPS[this.shopId]?.name ?? 'Shop', toolbelt: 'Toolbelt', tanner: SERVICES[this.serviceKind].title, prayer: 'Prayer', build: HOTSPOTS.find((h) => h.id === this.buildHotspot)?.name ?? 'Build' };
     this.panelTitle.textContent = titles[id];
     this.panelBody.scrollTop = 0;
     if (id === 'inventory') this.renderInventory();
@@ -785,6 +802,7 @@ export class Hud {
     else if (id === 'toolbelt') this.renderToolbelt();
     else if (id === 'tanner') this.renderTanner();
     else if (id === 'prayer') this.renderPrayer();
+    else if (id === 'build') this.renderBuild();
     else this.renderSettings();
   }
 
@@ -814,6 +832,49 @@ export class Hud {
     this.craftDirty = false;
   }
 
+  /** Build interface for one house space: what's built (remove it) or what can be built. */
+  private renderBuild() {
+    const body = this.panelBody;
+    clearKeepingScroll(body);
+    const w = this.world;
+    const p = w.player;
+    const h = HOTSPOTS.find((x) => x.id === this.buildHotspot);
+    if (!h) return;
+    this.panelTitle.textContent = h.name;
+    const built = p.furniture[h.id];
+    const lvl = p.skills.level('construction');
+    body.appendChild(el('div', 'ii-desc tb-intro', `Construction level <b>${lvl}</b> · ${p.inventory.count('plank')} planks, ${p.inventory.count('oak_plank')} oak planks, ${w.nailCount()} nails. Building needs a hammer and a saw.`));
+    if (built) {
+      const f = furnitureDef(built)!;
+      const box = el('div', 'inv-info', `<div class="ii-name">${f.name}</div><div class="ii-desc">Removing it gives nothing back (as in OSRS), but frees the space to build again for more experience.</div>`);
+      const btns = el('div', 'ii-btns');
+      const rm = el('button', 'danger', 'Remove');
+      rm.addEventListener('click', () => {
+        if (!armConfirm(rm, 'Tap again to remove')) return;
+        this.cb.command({ type: 'removeFurniture', hotspot: h.id });
+      });
+      btns.appendChild(rm);
+      box.appendChild(btns);
+      body.appendChild(box);
+      return;
+    }
+    for (const f of h.options) {
+      const why = w.buildBlocker(h.id, f.id);
+      const box = el('div', `inv-info build-opt${lvl < f.level ? ' locked' : ''}`);
+      box.innerHTML = `<div class="ii-name">${f.name}</div><div class="ii-desc">Level ${f.level} · ${f.xp} xp · ${f.planks} ${f.plank === 'oak_plank' ? 'oak planks' : 'planks'} + ${f.nails} nails</div>${why ? `<div class="ii-desc miss">${why}</div>` : ''}`;
+      const btns = el('div', 'ii-btns');
+      const b = el('button', 'primary', '🔨 Build');
+      b.disabled = !!why;
+      b.addEventListener('click', () => {
+        this.cb.command({ type: 'build', hotspot: h.id, furniture: f.id });
+        this.toggle(null);
+      });
+      btns.appendChild(b);
+      box.appendChild(btns);
+      body.appendChild(box);
+    }
+  }
+
   /** Prayers: tap to turn on or off. Points drain while any are on; recharge at the shrine or a waystone. */
   private renderPrayer() {
     const body = this.panelBody;
@@ -841,14 +902,16 @@ export class Hud {
     clearKeepingScroll(body);
     const inv = this.world.player.inventory;
     const coins = inv.count('coins');
-    body.appendChild(el('div', 'ii-desc tb-intro', `“Good hides make good leather.” Leather is sewn into armour with a needle and thread (Crafting). You have ${coins} coins.`));
-    for (const t of TANNING) {
+    const svc = SERVICES[this.serviceKind];
+    body.appendChild(el('div', 'ii-desc tb-intro', `${svc.blurb} You have ${coins} coins.`));
+    for (const t of svc.list) {
       const have = inv.count(t.from);
       const afford = Math.min(have, Math.floor(coins / t.cost));
       const box = el('div', 'inv-info');
       box.innerHTML = `<div class="ii-name"><img class="tan-icon" src="${itemIcon(t.from)}" alt=""> ${itemDef(t.from).name} → <img class="tan-icon" src="${itemIcon(t.to)}" alt=""> ${itemDef(t.to).name}</div><div class="ii-desc">${t.cost} coins each · you have ${have}</div>`;
       const btns = el('div', 'ii-btns');
-      for (const [label, n] of [['Tan 1', 1], [`Tan all (${afford})`, afford]] as const) {
+      const verb = this.serviceKind === 'tanner' ? 'Tan' : 'Saw';
+      for (const [label, n] of [[`${verb} 1`, 1], [`${verb} all (${afford})`, afford]] as const) {
         const b = el('button', n === 1 ? '' : 'primary', label);
         b.disabled = afford < 1;
         b.addEventListener('click', () => {
@@ -858,7 +921,7 @@ export class Hud {
         btns.appendChild(b);
       }
       box.appendChild(btns);
-      if (have === 0) box.appendChild(el('div', 'ii-desc', 'Timber wolves in the Whispering Woods drop pelts.'));
+      if (have === 0) box.appendChild(el('div', 'ii-desc', t.from === 'wolf_pelt' ? 'Timber wolves in the Whispering Woods drop pelts.' : 'Chop trees with an axe for logs.'));
       body.appendChild(box);
     }
   }
@@ -1022,8 +1085,10 @@ export class Hud {
         if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
         if (n.def.thieving && !n.def.service) consider(n.id, n.x, n.z, `🤏 ${n.def.name} · pickpocket (Thieving ${n.def.thieving.level})`, 2.4, { type: 'pickpocket', target: n.id });
         if (n.def.service === 'tanner') consider(n.id, n.x, n.z, '🧵 Rook the tanner · tan pelts into leather', (n.def.reach ?? 1.9) + 1);
+        if (n.def.service === 'sawmill') consider(n.id, n.x, n.z, '🪚 Sawmill · turn logs into planks', (n.def.reach ?? 1.9) + 1);
       }
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, '🎣 Fishing spot · net fish (needs a net)', 2.6);
+      for (const hs of w.hotspots) consider(hs.id, hs.x, hs.z, `🔨 ${p.furniture[hs.def.id] ? furnitureDef(p.furniture[hs.def.id])!.name : hs.def.name} · ${p.furniture[hs.def.id] ? 'remove' : 'build'}`, 1.6);
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
       for (const o of w.obstacles) consider(o.id, o.def.x1, o.def.z1, `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`, 1.8);
       for (const nd of w.nodes) if (nd.def.skill === 'thieving' && !nd.depleted) consider(nd.id, nd.x, nd.z, `🤏 ${nd.def.name} · steal (Thieving ${nd.def.levelReq})`, 2.4);

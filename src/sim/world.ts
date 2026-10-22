@@ -11,7 +11,8 @@ import { SKILL_INFO, type SkillId } from '../data/skills';
 import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
-import { TANNING } from '../data/tanning';
+import { SERVICES, isConvertService } from '../data/tanning';
+import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
 import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
 import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
 import { BONES, DRAIN_RESISTANCE, PRAYER_TICK, conflicts, prayerDef, type PrayerId } from '../data/prayers';
@@ -101,10 +102,14 @@ export type Command =
   /** Shop: sell up to qty of the item in an inventory slot. */
   | { type: 'shopSell'; slot: number; qty: number }
   | { type: 'shopClose' }
-  /** Tanner: tan up to qty hides of an item into leather (a fee each). */
+  /** Tanner or sawmill: convert up to qty of an item (pelts to leather, logs to planks) for a fee each. */
   | { type: 'tan'; item: ItemId; qty: number }
   | { type: 'tannerClose' }
   | { type: 'acceptQuest'; quest: string }
+  /** Construction: build a piece of furniture in a house space (must be beside it). */
+  | { type: 'build'; hotspot: string; furniture: string }
+  /** Construction: remove the furniture from a house space (no refund). */
+  | { type: 'removeFurniture'; hotspot: string }
   /** Thieving: try to pick an NPC's pocket (walks over first). */
   | { type: 'pickpocket'; target: number }
   /** Turn a prayer on or off (needs the level and prayer points). */
@@ -159,6 +164,10 @@ export type GameEvent =
   | { type: 'craft'; recipe: string; success: boolean; remaining: number }
   /** Worn equipment changed. */
   | { type: 'equipment' }
+  /** The player is at a house space (open the build interface). */
+  | { type: 'hotspotOpen'; hotspot: string }
+  /** House furniture changed. */
+  | { type: 'house' }
   /** A farming patch changed (weeds, crop or harvest). */
   | { type: 'patch'; patch: number }
   /** An agility obstacle was crossed. */
@@ -176,7 +185,7 @@ export type GameEvent =
   /** Toolbelt contents changed. */
   | { type: 'toolbelt' }
   | { type: 'shopOpen'; shop: string }
-  | { type: 'tannerOpen' }
+  | { type: 'tannerOpen'; service: 'tanner' | 'sawmill' }
   | { type: 'tannerClose' }
   | { type: 'shopClose' }
   /** A purchase or sale went through (refresh the shop interface). */
@@ -192,6 +201,8 @@ export type PlayerAction =
   | { type: 'pickpocket'; npc: number }
   | { type: 'obstacle'; obstacle: number; crossing: boolean; t: number }
   | { type: 'farm'; patch: number }
+  | { type: 'hotspot'; hotspot: number }
+  | { type: 'build'; hotspot: string; furniture: string; t: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
   | { type: 'gather'; node: number }
@@ -322,6 +333,22 @@ export class FarmPatch {
   }
 }
 
+/** A furniture space in the player's house. */
+export class Hotspot {
+  constructor(
+    public readonly id: number,
+    public readonly def: HotspotDef,
+  ) {}
+
+  get x(): number {
+    return this.def.x;
+  }
+
+  get z(): number {
+    return this.def.z;
+  }
+}
+
 export interface SavedPatch {
   weeds: number;
   crop: CropId | null;
@@ -388,7 +415,7 @@ export class Player implements Mover {
   stationAt: number | null = null;
   /** Shopkeeper whose shop is open. */
   shopAt: number | null = null;
-  /** Tanner whose service is open. */
+  /** Tanner or sawmill operator whose service is open. */
   tannerAt: number | null = null;
   /** One-time grants already given to this character (e.g. tools added after an update). */
   grants = new Set<string>();
@@ -409,6 +436,8 @@ export class Player implements Mover {
   /** Seconds left stunned after a failed pickpocket (no moving or acting). */
   stunTimer = 0;
   thieveTimer = 0;
+  /** Furniture built in the house, by space id. */
+  furniture: Record<string, string> = {};
   /** Next obstacle of the course for a full lap (0 = start). */
   lapNext = 0;
   laps = 0;
@@ -565,6 +594,7 @@ export type Interactable =
   | { kind: 'grave'; entity: Gravestone }
   | { kind: 'obstacle'; entity: Obstacle }
   | { kind: 'patch'; entity: FarmPatch }
+  | { kind: 'hotspot'; entity: Hotspot }
   | { kind: 'station'; entity: Station };
 
 export interface SaveData {
@@ -587,6 +617,8 @@ export interface SaveData {
   equipment?: Partial<Record<EquipSlot, ItemId>>;
   /** Size of the worn ammo stack. */
   ammoQty?: number;
+  /** House furniture by space (optional for older saves). */
+  house?: Record<string, string>;
   /** Farming patches by index (optional for older saves). */
   patches?: SavedPatch[];
   /** Agility laps completed (optional for older saves). */
@@ -616,6 +648,7 @@ export class GameWorld {
   readonly stations: Station[] = [];
   readonly obstacles: Obstacle[] = [];
   readonly patches: FarmPatch[] = [];
+  readonly hotspots: Hotspot[] = [];
   /** Real-world clock in epoch ms (farming growth). Injected so tests and a server can control it. */
   readonly clock: () => number;
   /** Fires lit by players (also listed in `stations` while they burn). Not saved: they burn out. */
@@ -627,7 +660,7 @@ export class GameWorld {
   time = 0;
   private events: GameEvent[] = [];
   private pending: PendingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number } = {}) {
     this.clock = opts.clock ?? (() => Date.now());
@@ -661,6 +694,11 @@ export class GameWorld {
       }
       this.patches.push(f);
       this.byId.set(f.id, f);
+    });
+    HOTSPOTS.forEach((def, i) => {
+      const h = new Hotspot(4200 + i, def);
+      this.hotspots.push(h);
+      this.byId.set(h.id, h);
     });
     VILLAGE_COURSE.forEach((def, i) => {
       const o = new Obstacle(4000 + i, def, i);
@@ -705,7 +743,7 @@ export class GameWorld {
   /** Tools every character should own once (older saves receive them after the production update). */
   static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
   /** Everything a new character starts with on the toolbelt. */
-  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox', 'needle', 'chisel', 'rake', 'seed_dibber', 'spade'];
+  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox', 'needle', 'chisel', 'rake', 'seed_dibber', 'spade', 'saw'];
 
   /** Once, when the toolbelt arrives: move the tools already in the bag onto it (frees their slots). */
   private introduceToolbelt() {
@@ -771,6 +809,7 @@ export class GameWorld {
     this.player.grants.add('firemaking-v1');
     this.player.grants.add('crafting-v1');
     this.player.grants.add('farming-v1');
+    this.player.grants.add('construction-v1');
     for (const t of GameWorld.STARTER_BELT) this.player.toolbelt.slots[itemDef(t).tool!.category] = t;
     inv.add('bread', 2);
     this.player.equipment.slots.ammo = 'bronze_arrow';
@@ -800,6 +839,7 @@ export class GameWorld {
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather },
       laps: p.laps,
+      house: { ...p.furniture },
       patches: this.patches.map((f) => ({ weeds: f.weeds, crop: f.crop, plantedAt: f.plantedAt, lives: f.lives, bareSince: f.bareSince })),
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
@@ -829,6 +869,7 @@ export class GameWorld {
     this.introduceToolbelt();
     this.introduceAmmoSlot();
     this.grantSkillTools('firemaking-v1', ['tinderbox'], 'New skill: Firemaking! Tilly put a tinderbox on your toolbelt. Tap logs in your bag to light a fire.');
+    this.grantSkillTools('construction-v1', ['saw'], 'New skill: Construction! Tilly put a saw on your toolbelt. Your house is north of the village; Bertram’s sawmill is beside it.');
     this.grantSkillTools('farming-v1', ['rake', 'seed_dibber', 'spade'], 'New skill: Farming! Tilly put a rake, seed dibber and spade on your toolbelt. The allotments are east of the plaza.');
     this.grantSkillTools('crafting-v1', ['needle', 'chisel'], 'New skill: Crafting! Tilly put a needle and a chisel on your toolbelt. Rook by the smithy tans pelts into leather.');
     p.autoGather = s.options?.autoGather === true;
@@ -850,6 +891,11 @@ export class GameWorld {
       p.z = p.prevZ = s.z;
     }
     p.hp = Math.max(1, Math.min(p.maxHp, s.hp ?? p.maxHp));
+    p.furniture = {};
+    for (const h of HOTSPOTS) {
+      const id = s.house?.[h.id];
+      if (typeof id === 'string' && h.options.some((o) => o.id === id)) p.furniture[h.id] = id;
+    }
     p.laps = Number.isInteger(s.laps) && s.laps! > 0 ? s.laps! : 0;
     const pp = Number(s.prayerPoints);
     p.prayerPoints = Number.isFinite(pp) ? Math.max(0, Math.min(p.skills.level('prayer'), Math.floor(pp))) : p.skills.level('prayer');
@@ -871,7 +917,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | undefined {
     return this.byId.get(id);
   }
 
@@ -884,6 +930,7 @@ export class GameWorld {
     if (e instanceof Station) return { kind: 'station', entity: e };
     if (e instanceof Obstacle) return { kind: 'obstacle', entity: e };
     if (e instanceof FarmPatch) return { kind: 'patch', entity: e };
+    if (e instanceof Hotspot) return { kind: 'hotspot', entity: e };
     if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
   }
@@ -1043,6 +1090,12 @@ export class GameWorld {
         p.thieveTimer = 0.6;
         break;
       }
+      case 'build':
+        this.startBuild(cmd.hotspot, cmd.furniture);
+        break;
+      case 'removeFurniture':
+        this.removeFurniture(cmd.hotspot);
+        break;
       case 'togglePrayer':
         this.togglePrayer(cmd.prayer);
         break;
@@ -1201,6 +1254,8 @@ export class GameWorld {
     else if (action?.type === 'pickpocket') this.updatePickpocket(action.npc, dt);
     else if (action?.type === 'obstacle') this.updateObstacleApproach(action);
     else if (action?.type === 'farm') this.updateFarming(action.patch, dt);
+    else if (action?.type === 'hotspot') this.updateHotspotApproach(action.hotspot);
+    else if (action?.type === 'build') this.updateBuild(action, dt);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
 
@@ -1284,6 +1339,8 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'hotspot') {
+      p.action = { type: 'hotspot', hotspot: id };
     } else if (it.kind === 'patch') {
       if (this.farmBlocker(it.entity, true)) return;
       p.action = { type: 'farm', patch: id };
@@ -1913,7 +1970,7 @@ export class GameWorld {
     const p = this.player;
     if (p.tannerAt === null || p.dead) return null;
     const n = this.byId.get(p.tannerAt);
-    if (!(n instanceof Npc) || n.def.service !== 'tanner') return null;
+    if (!(n instanceof Npc) || !isConvertService(n.def.service)) return null;
     return dist(p.x, p.z, n.x, n.z) <= (n.def.reach ?? 1.9) + BANK_LEAVE_MARGIN ? n : null;
   }
 
@@ -1923,16 +1980,18 @@ export class GameWorld {
    */
   private tan(item: ItemId, qty: number) {
     const p = this.player;
-    if (!this.activeTanner()) {
-      this.message('You need to be at the tanner to do that.', 'warn');
+    const npc = this.activeTanner();
+    if (!npc || !isConvertService(npc.def.service)) {
+      this.message('You need to be at the tanner or sawmill to do that.', 'warn');
       return;
     }
-    const t = TANNING.find((x) => x.from === item);
+    const svc = SERVICES[npc.def.service];
+    const t = svc.list.find((x) => x.from === item);
     if (!t) return;
     const want = Math.max(0, Math.min(1000, Math.floor(Number(qty)) || 0));
     const n = Math.min(want, p.inventory.count(item), Math.floor(p.inventory.count('coins') / t.cost));
     if (n <= 0) {
-      this.message(p.inventory.count(item) <= 0 ? `You have no ${plural(itemDef(item).name.toLowerCase(), 2)} to tan.` : `Tanning costs ${t.cost} coins each.`, 'warn');
+      this.message(p.inventory.count(item) <= 0 ? `You have no ${plural(itemDef(item).name.toLowerCase(), 2)} for that.` : `That costs ${t.cost} coins each.`, 'warn');
       return;
     }
     if (p.inventory.remove('coins', n * t.cost) !== n * t.cost) throw new Error('tan invariant broken');
@@ -1942,7 +2001,7 @@ export class GameWorld {
       p.inventory.slots[i] = { item: t.to, qty: 1 };
       done++;
     }
-    this.message(`Rook tans ${n} ${plural(itemDef(item).name.toLowerCase(), n)} into leather for ${n * t.cost} coins.`, 'good');
+    this.message(`${npc.def.name.split(' ')[0]} ${svc.verb} ${n} ${plural(itemDef(item).name.toLowerCase(), n)} into ${plural(itemDef(t.to).name.toLowerCase(), n)} for ${n * t.cost} coins.`, 'good');
     this.emit({ type: 'loot', item: t.to, qty: n });
     this.emit({ type: 'shop' });
   }
@@ -2194,9 +2253,9 @@ export class GameWorld {
       this.emit({ type: 'bankOpen', npc: n.def.id });
       return;
     }
-    if (n.def.service === 'tanner') {
+    if (isConvertService(n.def.service)) {
       p.tannerAt = n.id;
-      this.emit({ type: 'tannerOpen' });
+      this.emit({ type: 'tannerOpen', service: n.def.service });
       return;
     }
     if (n.def.service === 'shop') {
@@ -2242,6 +2301,97 @@ export class GameWorld {
     } else {
       this.message(d.examine);
     }
+  }
+
+  // ---------------------------------------------------------------- construction
+
+  private hotspotByDef(id: string): Hotspot | undefined {
+    return this.hotspots.find((h) => h.def.id === id);
+  }
+
+  private updateHotspotApproach(id: number) {
+    const p = this.player;
+    const h = this.byId.get(id);
+    if (!(h instanceof Hotspot)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(h.x, h.z, 1.3, true)) return;
+    p.action = null;
+    p.facing = Math.atan2(h.x - p.x, h.z - p.z);
+    this.emit({ type: 'hotspotOpen', hotspot: h.def.id });
+  }
+
+  /** All nails carried (any kind). */
+  nailCount(): number {
+    return NAILS.reduce((a, n) => a + this.player.inventory.count(n), 0);
+  }
+
+  /** Why a piece can't be built here and now (null if it can). */
+  buildBlocker(hotspot: string, furniture: string): string | null {
+    const p = this.player;
+    const h = this.hotspotByDef(hotspot);
+    const f = furnitureDef(furniture);
+    if (!h || !f || !h.def.options.includes(f)) return 'You can’t build that there.';
+    if (dist(p.x, p.z, h.x, h.z) > 2.2) return 'You need to be beside that space.';
+    if (p.furniture[hotspot]) return 'Remove what is there first.';
+    if (p.skills.level('construction') < f.level) return `You need Construction level ${f.level}.`;
+    for (const t of ['hammer', 'saw'] as const) {
+      const r = this.toolFor(t);
+      if (!r.tool) return r.why;
+    }
+    if (p.inventory.count(f.plank) < f.planks) return `You need ${f.planks} ${plural(itemDef(f.plank).name.toLowerCase(), f.planks)}.`;
+    if (this.nailCount() < f.nails) return `You need ${f.nails} nails.`;
+    return null;
+  }
+
+  private startBuild(hotspot: string, furniture: string) {
+    const p = this.player;
+    const why = this.buildBlocker(hotspot, furniture);
+    if (why) {
+      this.message(why, 'warn');
+      return;
+    }
+    p.path = [];
+    p.action = { type: 'build', hotspot, furniture, t: 0 };
+  }
+
+  private updateBuild(a: Extract<PlayerAction, { type: 'build' }>, dt: number) {
+    const p = this.player;
+    if (p.moving) {
+      p.action = null;
+      return;
+    }
+    a.t += dt;
+    if (a.t < BUILD_SECONDS) return;
+    p.action = null;
+    const why = this.buildBlocker(a.hotspot, a.furniture);
+    if (why) {
+      this.message(why, 'warn');
+      return;
+    }
+    const f = furnitureDef(a.furniture)!;
+    p.inventory.remove(f.plank, f.planks);
+    let nails = f.nails;
+    for (const n of NAILS) nails -= p.inventory.remove(n, nails);
+    p.furniture[a.hotspot] = f.id;
+    this.grantXp('construction', f.xp);
+    this.emit({ type: 'house' });
+    this.message(`You build a ${f.name.toLowerCase()}.`, 'good');
+  }
+
+  private removeFurniture(hotspot: string) {
+    const p = this.player;
+    const h = this.hotspotByDef(hotspot);
+    const id = p.furniture[hotspot];
+    if (!h || !id) return;
+    if (dist(p.x, p.z, h.x, h.z) > 2.2) {
+      this.message('You need to be beside it.', 'warn');
+      return;
+    }
+    delete p.furniture[hotspot];
+    this.emit({ type: 'house' });
+    this.message(`You remove the ${furnitureDef(id)!.name.toLowerCase()}.`);
   }
 
   // ---------------------------------------------------------------- farming

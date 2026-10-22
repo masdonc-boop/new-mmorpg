@@ -4,7 +4,7 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, groundHeight } from '../sim/worldmap';
-import { Enemy, FarmPatch, Gravestone, GroundItem, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
 import { CROSS_SPEED } from '../data/agility';
@@ -12,7 +12,8 @@ import { itemIcon } from '../ui/icons';
 import { Humanoid, SlimeModel, WolfModel, type HeldTool } from './characters';
 import { Markers, Particles, Projectiles } from './effects';
 import { WorldOverlay, type Anchor } from './overlay';
-import { buildStaticWorld, campfireGeometry, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
+import { buildStaticWorld, campfireGeometry, furniturePrefab, houseShellPrefab, obstaclePrefab, patchPrefab, ResourceView, type StaticWorld } from './props';
+import { HOUSE, furnitureDef } from '../data/construction';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { ART } from './art';
 import { makeWorldMaterial, merge } from './geom';
@@ -279,6 +280,10 @@ export class GameRenderer {
     }
     const farming = p.action?.type === 'farm' ? world.get(p.action.patch) : null;
     if (farming instanceof FarmPatch && !p.moving && Math.hypot(farming.x - p.x, farming.z - p.z) <= 1.4) pose = 'work';
+    if (p.action?.type === 'build') {
+      pose = 'smith';
+      tool = 'hammer';
+    }
     const making = world.crafting;
     if (making && p.anim !== 'walk') {
       pose = making.station === 'anvil' ? 'smith' : 'work';
@@ -343,6 +348,7 @@ export class GameRenderer {
     this.updateGraves();
     if (!this.obstaclesBuilt) this.buildObstacles();
     this.updatePatches();
+    this.updateHouse();
     this.updateFires(t, dt);
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
@@ -448,6 +454,10 @@ export class GameRenderer {
         return a.obstacle;
       case 'farm':
         return a.patch;
+      case 'hotspot':
+        return a.hotspot;
+      case 'build':
+        return this.world.hotspots.find((h) => h.def.id === a.hotspot)?.id ?? null;
       case 'station':
         return a.station;
       case 'craft':
@@ -475,6 +485,8 @@ export class GameRenderer {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 0.9, t);
     } else if (ent instanceof Station) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.85, t);
+    } else if (ent instanceof Hotspot) {
+      this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#ffd84d', 0.8, t);
     } else if (ent instanceof FarmPatch) {
       this.markers.setTarget(new THREE.Vector3(ent.x, groundHeight(map, ent.x, ent.z), ent.z), '#5dff8a', 1.0, t);
     } else if (ent instanceof Obstacle) {
@@ -532,6 +544,38 @@ export class GameRenderer {
       this.scene.remove(v.sprite, v.shadow);
       this.overlay.removePlate(id);
       this.groundViews.delete(id);
+    }
+  }
+
+  // ---------------------------------------------------------------- house
+
+  private houseMat: THREE.Material | null = null;
+  private furnitureViews = new Map<string, { id: string | null; obj: THREE.Object3D }>();
+  private ghostMat = new THREE.MeshBasicMaterial({ color: '#fff2a8', transparent: true, opacity: 0.25, depthWrite: false });
+
+  /** The house shell (built once) and its furniture (rebuilt when a space changes). */
+  private updateHouse() {
+    const w = this.world;
+    if (!this.houseMat) {
+      this.houseMat = makeWorldMaterial();
+      const shell = new THREE.Mesh(houseShellPrefab(HOUSE.x1, HOUSE.z1, HOUSE.x2, HOUSE.z2, HOUSE.doorX), this.houseMat);
+      shell.position.y = groundHeight(w.map, (HOUSE.x1 + HOUSE.x2) / 2, (HOUSE.z1 + HOUSE.z2) / 2);
+      shell.castShadow = shell.receiveShadow = true;
+      this.scene.add(shell);
+    }
+    for (const h of w.hotspots) {
+      const id = w.player.furniture[h.def.id] ?? null;
+      const v = this.furnitureViews.get(h.def.id);
+      if (v && v.id === id) continue;
+      if (v) this.scene.remove(v.obj);
+      const f = id ? furnitureDef(id) : null;
+      // Empty spaces show a faint outline so players can find them.
+      const obj = f ? new THREE.Mesh(furniturePrefab(f.model, f.oak), this.houseMat) : new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.02, 0.7), this.ghostMat);
+      obj.position.set(h.x, groundHeight(w.map, h.x, h.z) + 0.09, h.z);
+      obj.rotation.y = h.def.rot;
+      obj.castShadow = !!f;
+      this.scene.add(obj);
+      this.furnitureViews.set(h.def.id, { id, obj });
     }
   }
 
@@ -751,6 +795,12 @@ export class GameRenderer {
       const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 5;
       const a = near ? this.project(g.x, v.sprite.position.y + 0.45, g.z) : null;
       this.overlay.plate(g.id, a, { name: g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name, kind: 'npc', show: near });
+    }
+    for (const h of w.hotspots) {
+      const near = Math.hypot(h.x - w.player.x, h.z - w.player.z) < 3;
+      const built = w.player.furniture[h.def.id];
+      const a = near ? this.project(h.x, groundHeight(w.map, h.x, h.z) + 1.2, h.z) : null;
+      this.overlay.plate(h.id, a, { name: built ? furnitureDef(built)!.name : h.def.name, kind: 'npc', show: near });
     }
     for (const f of w.patches) {
       const near = Math.hypot(f.x - w.player.x, f.z - w.player.z) < 4;
@@ -984,6 +1034,10 @@ export class GameRenderer {
     for (const v of this.graveViews.values()) {
       const p = v.root.position;
       consider(v.grave.id, p.x, p.y + 0.4, p.z, 0.85);
+    }
+    for (const h of w.hotspots) {
+      if (Math.abs(h.x - w.player.x) > 30 || Math.abs(h.z - w.player.z) > 30) continue;
+      consider(h.id, h.x, groundHeight(map, h.x, h.z) + 0.4, h.z, 0.9);
     }
     for (const f of w.patches) {
       if (Math.abs(f.x - w.player.x) > 30 || Math.abs(f.z - w.player.z) > 30) continue;

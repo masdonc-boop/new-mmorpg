@@ -26,7 +26,7 @@
 | System | Brightwater today | OSRS reference | Gap |
 |---|---|---|---|
 | XP curve | 1–99, classic exponential table (`data/skills.ts`) | Same curve | None |
-| Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking, Firemaking, Crafting (14) | 23 skills | Missing: Prayer, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction |
+| Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Prayer, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking, Firemaking, Crafting, Thieving, Agility, Farming, Construction (19) | 23 skills | Missing: Herblore, Slayer, Runecraft, Hunter |
 | Inventory | 28 slots; resources one per slot; coins, ammo and runes stack | Same | Noted (inventory item) and drag-to-reorder missing; we use press-and-hold then tap to move |
 | Bank | 200 slots, all items stack, search, categories, up to 9 tabs plus main, placeholders (setting), deposit and withdraw 1/5/X/all | 800 slots (fewer on free worlds), tabs, placeholders, noted withdrawal, deposit worn items | Withdraw-as-note, deposit-equipment button, tab reordering by drag |
 | Equipment | All 11 slots: head, cape, neck, ammo, weapon, shield, body, legs, hands, feet, ring (arrows worn as a stack; amulets add accuracy and power to every style) | Same 11 slots | No rings yet (they need gold and jewellery) |
@@ -34,6 +34,11 @@
 | Smithing | Furnace (bronze, iron, steel), anvil (weapons, armour, axes, pickaxes) with hammer | Same pattern | Mithril and above; more items (arrowtips, nails, bolts) |
 | Fletching | Knife on logs: shafts, unstrung bows; bowstring stringing; arrows | Same pattern | Feathers and headless arrows, longbows, more log tiers |
 | Firemaking | Tinderbox on logs (normal 1, oak 15), lights where you stand and steps you aside; fires cook and leave ashes | Same | Willow and above; fires are not saved (they burn out) |
+| Prayer | Bury bones (4.5) and big bones (15); 16 prayers to Protect from Melee (37); OSRS drain; recharge at the shrine or a waystone | Same, many more prayers, altars | Prayers above 37; prayer bonus on gear |
+| Thieving | Pickpocket townsfolk (1), farmer (10), guard (40); bakery (5) and seed (27) stalls; stun on failure | Same pattern | Stall owners and guards don't catch you yet; no auto-repeat |
+| Agility | Village course (5 obstacles, lap bonus); slips on the beam at low level | Many courses, shortcuts, run energy | One course; no shortcuts; no run energy to restore |
+| Farming | 4 allotments: rake, plant 3 seeds, real-time growth (~40 min), harvest with lives; potatoes, onions, cabbages | Same, plus herbs, trees, disease, compost, watering | Disease, compost, watering, other patch types |
+| Construction | House north of the village with 4 spaces (chair, bookcase, table, bed); planks from the sawmill, nails from the anvil; build, remove, rebuild | Instanced house, rooms, many hotspots, estate agent | Rooms, buying the house, more furniture; nails are one per plank |
 | Crafting | Tanner (2 coins a pelt), needle and thread on leather (gloves to chaps), fang amulet, chisel on sapphires, flax spun into bowstrings | Same pattern (cowhide, thread used 1 per 5 items) | Pottery, glass, jewellery; thread is used one per item (simplification) |
 | Cooking | Range and fire; burn chance falls with level; food heals | Same | More foods, multi-step food (bread, pies), stop-burn by level per food |
 | Shops | Fixed price, unlimited stock, buy and sell | Stock levels that restock; price changes with stock | Stock and restock, dynamic pricing |
@@ -46,7 +51,7 @@
 
 ## 3. Missing OSRS-style features (not yet scheduled)
 
-- **Skills:** Prayer, Herblore, Agility, Thieving, Slayer, Farming, Runecraft, Hunter, Construction.
+- **Skills:** Herblore, Slayer, Runecraft, Hunter.
 - **Equipment:** rings (jewellery) and equipment stat tables (stab, slash and crush style bonuses, adapted to custom combat).
 - **Banking:** noting, deposit worn items.
 - **Economy:** shop stock and restock, player trading, an exchange.
@@ -103,11 +108,17 @@ Owner notes on P1 choices:
 - Thread is used one per item (OSRS: one per five). Tanning costs 2 coins per pelt.
 - Wolf pelts no longer stack (like OSRS hides); older saves split their stacks into slots.
 
-**P2: new OSRS skills, one at a time**
-9. **Prayer:** bury bones (already dropped); prayers adapted to custom combat.
-10. **Thieving and Agility:** stalls, pickpocketing, a village shortcut course.
-11. **Farming:** patches, seeds, growth timers; unlocks the rake, seed dibber and spade toolbelt slots.
-12. **Construction:** saw and hammer; unlocks the saw toolbelt slot.
+**P2: new OSRS skills (done)**
+9. **Prayer:** bury bones; 16 prayers. Boosts raise effective levels in the custom hit formula (the closest match to OSRS's level boosts); Protect from Melee blocks creatures' melee hits fully (every creature is melee); Protect Item keeps a 4th item.
+10. **Thieving and Agility:** pickpocketing (townsfolk, farmer, guard), bakery and seed stalls; the village obstacle course east of the smithy.
+11. **Farming:** four allotments, real-time growth that continues while away; rake, seed dibber and spade toolbelt slots.
+12. **Construction:** a house north of the village with four furniture spaces; Bertram's sawmill; nails from the anvil; saw toolbelt slot.
+
+Owner notes on P2 choices:
+- New characters start with every skill tool on the toolbelt (rake, seed dibber, spade, saw included); older saves receive them once.
+- The house is free (OSRS charges for a house) and has fixed spaces rather than rooms. Planks cost 5 coins (oak 15).
+- Crops take OSRS-like real time (about 40 minutes). No disease, compost or watering yet.
+- Stall owners and guards don't catch thieves yet; Agility has no run-energy benefit because run energy doesn't exist.
 
 **P3: multiplayer-dependent**
 13. Server-authoritative simulation, player trading, an exchange, shop stock shared between players, account-wide bank storage.
