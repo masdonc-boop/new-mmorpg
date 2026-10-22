@@ -530,6 +530,15 @@ export function generateWorld(seed = 1337): WorldMap {
   // The fishmonger's ice chest on the riverbank, by the fishing spots.
   addDecor('icechest', 41.5, 60.5, true, S / 4, 1, 0);
   resources.push({ type: 'ice_chest', x: 41, z: 60 });
+  // Clear pools upriver beside the Whispering Woods (rod fishing): water tiles on the east bank.
+  for (const z of [38, 42, 46]) {
+    for (let x = Math.floor(riverX(z)) + 6; x > Math.floor(riverX(z)) - 6; x--) {
+      if (tiles[idx(x, z)] === T.Water && tiles[idx(x + 1, z)] !== T.Water && tiles[idx(x + 1, z)] !== T.Bridge) {
+        addResource('rod_spot', x, z);
+        break;
+      }
+    }
+  }
 
   // --- NPCs ---
   const npcs: WorldMap['npcs'] = [

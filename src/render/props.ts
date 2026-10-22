@@ -916,7 +916,7 @@ export class ResourceView {
     }
     for (const [type, list] of byType) {
       const isTree = type === 'tree' || type === 'oak';
-      if (type === 'net_spot') {
+      if (type === 'net_spot' || type === 'rod_spot') {
         this.addFishingSpots(list);
         continue;
       }

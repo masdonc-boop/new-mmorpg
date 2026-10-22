@@ -33,6 +33,7 @@ export type IconShape =
   | 'spark'
   | 'wand'
   | 'eel'
+  | 'rod'
   | 'ring'
   | 'needle'
   | 'chisel'
@@ -237,12 +238,16 @@ export const ITEMS = {
   bronze_nails: def({ id: 'bronze_nails', name: 'Bronze nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 1, icon: { shape: 'nails', color: '#c98a4b', accent: '#7a4f2a' } }),
   iron_nails: def({ id: 'iron_nails', name: 'Iron nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 2, icon: { shape: 'nails', color: '#a3aab3', accent: '#4e5560' } }),
   steel_nails: def({ id: 'steel_nails', name: 'Steel nails', examine: 'For building furniture.', stackable: true, kind: 'material', value: 3, icon: { shape: 'nails', color: '#d3d9df', accent: '#5c646e' } }),
+  fishing_rod: def({ id: 'fishing_rod', name: 'Riverwood rod', examine: 'A springy rod strung with bowstring line, for the clear pools upriver.', stackable: false, kind: 'tool', tool: { category: 'fishing_rod', tier: 1 }, value: 15, icon: { shape: 'rod', color: '#9b6a3a', accent: '#efe8d6' } }),
   small_fishing_net: def({ id: 'small_fishing_net', name: 'Hand net', examine: 'A light net on a short pole, for scooping brightfin and eels from the shallows.', stackable: false, kind: 'tool', tool: { category: 'small_net', tier: 1 }, value: 8, icon: { shape: 'net', color: '#c9b48a', accent: '#8a5a34' } }),
   // ---- Fletching parts
   bowstring: def({ id: 'bowstring', name: 'Bowstring', examine: 'Strong twisted cord for stringing a bow.', stackable: false, kind: 'material', value: 4, icon: { shape: 'string', color: '#efe8d6', accent: '#b9ad90' } }),
   shortbow_u: def({ id: 'shortbow_u', name: 'Unstrung shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 10, icon: { shape: 'unbow', color: '#9b6a3a', accent: '#9b6a3a' } }),
   oak_shortbow_u: def({ id: 'oak_shortbow_u', name: 'Unstrung oak shortbow', examine: 'Needs a bowstring.', stackable: false, kind: 'material', value: 30, icon: { shape: 'unbow', color: '#6e472c', accent: '#6e472c' } }),
   // ---- Fishing and cooking
+  // Glass trout: so clear you can see the river through it. Rod-caught in the clear pools upriver.
+  raw_glass_trout: def({ id: 'raw_glass_trout', name: 'Raw glass trout', examine: 'Nearly see-through, with a faint silver spine. Cook it first.', stackable: false, kind: 'material', value: 16, icon: { shape: 'fish', color: '#cfe8ee', accent: '#ffffff' } }),
+  glass_trout: def({ id: 'glass_trout', name: 'Glass trout', examine: 'Flaky, clean and delicate. Heals 30 HP.', stackable: false, kind: 'food', value: 26, heal: 30, icon: { shape: 'fish', color: '#e8d0b0', accent: '#fff6e8' } }),
   // Brightwater's river fish (ids kept from earlier content so saves carry over: docs/ORIGINALITY.md H7).
   raw_shrimps: def({ id: 'raw_shrimps', name: 'Raw brightfin', examine: 'A little river fish whose gold-edged fins flash in the shallows. Cook it first.', stackable: false, kind: 'material', value: 3, icon: { shape: 'fish', color: '#d8dfe6', accent: '#f5c542' } }),
   shrimps: def({ id: 'shrimps', name: 'Brightfin', examine: 'Crisp, golden and sweet. Heals 16 HP.', stackable: false, kind: 'food', value: 6, heal: 16, icon: { shape: 'fish', color: '#e0b060', accent: '#fff2c8' } }),

@@ -107,6 +107,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   duskiron_platelegs: r({ id: 'duskiron_platelegs', station: 'anvil', skill: 'smithing', level: 67, xp: 140, inputs: [{ item: 'duskiron_bar', qty: 2 }], output: { item: 'duskiron_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   duskiron_platebody: r({ id: 'duskiron_platebody', station: 'anvil', skill: 'smithing', level: 72, xp: 210, inputs: [{ item: 'duskiron_bar', qty: 3 }], output: { item: 'duskiron_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   // ---- Fletching (knife on logs, anywhere)
+  // A rod: a log and a bowstring for line (Fletching 6).
+  fishing_rod: r({ id: 'fishing_rod', station: 'fletching', skill: 'fletching', level: 6, xp: 12, inputs: [{ item: 'logs', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'fishing_rod', qty: 1 }, seconds: 1.8, tool: 'knife' }),
   arrow_shafts: r({ id: 'arrow_shafts', station: 'fletching', skill: 'fletching', level: 1, xp: 6, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'arrow_shafts', qty: 12 }, seconds: 1.5, tool: 'knife' }),
   bronze_arrow: r({ id: 'bronze_arrow', station: 'fletching', skill: 'fletching', level: 2, xp: 18, inputs: [{ item: 'arrow_shafts', qty: 12 }, { item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_arrow', qty: 12 }, seconds: 1.5 }),
   shortbow_u: r({ id: 'shortbow_u', station: 'fletching', skill: 'fletching', level: 4, xp: 7, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
@@ -146,6 +148,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 32, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.3, stopLevel: 22, output: 'burnt_meat' } }),
   // Roasted sunroot (recipe id kept for saves).
   baked_potato: r({ id: 'baked_potato', station: 'range', skill: 'cooking', level: 5, xp: 24, inputs: [{ item: 'potato', qty: 1 }], output: { item: 'baked_potato', qty: 1 }, seconds: 2, fail: { chance: 0.3, stopLevel: 26, output: 'burnt_potato' } }),
+  // Glass trout: delicate, burns easily until you have the knack.
+  glass_trout: r({ id: 'glass_trout', station: 'range', skill: 'cooking', level: 20, xp: 58, inputs: [{ item: 'raw_glass_trout', qty: 1 }], output: { item: 'glass_trout', qty: 1 }, seconds: 2, fail: { chance: 0.4, stopLevel: 42, output: 'burnt_fish' } }),
   // Mudskipper eel: smoked slowly over the coals.
   anchovies: r({ id: 'anchovies', station: 'range', skill: 'cooking', level: 12, xp: 42, inputs: [{ item: 'raw_anchovies', qty: 1 }], output: { item: 'anchovies', qty: 1 }, seconds: 2.2, fail: { chance: 0.38, stopLevel: 30, output: 'burnt_fish' } }),
 };

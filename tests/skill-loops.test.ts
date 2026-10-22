@@ -275,6 +275,43 @@ describe('Complete loops', () => {
     expect(p.inventory.count('raw_shrimps') + p.inventory.count('raw_anchovies')).toBe(before);
   });
 
+  it('glass trout: clear pools upriver, a rod and Fishing 20; cooks into a 30 HP meal', () => {
+    const pools = new GameWorld().nodes.filter((n) => n.def.id === 'rod_spot');
+    expect(pools.length).toBe(3);
+    for (const n of pools) expect(SIDES.some(([a, b]) => !isBlocked(new GameWorld().map, n.x + a, n.z + b))).toBe(true);
+    const w = new GameWorld();
+    const p = w.player;
+    expect(p.toolbelt.get('fishing_rod')).toBe('fishing_rod');
+    setRng(w, 0.01);
+    w.drainEvents();
+    workNode(w, 'rod_spot');
+    run(w, 4);
+    expect(p.inventory.count('raw_glass_trout')).toBe(0);
+    p.skills.addXp('fishing', xpForLevel(20));
+    workNode(w, 'rod_spot');
+    run(w, 4);
+    expect(p.inventory.count('raw_glass_trout')).toBeGreaterThan(0);
+    w.issue({ type: 'moveTo', x: p.x, z: p.z });
+    lose(w, 'fishing_rod');
+    const before = p.inventory.count('raw_glass_trout');
+    workNode(w, 'rod_spot');
+    run(w, 4);
+    expect(p.inventory.count('raw_glass_trout')).toBe(before);
+    expect(itemDef('glass_trout').heal).toBe(30);
+    expect(RECIPES.glass_trout).toMatchObject({ level: 20, fail: { stopLevel: 42 } });
+  });
+
+  it('older characters are given a rod once', () => {
+    const w = new GameWorld();
+    delete w.player.toolbelt.slots.fishing_rod;
+    const save = JSON.parse(JSON.stringify(w.save()));
+    save.grants = save.grants.filter((g: string) => g !== 'rod-v1');
+    const w2 = new GameWorld({ save });
+    expect(w2.player.toolbelt.get('fishing_rod')).toBe('fishing_rod');
+    const w3 = new GameWorld({ save: JSON.parse(JSON.stringify(w2.save())) });
+    expect(w3.player.toolbelt.count('fishing_rod') + w3.player.inventory.count('fishing_rod')).toBe(1);
+  });
+
   it('a full bag stops fishing with no xp', () => {
     const w = new GameWorld();
     const p = w.player;

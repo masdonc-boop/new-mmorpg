@@ -585,6 +585,33 @@ export function itemIcon(id: string): string {
       g.restore();
       break;
     }
+    case 'rod': {
+      // A rod with a reel, line and a little float.
+      g.strokeStyle = 'rgba(20,12,6,0.85)';
+      g.lineWidth = 7;
+      g.beginPath();
+      g.moveTo(12, 54);
+      g.lineTo(50, 10);
+      g.stroke();
+      g.strokeStyle = color;
+      g.lineWidth = 4;
+      g.stroke();
+      g.strokeStyle = accent;
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(50, 10);
+      g.quadraticCurveTo(56, 30, 50, 44);
+      g.stroke();
+      g.fillStyle = '#e8473c';
+      g.beginPath();
+      g.arc(50, 46, 3.5, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#5a5856';
+      g.beginPath();
+      g.arc(21, 44, 4.5, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
     case 'net': {
       g.save();
       g.translate(32, 34);

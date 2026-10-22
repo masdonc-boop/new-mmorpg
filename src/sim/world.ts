@@ -805,7 +805,7 @@ export class GameWorld {
   /** Tools every character should own once (older saves receive them after the production update). */
   static readonly STARTER_TOOLS: ItemId[] = ['hammer', 'knife', 'small_fishing_net'];
   /** Everything a new character starts with on the toolbelt. */
-  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'tinderbox', 'needle', 'chisel', 'rake', 'seed_dibber', 'spade', 'saw'];
+  static readonly STARTER_BELT: ItemId[] = ['bronze_pickaxe', 'bronze_axe', 'hammer', 'knife', 'small_fishing_net', 'fishing_rod', 'tinderbox', 'needle', 'chisel', 'rake', 'seed_dibber', 'spade', 'saw'];
 
   /** Once, when the toolbelt arrives: move the tools already in the bag onto it (frees their slots). */
   private introduceToolbelt() {
@@ -935,7 +935,8 @@ export class GameWorld {
     this.grantSkillTools('firemaking-v1', ['tinderbox'], 'New skill: Firemaking! Tilly put a tinderbox on your toolbelt. Tap logs in your bag to light a fire.');
     this.grantSkillTools('construction-v1', ['saw'], 'New skill: Construction! Tilly put a saw on your toolbelt. Your house is north of the village; Bertram’s sawmill is beside it.');
     this.grantSkillTools('farming-v1', ['rake', 'seed_dibber', 'spade'], 'New skill: Farming! Tilly put a rake, seed dibber and spade on your toolbelt. The allotments are east of the plaza.');
-    this.grantSkillTools('crafting-v1', ['needle', 'chisel'], 'New skill: Crafting! Tilly put a needle and a chisel on your toolbelt. Rook by the smithy tans pelts into leather.');
+    this.grantSkillTools('crafting-v1', ['needle', 'chisel'], 'New skill: Crafting! Tilly put a needle and a chisel on your toolbelt. Rook by the smithy tans pelts into wolfhide.');
+    this.grantSkillTools('rod-v1', ['fishing_rod'], 'New: rod fishing! Tilly put a riverwood rod on your toolbelt. Glass trout swim in the clear pools upriver by the Whispering Woods (Fishing 20).');
     p.autoGather = s.options?.autoGather === true;
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {

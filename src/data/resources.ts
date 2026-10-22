@@ -2,7 +2,7 @@ import type { ItemId } from './items';
 import type { ToolCategory } from './tools';
 import type { SkillId } from './skills';
 
-export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall' | 'ice_chest';
+export type ResourceType = 'tree' | 'oak' | 'copper_rock' | 'tin_rock' | 'iron_rock' | 'coal_rock' | 'glimmerite_rock' | 'duskiron_slag' | 'ember_vent' | 'spark_quartz_rock' | 'net_spot' | 'flax' | 'bakery_stall' | 'seed_stall' | 'ice_chest' | 'rod_spot';
 
 export interface ResourceDef {
   id: ResourceType;
@@ -47,6 +47,8 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   // The fishmonger's ice chest by the river: brightfin, and eels for the more practised hand.
   ice_chest: { id: 'ice_chest', name: 'Fishmonger’s ice chest', skill: 'thieving', levelReq: 14, xp: 24, item: 'raw_shrimps', baseChance: 1, depleteChance: 1, respawnSeconds: 5, actionSeconds: 1.2, catches: [{ item: 'raw_anchovies', level: 18, xp: 24, chance: 0.35 }] },
   // Shallows: brightfin from level 1; mudskipper eels from the muddy edges from level 12.
+  // Clear pools upriver by the Whispering Woods: glass trout on a rod (slower, but a better fish).
+  rod_spot: { id: 'rod_spot', name: 'Clear pool', skill: 'fishing', levelReq: 20, xp: 48, item: 'raw_glass_trout', tool: 'fishing_rod', baseChance: 0.38, depleteChance: 0, respawnSeconds: 0, actionSeconds: 3, rareDrop: { item: 'river_agate', chance: 0.02 } },
   net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 12, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, rareDrop: { item: 'river_agate', chance: 0.012 }, catches: [{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }] },
   iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 12, xp: 32, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.015 } },
 };
