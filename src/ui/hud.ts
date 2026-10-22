@@ -4,8 +4,8 @@ import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } f
 import { QUESTS, requirementList } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, type CombatStyle } from '../sim/combat';
-import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type WorldMap } from '../sim/worldmap';
-import { DUNGEON_AREAS, dungeonAt } from '../sim/dungeonmap';
+import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type Passage, type WorldMap } from '../sim/worldmap';
+import { DUNGEON_AREAS, dungeonAt, type DungeonId } from '../sim/dungeonmap';
 import type { Dialogue, GameEvent, GameWorld } from '../sim/world';
 import { TILE_COLORS } from '../render/terrain';
 import { itemIcon } from './icons';
@@ -16,7 +16,8 @@ import { CraftView } from './craftview';
 import { ShopView } from './shopview';
 import { ExchangeView } from './exchangeview';
 import { PracticeSource, type MarketSource } from './marketsource';
-import { SHOPS } from '../data/shops';
+import { SHOPS, shopFor } from '../data/shops';
+import { DUNGEONS } from '../data/dungeons';
 import { RECIPES, STATION_INFO, isAnywhere, useCombo, usable, type AnywhereKind, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
 import { TOOL_SLOTS } from '../data/tools';
@@ -78,6 +79,17 @@ const FOCUS_HINT: Record<TrainingFocus, string> = {
   power: 'Melee xp all goes to Strength; bows and wands train Ranged or Magic.',
   defence: 'Melee xp all goes to Defence; bows and wands share theirs with Defence.',
 };
+
+/** What a passage's tap hint says (the Hollow, dungeon doors and stairs, the ways back out). */
+function passageHint(w: GameWorld, d: Passage): string {
+  if (d.id === 'hollow_mouth') return w.hasLantern() ? '⛏️ Glimmer Hollow · climb down' : '⛏️ Glimmer Hollow · dark: bring a lantern';
+  if (d.id === 'hollow_up') return '🪜 Way up · climb back to daylight';
+  if (d.requires) {
+    const missing = w.missingFor(DUNGEONS[d.requires].requirements);
+    return missing.length ? `🚪 ${d.name} · needs ${missing.join(', ')}` : `🚪 ${d.name} · enter (Lv ${DUNGEONS[d.requires].recommended.combat}+ advised)`;
+  }
+  return `🪜 ${d.name} · ${d.verb.toLowerCase()}`;
+}
 
 export class Hud {
   readonly root: HTMLDivElement;
@@ -1228,7 +1240,7 @@ export class Hud {
       for (const n of w.npcs) {
         if (w.offstage.has(n.id)) continue;
         if (n.def.service === 'bank') consider(n.id, n.x, n.z, '🏦 Bank · open your bank', (n.def.reach ?? 1.9) + 1);
-        if (n.def.service === 'shop') consider(n.id, n.x, n.z, "🛒 Tilly's stall · buy tools, sell goods", (n.def.reach ?? 1.9) + 1);
+        if (n.def.service === 'shop') consider(n.id, n.x, n.z, `🛒 ${shopFor(n.def.id)?.name ?? 'Shop'} · buy and sell`, (n.def.reach ?? 1.9) + 1);
         if (n.def.thieving && !n.def.service) consider(n.id, n.x, n.z, `🤏 ${n.def.name} · pickpocket (Thieving ${n.def.thieving.level})`, 2.4, { type: 'pickpocket', target: n.id });
         if (n.def.service === 'tanner') consider(n.id, n.x, n.z, '🧵 Rook the tanner · tan pelts into leather', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'exchange') consider(n.id, n.x, n.z, '⚖️ Exchange · buy and sell offers (practice market)', (n.def.reach ?? 1.9) + 1);
@@ -1237,7 +1249,8 @@ export class Hud {
       for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, FISHING_LABELS[nd.def.id] ?? FISHING_LABELS.net_spot!, 2.6);
       for (const hs of w.hotspots) consider(hs.id, hs.x, hs.z, `🔨 ${p.furniture[hs.def.id] ? furnitureDef(p.furniture[hs.def.id])!.name : hs.def.name} · ${p.furniture[hs.def.id] ? 'remove' : 'build'}`, 1.6);
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
-      for (const dw of w.doorways) consider(dw.id, dw.x, dw.z, dw.def.id === 'hollow_mouth' ? (w.hasLantern() ? '⛏️ Glimmer Hollow · climb down' : '⛏️ Glimmer Hollow · dark: bring a lantern') : '🪜 Way up · climb back to daylight', 2.2);
+      for (const dw of w.doorways) consider(dw.id, dw.x, dw.z, passageHint(w, dw.def), 2.2);
+      for (const c of w.chests) consider(c.id, c.x, c.z, p.dungeonClaims[c.dungeon] ? '🗝️ Chest · open it (your claim)' : `🔒 Chest · defeat ${DUNGEONS[c.dungeon].boss.name} to open`, 2.2);
       for (const o of w.obstacles) {
         const far = o.def.shortcut && Math.hypot(o.def.x2 - p.x, o.def.z2 - p.z) < Math.hypot(o.def.x1 - p.x, o.def.z1 - p.z);
         const text = o.def.shortcut ? `🏃 ${o.def.name} · shortcut (Agility ${o.def.level})` : `🏃 ${o.def.name} · ${o.def.verb.toLowerCase()} it`;
@@ -1619,12 +1632,27 @@ export class Hud {
       } else {
         steps = `<li class="cur">${q.stages[0].journal}</li>`;
         const missing = new Set(w.questMissing(q));
-        const reqs = requirementList(q);
+        const reqs = requirementList(q.requirements);
         if (reqs.length) steps += `<li class="req">Requires: ${reqs.map((r) => `<span class="${missing.has(r) ? 'req-no' : 'req-ok'}">${r}</span>`).join(', ')}</li>`;
       }
       card.innerHTML = `<div class="qc-head"><span class="qc-name">${q.name}</span><span class="qc-status">${status}</span></div>
         <div class="qc-sum">${q.summary}</div><ul class="qc-steps">${steps}</ul>
         <div class="qc-rewards">Rewards: ${q.rewards.text.join(' · ')}</div>`;
+      body.appendChild(card);
+    }
+    // Dungeons (Phase 4C): what each door asks, a claim waiting on the chest, and runs so far.
+    for (const d of Object.values(DUNGEONS)) {
+      const p = w.player;
+      const missing = new Set(w.missingFor(d.requirements));
+      const reqs = requirementList(d.requirements);
+      const claim = (p.dungeonClaims[d.id as DungeonId] ?? 0) > 0;
+      const runs = p.dungeonRuns[d.id as DungeonId] ?? 0;
+      const found = d.rewards.uniques.filter((u) => p.inventory.has(u.id) || p.equipment.count(u.id) > 0 || p.bank.count(u.id) > 0).length;
+      const card = el('div', `quest-card ${missing.size ? 'new' : 'active'}`);
+      card.innerHTML = `<div class="qc-head"><span class="qc-name">🗝️ ${d.name}</span><span class="qc-status">${claim ? 'Chest waiting' : runs ? `${runs} run${runs === 1 ? '' : 's'}` : missing.size ? 'Locked' : 'Open'}</span></div>
+        <div class="qc-sum">Boss: ${d.boss.name} (level ${d.boss.level}). Advised: combat ${d.recommended.combat}+, ${d.recommended.partySize[1] > 1 ? `alone or with up to ${d.recommended.partySize[1] - 1} friends` : 'alone'}.</div>
+        <ul class="qc-steps"><li class="req">Requires: ${reqs.map((r) => `<span class="${missing.has(r) ? 'req-no' : 'req-ok'}">${r}</span>`).join(', ')}</li></ul>
+        <div class="qc-rewards">Uniques found: ${found} of ${d.rewards.uniques.length} · ${d.rewards.uniques.map((u) => itemDef(u.id).name).join(' · ')}</div>`;
       body.appendChild(card);
     }
     body.appendChild(

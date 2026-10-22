@@ -226,9 +226,8 @@ export function missingRequirements(r: QuestRequirements | undefined, done: (que
   return out;
 }
 
-/** Every requirement of a quest, as short phrases (for the journal). */
-export function requirementList(q: QuestDef): string[] {
-  const r = q.requirements;
+/** Every requirement (of a quest or a dungeon door), as short phrases (for the journal). */
+export function requirementList(r: QuestRequirements | undefined): string[] {
   if (!r) return [];
   return [...(r.quests ?? []).map((id) => QUESTS[id]?.name ?? id), ...(r.combat ? [`combat level ${r.combat}`] : []), ...Object.entries(r.skills ?? {}).map(([s, l]) => `${s} ${l}`)];
 }

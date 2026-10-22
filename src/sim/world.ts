@@ -27,7 +27,7 @@ import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type 
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
 import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
-import { dungeonAt } from './dungeonmap';
+import { DUNGEON_AREAS, chestOf, dungeonAt, type DungeonId } from './dungeonmap';
 import { DUNGEONS } from '../data/dungeons';
 import { LANTERN_SECONDS } from '../data/hollow';
 import { splitSave, type CharacterRecord, type ZoneState } from './records';
@@ -233,6 +233,8 @@ export type GameEvent =
   | { type: 'patch'; patch: number }
   /** The player came through a passage (cave mouth or way up). */
   | { type: 'passage'; passage: number }
+  /** A dungeon chest was opened (Phase 4C): what it gave, and whether a unique was among it. */
+  | { type: 'chest'; dungeon: DungeonId; items: { item: ItemId; qty: number }[]; unique: boolean }
   /** An agility obstacle was crossed. */
   | { type: 'obstacle'; obstacle: number }
   /** A pickpocket attempt on an NPC (for its reaction). */
@@ -272,6 +274,7 @@ export type PlayerAction =
   | { type: 'farm'; patch: number }
   | { type: 'hotspot'; hotspot: number }
   | { type: 'passage'; passage: number }
+  | { type: 'chest'; chest: number }
   | { type: 'build'; hotspot: string; furniture: string; t: number }
   | { type: 'station'; station: number }
   | { type: 'craft'; recipe: string; remaining: number; made: number }
@@ -409,6 +412,16 @@ export class FarmPatch {
 }
 
 /** A passage between the surface and Glimmer Hollow (tap to go through to the other end). */
+/** A dungeon's end chest: opened with a claim earned by helping defeat the dungeon's boss. */
+export class Chest {
+  constructor(
+    public readonly id: number,
+    public readonly dungeon: DungeonId,
+    public readonly x: number,
+    public readonly z: number,
+  ) {}
+}
+
 export class Doorway {
   constructor(
     public readonly id: number,
@@ -518,6 +531,10 @@ export class Player implements Mover {
   autoGather = false;
   /** Combat training focus: which skills combat xp goes to. */
   focus: TrainingFocus = 'shared';
+  /** Dungeon end-chest claims earned by helping defeat a boss (at most one waiting per dungeon). */
+  dungeonClaims: Partial<Record<DungeonId, number>> = {};
+  /** Completed dungeon runs (chests opened), by dungeon. */
+  dungeonRuns: Partial<Record<DungeonId, number>> = {};
   /** What happened to the player's items at their latest death (for the death screen). */
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
   /** Items carried to the shrines by faded wisps, waiting to be reclaimed for a fee. */
@@ -721,6 +738,7 @@ export type Interactable =
   | { kind: 'patch'; entity: FarmPatch }
   | { kind: 'hotspot'; entity: Hotspot }
   | { kind: 'passage'; entity: Doorway }
+  | { kind: 'chest'; entity: Chest }
   | { kind: 'station'; entity: Station };
 
 export interface SaveData {
@@ -757,6 +775,8 @@ export interface SaveData {
   prayerPoints?: number;
   /** Gameplay options (optional for older saves). */
   options?: { autoGather?: boolean; focus?: TrainingFocus };
+  /** Dungeon claims waiting and runs completed (Phase 4C). */
+  dungeons?: { claims?: Partial<Record<DungeonId, number>>; runs?: Partial<Record<DungeonId, number>> };
   /** Gravestones still standing (optional for older saves). */
   graves?: SavedGrave[];
   /** Items held at the shrines after a wisp faded (optional for older saves). */
@@ -789,6 +809,7 @@ export class GameWorld {
   readonly stations: Station[] = [];
   readonly obstacles: Obstacle[] = [];
   readonly doorways: Doorway[] = [];
+  readonly chests: Chest[] = [];
   readonly hotspots: Hotspot[] = [];
   /** The PRACTICE market: simulated traders and practice balances, separate from real wealth. */
   market: PracticeMarket;
@@ -813,7 +834,7 @@ export class GameWorld {
   readonly trades: TradeDesk = new TradeDesk(this);
   private pending: PendingHit[] = [];
   private incoming: IncomingHit[] = [];
-  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
+  private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway | Chest>();
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId; map?: WorldMap; market?: PracticeMarket; noPlayer?: boolean; area?: (x: number, z: number) => boolean } = {}) {
     const playerId = opts.playerId ?? LOCAL_PLAYER_ID;
@@ -854,6 +875,13 @@ export class GameWorld {
       const o = new Obstacle(4000 + i, def, i);
       this.obstacles.push(o);
       this.byId.set(o.id, o);
+    });
+    (Object.keys(DUNGEON_AREAS) as DungeonId[]).forEach((id, i) => {
+      const at = chestOf(id);
+      if (!here(at.x, at.z)) return;
+      const c = new Chest(4700 + i, id, at.x, at.z);
+      this.chests.push(c);
+      this.byId.set(c.id, c);
     });
     this.map.passages.forEach((def, i) => {
       const d = new Doorway(4500 + i, def);
@@ -1156,6 +1184,7 @@ export class GameWorld {
       equipment: p.equipment.toJSON(),
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather, focus: p.focus },
+      dungeons: { claims: { ...p.dungeonClaims }, runs: { ...p.dungeonRuns } },
       laps: p.laps,
       house: { ...p.furniture },
       ...(opts.practice === false ? {} : { exchangePractice: this.market.toJSON() }),
@@ -1196,6 +1225,14 @@ export class GameWorld {
     this.grantSkillTools('rod-v1', ['fishing_rod'], 'New: rod fishing! Tilly put a riverwood rod on your toolbelt. Glass trout swim in the clear pools upriver by the Whispering Woods (Fishing 20).');
     p.autoGather = s.options?.autoGather === true;
     p.focus = TRAINING_FOCUSES.includes(s.options?.focus as TrainingFocus) ? s.options!.focus! : 'shared';
+    p.dungeonClaims = {};
+    p.dungeonRuns = {};
+    for (const id of Object.keys(DUNGEON_AREAS) as DungeonId[]) {
+      const c = Number(s.dungeons?.claims?.[id]);
+      const r = Number(s.dungeons?.runs?.[id]);
+      if (c > 0) p.dungeonClaims[id] = 1;
+      if (Number.isInteger(r) && r > 0) p.dungeonRuns[id] = r;
+    }
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
         const qty = Math.floor(Number(o?.qty));
@@ -1256,7 +1293,7 @@ export class GameWorld {
     this.emit({ type: 'message', text, tone });
   }
 
-  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway | undefined {
+  get(id: number): Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway | Chest | undefined {
     // Allotments are each player's own: the same id means the acting player's patch.
     const patch = this.player.patches[id - 4100];
     if (patch && patch.id === id) return patch;
@@ -1274,6 +1311,7 @@ export class GameWorld {
     if (e instanceof FarmPatch) return { kind: 'patch', entity: e };
     if (e instanceof Hotspot) return { kind: 'hotspot', entity: e };
     if (e instanceof Doorway) return { kind: 'passage', entity: e };
+    if (e instanceof Chest) return { kind: 'chest', entity: e };
     if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
   }
@@ -1693,6 +1731,7 @@ export class GameWorld {
     else if (action?.type === 'farm') this.updateFarming(action.patch, dt);
     else if (action?.type === 'hotspot') this.updateHotspotApproach(action.hotspot);
     else if (action?.type === 'passage') this.updatePassage(action.passage);
+    else if (action?.type === 'chest') this.updateChest(action.chest);
     else if (action?.type === 'build') this.updateBuild(action, dt);
     else if (action?.type === 'station') this.updateStationApproach(action.station);
     else if (action?.type === 'craft') this.updateCraft(action, dt);
@@ -1777,6 +1816,8 @@ export class GameWorld {
       p.gatherTimer = n.def.actionSeconds * 0.6;
     } else if (it.kind === 'ground') {
       p.action = { type: 'pickup', ground: id };
+    } else if (it.kind === 'chest') {
+      p.action = { type: 'chest', chest: id };
     } else if (it.kind === 'passage') {
       p.action = { type: 'passage', passage: id };
     } else if (it.kind === 'hotspot') {
@@ -1950,6 +1991,7 @@ export class GameWorld {
     e.deadAge = 0;
     this.emit({ type: 'death', id: e.id });
     if (p.action?.type === 'attack' && p.action.target === e.id) p.action = null;
+    if (e.def.boss) this.creditBossKill(e);
     // Drops land on the ground where the enemy fell, reserved for the player who earned them.
     let k = 0;
     for (const d of e.def.drops) {
@@ -2846,6 +2888,67 @@ export class GameWorld {
 
   private hotspotByDef(id: string): Hotspot | undefined {
     return this.hotspots.find((h) => h.def.id === id);
+  }
+
+  // ---------------------------------------------------------------- dungeon chests (Phase 4C)
+
+  /** A dungeon boss falls: everyone in this world who hurt it earns a claim on the chest. */
+  private creditBossKill(e: Enemy) {
+    const d = dungeonAt(e.spawnX, e.spawnZ);
+    if (!d) return;
+    for (const id of e.hitBy) {
+      const q = this.players.get(id);
+      if (!q || q.dead) continue;
+      this.act(q, () => {
+        const had = (q.dungeonClaims[d] ?? 0) > 0;
+        q.dungeonClaims[d] = 1;
+        this.message(had ? `${e.def.name} falls. You still have the chest to open.` : `${e.def.name} falls! The chest beyond is yours to open.`, 'good');
+      });
+    }
+    e.hitBy.clear();
+  }
+
+  private updateChest(id: number) {
+    const p = this.player;
+    const c = this.byId.get(id);
+    if (!(c instanceof Chest)) {
+      p.action = null;
+      return;
+    }
+    if (!this.approach(c.x, c.z, 1.3, true)) return;
+    p.action = null;
+    this.openChest(c);
+  }
+
+  /** Every item a chest could give at most, so it only opens when all of it would fit (no re-rolling). */
+  chestWorstCase(d: DungeonId): { item: ItemId; qty: number }[] {
+    const r = DUNGEONS[d].rewards;
+    return [...r.guaranteed.map((g) => ({ item: g.item, qty: g.max })), ...r.table.map((t) => ({ item: t.item, qty: t.max })), ...r.uniques.map((u) => ({ item: u.id, qty: 1 }))];
+  }
+
+  private openChest(c: Chest) {
+    const p = this.player;
+    const dungeon = DUNGEONS[c.dungeon];
+    if (!(p.dungeonClaims[c.dungeon] ?? 0)) {
+      this.message(`The chest is locked fast. Defeat ${dungeon.boss.name} to earn the right to open it.`, 'warn');
+      return;
+    }
+    if (!p.inventory.canAddAll(this.chestWorstCase(c.dungeon))) {
+      this.inventoryFull();
+      this.message('Make room in your pack before you open the chest: it can hold a lot.', 'warn');
+      return;
+    }
+    const got: { item: ItemId; qty: number }[] = [];
+    for (const g of dungeon.rewards.guaranteed) got.push({ item: g.item, qty: randInt(this.rng, g.min, g.max) });
+    for (const t of dungeon.rewards.table) if (this.rng() < t.chance) got.push({ item: t.item, qty: randInt(this.rng, t.min, t.max) });
+    const uniques = dungeon.rewards.uniques.filter((u) => this.rng() < u.chance).map((u) => u.id);
+    for (const u of uniques) got.push({ item: u, qty: 1 });
+    for (const g of got) this.giveItem(g.item, g.qty);
+    p.dungeonClaims[c.dungeon] = 0;
+    p.dungeonRuns[c.dungeon] = (p.dungeonRuns[c.dungeon] ?? 0) + 1;
+    this.emit({ type: 'chest', dungeon: c.dungeon, items: got, unique: uniques.length > 0 });
+    this.message(`You open the chest (run ${p.dungeonRuns[c.dungeon]}): ${got.map((g) => `${g.qty > 1 ? `${g.qty.toLocaleString()} ` : ''}${itemDef(g.item).name}`).join(', ')}.`, 'good');
+    for (const u of uniques) this.message(`A rare find: the ${itemDef(u).name}!`, 'good');
   }
 
   /** Walk to a passage, then come out at the other end. */

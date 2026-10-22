@@ -27,6 +27,7 @@ export const EVENT_AUDIENCE: Record<GameEvent['type'], AudienceKind> = {
   // Visible effects that don't name whose they are: only their player (others see snapshots).
   heal: 'self',
   pickpocket: 'self',
+  chest: 'self',
   stunned: 'self',
   bury: 'self',
   quench: 'self',

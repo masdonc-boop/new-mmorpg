@@ -6,6 +6,7 @@ import { SERVICES } from '../src/data/tanning';
 import { ENEMIES } from '../src/data/enemies';
 import { QUESTS } from '../src/data/quests';
 import { RESOURCES } from '../src/data/resources';
+import { DUNGEONS as DUNGEONS_DATA } from '../src/data/dungeons';
 
 /** The cheapest any shop sells an item for (Infinity if none does). */
 const buy = (item: ItemId) => Math.min(...Object.values(SHOPS).flatMap((s) => s.stock.filter((x) => x.item === item).map((x) => x.price)), Infinity);
@@ -31,7 +32,9 @@ describe('4B.3 economy: no money from nothing', () => {
     const made = new Set(Object.values(RECIPES).map((r) => r.output.item));
     const sold = new Set(Object.values(SHOPS).flatMap((s) => s.stock.map((x) => x.item)));
     const dropped = new Set(Object.values(ENEMIES).flatMap((e) => e.drops.map((d) => d.item)));
-    const rewards = new Set(Object.values(QUESTS).flatMap((q) => q.rewards.items.map((i) => i.item)));
+    const rewards = new Set<string>(Object.values(QUESTS).flatMap((q) => q.rewards.items.map((i) => i.item)));
+    // Dungeon chests (Phase 4C) give their tables and uniques.
+    for (const d of Object.values(DUNGEONS_DATA)) for (const r of [...d.rewards.guaranteed, ...d.rewards.table, ...d.rewards.uniques.map((u) => ({ item: u.id }))]) rewards.add(r.item);
     for (const d of Object.values(ITEMS)) {
       if (!d.equip && !d.tool) continue;
       const id = d.id as ItemId;
@@ -81,7 +84,7 @@ describe('4B.4 loot tables', () => {
   });
 });
 
-describe('4B.4 dungeon framework (ready for Phase 4C)', () => {
+describe('4B.4/4C dungeon rules', () => {
   it('each dungeon sits at its landmark, asks for its region’s quest, and pays out real items', async () => {
     const { DUNGEONS } = await import('../src/data/dungeons');
     const { generateWorld } = await import('../src/sim/worldmap');
@@ -94,13 +97,19 @@ describe('4B.4 dungeon framework (ready for Phase 4C)', () => {
       expect(d.boss.level).toBeGreaterThan(d.recommended.combat);
       for (const r of [...d.rewards.guaranteed, ...d.rewards.table]) expect(itemDef(r.item), `${d.id}: ${r.item}`).toBeTruthy();
       for (const u of d.rewards.uniques) {
-        // Planned, not yet in the game (they arrive with the dungeon), with ids that won't clash.
-        expect(ITEMS[u.id as keyof typeof ITEMS], u.id).toBeUndefined();
+        // The item matches its planned slot, style, stats and requirements, and is rare.
+        const e = itemDef(u.id).equip!;
+        expect(e.slot, u.id).toBe(u.slot);
+        if (u.slot === 'weapon') expect(e.style, u.id).toBe(u.style);
+        const stat = (k: 'accuracy' | 'power') => (e[k] ?? 0) + (u.style && u.slot !== 'weapon' ? (e.styleBonus?.[u.style]?.[k] ?? 0) : 0);
+        expect({ accuracy: stat('accuracy'), power: stat('power'), armour: e.armour ?? 0 }, u.id).toEqual({ accuracy: u.target.accuracy ?? 0, power: u.target.power ?? 0, armour: u.target.armour ?? 0 });
+        expect(e.req ?? {}, u.id).toEqual(u.req);
         expect(u.chance).toBeLessThan(0.05);
         // A step above the best craftable gear of the same slot and style.
         // Weapons are compared with weapons of their style, styled armour with armour that helps that style.
         const helps = (i: (typeof ITEMS)[keyof typeof ITEMS]) => u.slot === 'weapon' ? i.equip?.style === u.style : !u.style || Object.entries(i.equip?.styleBonus ?? {}).some(([st, b]) => st === u.style && (b.accuracy ?? 0) > 0);
-        const peers = Object.values(ITEMS).filter((i) => i.equip?.slot === u.slot && helps(i));
+        const uniqueIds = new Set(Object.values(DUNGEONS_DATA).flatMap((x) => x.rewards.uniques.map((y) => y.id as string)));
+        const peers = Object.values(ITEMS).filter((i) => i.equip?.slot === u.slot && helps(i) && !uniqueIds.has(i.id));
         const best = Math.max(0, ...peers.map((i) => (i.equip!.accuracy ?? 0) + (i.equip!.power ?? 0) + (i.equip!.armour ?? 0) + Object.values(i.equip!.styleBonus ?? {}).reduce((a, b) => a + (b.accuracy ?? 0) + (b.power ?? 0), 0)));
         const t = u.target;
         expect((t.accuracy ?? 0) + (t.power ?? 0) + (t.armour ?? 0), u.id).toBeGreaterThan(best);

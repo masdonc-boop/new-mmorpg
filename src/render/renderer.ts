@@ -578,6 +578,8 @@ export class GameRenderer {
         return a.hotspot;
       case 'passage':
         return a.passage;
+      case 'chest':
+        return a.chest;
       case 'build':
         return this.world.hotspots.find((h) => h.def.id === a.hotspot)?.id ?? null;
       case 'station':
@@ -978,6 +980,11 @@ export class GameRenderer {
       const a = near ? this.project(r.x, r.y + 2.3, r.z) : null;
       this.overlay.plate(q.id, a, { name: q.name, level: q.remote?.combat, hp: Math.round((q.remote?.health ?? 1) * 100), maxHp: 100, kind: 'player', show: near && !q.dead });
     }
+    for (const c of w.chests) {
+      const near = Math.hypot(c.x - w.player.x, c.z - w.player.z) < 7;
+      const a = near ? this.project(c.x, groundHeight(w.map, c.x, c.z) + 1.4, c.z) : null;
+      this.overlay.plate(c.id, a, { name: w.player.dungeonClaims[c.dungeon] ? '🗝️ Chest · yours to open' : 'Chest · locked', kind: 'npc', show: near });
+    }
     for (const dw of w.doorways) {
       const near = Math.hypot(dw.x - w.player.x, dw.z - w.player.z) < 7;
       const a = near ? this.project(dw.x, groundHeight(w.map, dw.x, dw.z) + 1.9, dw.z) : null;
@@ -1252,6 +1259,10 @@ export class GameRenderer {
     for (const dw of w.doorways) {
       if (Math.abs(dw.x - w.player.x) > 30 || Math.abs(dw.z - w.player.z) > 30) continue;
       consider(dw.id, dw.x, groundHeight(map, dw.x, dw.z) + 0.7, dw.z, 1.1);
+    }
+    for (const c of w.chests) {
+      if (Math.abs(c.x - w.player.x) > 30 || Math.abs(c.z - w.player.z) > 30) continue;
+      consider(c.id, c.x, groundHeight(map, c.x, c.z) + 0.5, c.z, 1.0);
     }
     for (const f of w.patches) {
       if (Math.abs(f.x - w.player.x) > 30 || Math.abs(f.z - w.player.z) > 30) continue;

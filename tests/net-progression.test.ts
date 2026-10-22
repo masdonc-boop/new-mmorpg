@@ -106,3 +106,60 @@ describe('4B multiplayer: progression stays server-side', () => {
     expect(server.repos.ledger().map((l) => l.item).sort()).toEqual(['rowan_longbow', 'steel_arrow']);
   }, 15_000);
 });
+
+describe('4C multiplayer: dungeons on the server', () => {
+  it('two players in the tower’s zone defeat the captain together, each opens the chest, and the server keeps it through a restart', async () => {
+    const dbPath = freshDb();
+    const { s: server, url } = await serve(dbPath);
+    const a = await join(server, url, 'Ash');
+    const b = await join(server, url, 'Brindle');
+    const roof = server.zone.map.passages.find((p) => p.id === 'tower_down_roof')!;
+    for (const w of [a, b]) {
+      w.s.player.x = w.s.player.prevX = roof.arriveX;
+      w.s.player.z = w.s.player.prevZ = roof.arriveZ;
+    }
+    await pump([a, b], 1300);
+    expect(a.s.zoneId).toBe('old_watchtower');
+    expect(b.s.zoneId).toBe('old_watchtower');
+    const tower = server.zones.get('old_watchtower')!;
+    const boss = tower.enemies.find((e) => e.def.id === 'watchcaptain')!;
+    const strike = (who: Who, dmg: number) => tower.act(who.s.player, () => (tower as unknown as { damageEnemy: (e: unknown, d: number, h: boolean, s: string) => void }).damageEnemy(boss, dmg, true, 'melee'));
+    strike(a, 200);
+    strike(b, boss.hp);
+    expect(a.s.player.dungeonClaims.old_watchtower).toBe(1);
+    expect(b.s.player.dungeonClaims.old_watchtower).toBe(1);
+    const chest = tower.chests[0];
+    for (const w of [a, b]) {
+      const side = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([x, z]) => !tower.map.blocked[Math.floor(chest.z + z) * tower.map.width + Math.floor(chest.x + x)])!;
+      w.s.player.x = w.s.player.prevX = chest.x + side[0];
+      w.s.player.z = w.s.player.prevZ = chest.z + side[1];
+      w.c.issue({ type: 'interact', target: chest.id });
+    }
+    await pump([a, b], 600);
+    expect(a.s.player.dungeonRuns.old_watchtower).toBe(1);
+    expect(b.s.player.dungeonRuns.old_watchtower).toBe(1);
+    expect(a.events.some((e) => e.type === 'chest')).toBe(true);
+    server.saveAll();
+    const port = server.port;
+    a.c.close();
+    b.c.close();
+    await server.close({ save: true });
+    running.splice(running.indexOf(server), 1);
+    const again = await serve(dbPath, port);
+    const a2 = await join(again.s, again.url, 'Ash', 'login');
+    expect(a2.s.zoneId).toBe('old_watchtower');
+    expect(a2.s.player.dungeonRuns.old_watchtower).toBe(1);
+    expect(a2.s.player.dungeonClaims.old_watchtower ?? 0).toBe(0);
+  }, 20_000);
+
+  it('the server checks the door: a client can’t walk into a dungeon without its requirements', async () => {
+    const { s: server, url } = await serve(':memory:');
+    const a = await join(server, url, 'Ash');
+    const door = server.zone.doorways.find((d) => d.def.id === 'sunken_shrine_door')!;
+    a.s.player.x = a.s.player.prevX = door.def.arriveX;
+    a.s.player.z = a.s.player.prevZ = door.def.arriveZ;
+    a.c.issue({ type: 'interact', target: door.id });
+    await pump([a], 1500);
+    expect(a.s.zoneId).toBe('brightwater');
+  }, 10_000);
+});

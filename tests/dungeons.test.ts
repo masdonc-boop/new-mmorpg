@@ -223,3 +223,104 @@ describe('4C.2 dungeon creatures', () => {
 function ENEMIES_STYLE(id: string) {
   return (ENEMIES as Record<string, { attackStyle?: string }>)[id].attackStyle;
 }
+
+describe('4C.3 the end chest', () => {
+  const hit = (w: GameWorld, who: import('../src/sim/world').Player, e: import('../src/sim/world').Enemy, dmg: number) =>
+    w.act(who, () => (w as unknown as { damageEnemy: (e: unknown, d: number, hit: boolean, s: string) => void }).damageEnemy(e, dmg, true, 'melee'));
+  const open = (w: GameWorld, who: import('../src/sim/world').Player, id: DungeonId) => {
+    const c = w.chests.find((x) => x.dungeon === id)!;
+    const [a, b] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([x, z]) => !isBlocked(map, c.x + x, c.z + z))!;
+    who.x = who.prevX = c.x + a;
+    who.z = who.prevZ = c.z + b;
+    w.issueFor(who.id, { type: 'interact', target: c.id });
+    for (let t = 0; t < 30; t++) w.tick();
+  };
+
+  it('stays locked until you help defeat the boss; then opens once, and every run is counted', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    const p = w.player;
+    goThrough(w, 'sunken_shrine_door');
+    w.drainEvents();
+    open(w, p, 'sunken_shrine');
+    expect(w.drainEvents().some((e) => e.type === 'message' && /locked fast\. Defeat The Shrinekeeper/.test(e.text))).toBe(true);
+    const boss = w.enemies.find((e) => e.def.id === 'shrinekeeper')!;
+    hit(w, p, boss, boss.hp);
+    expect(p.dungeonClaims.sunken_shrine).toBe(1);
+    const coins = p.inventory.count('coins');
+    open(w, p, 'sunken_shrine');
+    const ev = w.drainEvents().find((e) => e.type === 'chest');
+    expect(ev && ev.type === 'chest' && ev.dungeon).toBe('sunken_shrine');
+    expect(p.inventory.count('coins')).toBeGreaterThanOrEqual(coins + 400);
+    expect(p.inventory.count('marsh_pearl')).toBeGreaterThanOrEqual(1);
+    expect(p.dungeonClaims.sunken_shrine).toBe(0);
+    expect(p.dungeonRuns.sunken_shrine).toBe(1);
+    // A second try without another kill: locked again.
+    const after = p.inventory.count('coins');
+    open(w, p, 'sunken_shrine');
+    expect(p.inventory.count('coins')).toBe(after);
+  });
+
+  it('a lucky roll gives everything on the table, uniques included', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    const p = w.player;
+    goThrough(w, 'old_watchtower_door');
+    p.dungeonClaims.old_watchtower = 1;
+    (w as unknown as { rng: () => number }).rng = () => 0.001;
+    open(w, p, 'old_watchtower');
+    for (const u of DUNGEONS.old_watchtower.rewards.uniques) expect(p.inventory.count(u.id), u.id).toBe(1);
+    expect(w.drainEvents().some((e) => e.type === 'chest' && e.unique)).toBe(true);
+  });
+
+  it('won’t open into a full pack (so nobody can re-roll by filling their bag), and the claim waits', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    const p = w.player;
+    goThrough(w, 'sunken_shrine_door');
+    p.dungeonClaims.sunken_shrine = 1;
+    while (p.inventory.freeSlots() > 3) p.inventory.add('bones', 1);
+    open(w, p, 'sunken_shrine');
+    expect(p.dungeonClaims.sunken_shrine).toBe(1);
+    expect(p.dungeonRuns.sunken_shrine ?? 0).toBe(0);
+    expect(w.chestWorstCase('sunken_shrine').length).toBe(DUNGEONS.sunken_shrine.rewards.guaranteed.length + DUNGEONS.sunken_shrine.rewards.table.length + DUNGEONS.sunken_shrine.rewards.uniques.length);
+  });
+
+  it('in a group, everyone who hurt the boss earns a claim; a bystander doesn’t', () => {
+    const w = new GameWorld({ noPlayer: true, map, clock: () => 0, area: zoneArea('old_watchtower') });
+    const roof = map.passages.find((x) => x.id === 'tower_down_roof')!;
+    const add = (id: number, name: string) => {
+      const q = w.addPlayer({ playerId: id, name });
+      q.x = q.prevX = roof.arriveX;
+      q.z = q.prevZ = roof.arriveZ;
+      return q;
+    };
+    const a = add(1_000_001, 'Ash');
+    const b = add(1_000_002, 'Brindle');
+    const c = add(1_000_003, 'Cass');
+    const boss = w.enemies.find((e) => e.def.id === 'watchcaptain')!;
+    hit(w, a, boss, 300);
+    hit(w, b, boss, boss.hp);
+    expect(a.dungeonClaims.old_watchtower).toBe(1);
+    expect(b.dungeonClaims.old_watchtower).toBe(1);
+    expect(c.dungeonClaims.old_watchtower ?? 0).toBe(0);
+    for (const q of [a, b]) {
+      open(w, q, 'old_watchtower');
+      expect(q.dungeonRuns.old_watchtower).toBe(1);
+    }
+  });
+
+  it('claims and runs are saved; an older save without them loads with none', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    w.player.dungeonClaims.old_watchtower = 1;
+    w.player.dungeonRuns.sunken_shrine = 4;
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    const w2 = new GameWorld({ save, map, clock: () => 0 });
+    expect(w2.player.dungeonClaims.old_watchtower).toBe(1);
+    expect(w2.player.dungeonRuns.sunken_shrine).toBe(4);
+    delete save.dungeons;
+    expect(new GameWorld({ save, map, clock: () => 0 }).player.dungeonClaims).toEqual({});
+    // Junk in a save can't stockpile claims.
+    save.dungeons = { claims: { sunken_shrine: 99 }, runs: { old_watchtower: -3 } };
+    const w3 = new GameWorld({ save, map, clock: () => 0 });
+    expect(w3.player.dungeonClaims.sunken_shrine).toBe(1);
+    expect(w3.player.dungeonRuns.old_watchtower).toBeUndefined();
+  });
+});

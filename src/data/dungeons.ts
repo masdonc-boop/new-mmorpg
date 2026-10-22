@@ -3,15 +3,14 @@ import type { QuestRequirements } from './quests';
 import type { DecorKind } from '../sim/worldmap';
 
 /**
- * Dungeon framework (Phase 4B, docs/PROGRESSION.md): what Eastreach's two sealed landmarks will ask of
- * a player and what they will give, ready for Phase 4C to build the dungeons themselves. Nothing here
- * is live yet: the doors stay sealed, and the planned unique items below are not in the item list
- * (they are added, with these targets, when the dungeons open).
+ * The dungeons' rules (Phase 4B framework, opened in Phase 4C; docs/DUNGEONS.md): what each door asks,
+ * who it is balanced for, its boss, and what the end chest gives. Their shape and doors are in
+ * src/sim/dungeonmap.ts. Defeating the boss gives everyone who hurt it one claim on the chest.
  */
 
-/** A planned unique reward: its slot, style and the stats it is balanced to. */
+/** A unique reward: its slot, style and the stats it is balanced to (the item matches them). */
 export interface PlannedUnique {
-  id: string;
+  id: ItemId;
   name: string;
   slot: 'weapon' | 'head' | 'body' | 'legs' | 'shield' | 'neck' | 'ring' | 'hands' | 'feet' | 'cape';
   style?: 'melee' | 'ranged' | 'magic';
