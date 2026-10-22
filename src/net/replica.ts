@@ -38,7 +38,8 @@ export interface OtherPlayerState {
   appearance: Appearance;
   x: number;
   z: number;
-  f: { facing: number; moving: boolean; swingAge: number; dead: boolean; style: string; hp: number };
+  /** facing, moving, `@swingAge` (see `restoreAges`), dead, style, hp. */
+  f: Fields;
   /** Combat level and health fraction, for the name plate. */
   combat: number;
   health: number;
@@ -71,10 +72,31 @@ export interface WorldState {
 const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow', 'bank', 'equipment', 'toolbelt', 'grants', 'autoGather', 'shrineHeld', 'furniture', 'laps', 'quests', 'checkpoints'] as const;
 /** Never copied by snapshots: identity, and positions handled by interpolation and prediction. */
 const PLAYER_SKIP = new Set<string>(['id', 'x', 'z', 'prevX', 'prevZ', 'joy', 'prayers', 'patches', 'remote', ...CHARACTER_FIELDS]);
-const ENEMY_SKIP = new Set(['id', 'def', 'spawnX', 'spawnZ', 'x', 'z', 'prevX', 'prevZ']);
-const NPC_SKIP = new Set(['id', 'def', 'baseFacing', 'patrol', 'x', 'z', 'prevX', 'prevZ']);
+/** Creature and NPC fields only their AI uses (the client never runs it). */
+const ENEMY_SKIP = new Set(['id', 'def', 'spawnX', 'spawnZ', 'x', 'z', 'prevX', 'prevZ', 'attackTimer', 'idleTimer', 'wander']);
+const NPC_SKIP = new Set(['id', 'def', 'baseFacing', 'patrol', 'x', 'z', 'prevX', 'prevZ', 'waitTimer', 'waypoint']);
 
+const NO_SKIP = new Set<string>();
 const round = (n: number) => Math.round(n * 1000) / 1000;
+/** Positions and headings: a hundredth of a tile or radian is plenty to draw by. */
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * Fields that count up every tick (`swingAge`, `deadAge`, …) would change in every snapshot. They
+ * are sent as `@name`: the world time they started from, which stays the same until the thing
+ * happens again (null once it is long past, false for an age held at zero), and turned back into ages when applied.
+ */
+const AGE_HORIZON = 30;
+const isAge = (k: string) => k.endsWith('Age');
+function restoreAges(f: Fields, time: number): Fields {
+  const out: Fields = {};
+  for (const [k, v] of Object.entries(f)) {
+    if (k.startsWith('@')) out[k.slice(1)] = v === null ? 99 : v === false ? 0 : round(time - (v as number));
+    else out[k] = v;
+  }
+  return out;
+}
 
 function isPlain(v: unknown): boolean {
   if (v === null || typeof v === 'string' || typeof v === 'boolean') return true;
@@ -84,12 +106,15 @@ function isPlain(v: unknown): boolean {
   return false;
 }
 
-/** The JSON-safe own fields of an object (numbers rounded), skipping class instances and `skip`. */
-function fieldsOf(obj: object, skip: Set<string>): Fields {
+/** The JSON-safe own fields of an object (numbers rounded, ages as start times), skipping class instances and `skip`. */
+function fieldsOf(obj: object, skip: Set<string>, time: number): Fields {
   const out: Fields = {};
   for (const [k, v] of Object.entries(obj)) {
     if (skip.has(k) || !isPlain(v)) continue;
-    out[k] = typeof v === 'number' ? round(v) : v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
+    if (typeof v === 'number' && isAge(k)) out[`@${k}`] = v === 0 ? false : v >= AGE_HORIZON ? null : round2(time - v);
+    // Timers below zero mean "ready" however far below; headings to a tenth (the renderer eases turns).
+    else if (typeof v === 'number') out[k] = k === 'facing' ? round1(v) : k.endsWith('Timer') ? round(Math.max(0, v)) : round(v);
+    else out[k] = v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
   }
   return out;
 }
@@ -97,37 +122,53 @@ function fieldsOf(obj: object, skip: Set<string>): Fields {
 /** Creatures and NPCs further than this from the player (tiles) are left out of snapshots. */
 export const INTEREST_RADIUS = 32;
 
+/**
+ * How other players, creatures and NPCs look is the same for every viewer, so on a server with many
+ * players each is captured once per tick and shared by all the snapshots of that tick.
+ */
+const shared = new WeakMap<GameWorld, { time: number; views: Map<number, OtherPlayerState | EntityState> }>();
+function viewOf<T extends OtherPlayerState | EntityState>(world: GameWorld, id: number, make: () => T): T {
+  let c = shared.get(world);
+  if (!c || c.time !== world.time) shared.set(world, (c = { time: world.time, views: new Map() }));
+  let v = c.views.get(id);
+  if (!v) c.views.set(id, (v = make()));
+  return v as T;
+}
+
 export function captureState(world: GameWorld, tick: number, ack: number, radius = INTEREST_RADIUS): WorldState {
   const p = world.player;
   const near = (e: { x: number; z: number }) => Math.abs(e.x - p.x) <= radius && Math.abs(e.z - p.z) <= radius;
+  const time = round(world.time);
   return {
     tick,
     time: round(world.time),
     ack,
-    player: { x: round(p.x), z: round(p.z), f: fieldsOf(p, PLAYER_SKIP), prayers: [...p.prayers] },
-    others: [...world.players.values()].filter((q) => q !== p && near(q)).map((q) => {
+    player: { x: round(p.x), z: round(p.z), f: fieldsOf(p, PLAYER_SKIP, time), prayers: [...p.prayers] },
+    others: [...world.players.values()].filter((q) => q !== p && near(q)).map((q) => viewOf(world, q.id, () => {
       const node = q.action?.type === 'gather' ? world.get(q.action.node) : undefined;
       return {
         id: q.id,
         name: q.name,
         appearance: q.appearance,
-        x: round(q.x),
-        z: round(q.z),
-        f: { facing: round(q.facing), moving: q.moving, swingAge: round(Math.min(q.swingAge, 99)), dead: q.dead, style: q.style, hp: q.hp },
+        x: round2(q.x),
+        z: round2(q.z),
+        f: fieldsOf({ facing: q.facing, moving: q.moving, swingAge: q.swingAge, dead: q.dead, style: q.style, hp: q.hp }, NO_SKIP, time),
         combat: q.skills.combatLevel(),
         health: round(q.hp / q.maxHp),
         act: q.action?.type ?? null,
         skill: node && 'def' in node && 'skill' in node.def ? node.def.skill : null,
         gear: q.equipment.toJSON(),
       };
-    }),
-    enemies: world.enemies.filter(near).map((e) => ({ id: e.id, x: round(e.x), z: round(e.z), f: fieldsOf(e, ENEMY_SKIP) })),
-    npcs: world.npcs.filter(near).map((n) => ({ id: n.id, x: round(n.x), z: round(n.z), f: fieldsOf(n, NPC_SKIP) })),
+    })),
+    enemies: world.enemies.filter(near).map((e) => viewOf(world, e.id, () => ({ id: e.id, x: round2(e.x), z: round2(e.z), f: fieldsOf(e, ENEMY_SKIP, time) }))),
+    npcs: world.npcs.filter(near).map((n) => viewOf(world, n.id, () => ({ id: n.id, x: round2(n.x), z: round2(n.z), f: fieldsOf(n, NPC_SKIP, time) }))),
     depleted: world.nodes.filter((n) => n.depleted).map((n) => n.id),
     hits: world.nodes.filter((n) => n.hitAge < 1).map((n) => [n.id, round(n.hitAge)] as [number, number]),
-    ground: world.groundItems.filter((g) => !g.expired).map((g) => ({ id: g.id, item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: round(g.age) })),
-    graves: world.graves.filter((g) => !g.expired).map((g) => ({ id: g.id, x: g.x, z: g.z, owner: g.owner, items: g.items.map((i) => ({ ...i })), age: round(g.age) })),
-    fires: world.fires.filter((f) => !f.expired).map((f) => ({ id: f.id, x: f.x, z: f.z, life: f.life, age: round(f.age) })),
+    // Only what this player may see: their own private loot and their own wisps. Ages are sent to
+    // the second (the client only uses them for timers and fading), so piles don't change every snapshot.
+    ground: world.groundItems.filter((g) => !g.expired && g.visibleTo(p.id) && near(g)).map((g) => ({ id: g.id, item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: Math.floor(g.age) })),
+    graves: world.graves.filter((g) => !g.expired && g.owner === p.id).map((g) => ({ id: g.id, x: g.x, z: g.z, owner: g.owner, items: g.items.map((i) => ({ ...i })), age: Math.floor(g.age) })),
+    fires: world.fires.filter((f) => !f.expired && near(f)).map((f) => ({ id: f.id, x: f.x, z: f.z, life: f.life, age: Math.floor(f.age) })),
   };
 }
 
@@ -137,17 +178,17 @@ export function captureState(world: GameWorld, tick: number, ack: number, radius
  */
 export function applyState(world: GameWorld, state: WorldState) {
   const p = world.player;
-  Object.assign(p, state.player.f);
+  Object.assign(p, restoreAges(state.player.f, state.time));
   p.prayers = new Set(state.player.prayers as PrayerId[]);
   const enemies = new Map(state.enemies.map((e) => [e.id, e]));
   for (const e of world.enemies) {
     const s = enemies.get(e.id);
-    if (s) Object.assign(e, s.f);
+    if (s) Object.assign(e, restoreAges(s.f, state.time));
   }
   const npcs = new Map(state.npcs.map((n) => [n.id, n]));
   for (const n of world.npcs) {
     const s = npcs.get(n.id);
-    if (s) Object.assign(n, s.f);
+    if (s) Object.assign(n, restoreAges(s.f, state.time));
   }
   const depleted = new Set(state.depleted);
   const hits = new Map(state.hits);
@@ -157,14 +198,14 @@ export function applyState(world: GameWorld, state: WorldState) {
   }
   world.syncDynamicEntities(state);
   world.time = state.time;
-  syncOthers(world, state.others);
+  syncOthers(world, state.others, state.time);
 }
 
 /**
  * Keeps the replica's other players in step: lightweight characters with the right name, looks, worn
  * gear and pose (positions are interpolated by the client). Players out of range are removed.
  */
-function syncOthers(world: GameWorld, others: OtherPlayerState[]) {
+function syncOthers(world: GameWorld, others: OtherPlayerState[], time: number) {
   const seen = new Set<number>();
   for (const o of others) {
     seen.add(o.id);
@@ -175,7 +216,7 @@ function syncOthers(world: GameWorld, others: OtherPlayerState[]) {
     }
     q.name = o.name;
     q.appearance = o.appearance;
-    Object.assign(q, o.f);
+    Object.assign(q, restoreAges(o.f, time));
     q.remote = { act: o.act, skill: o.skill, combat: o.combat, health: o.health };
     const gear = JSON.stringify(o.gear);
     if (JSON.stringify(q.equipment.toJSON()) !== gear) q.equipment = Equipment.restore(o.gear, 1).equipment;

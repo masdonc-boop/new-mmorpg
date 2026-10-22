@@ -4,7 +4,8 @@ import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type Player, 
 import { routeEvents } from '../src/net/audience';
 import { generateWorld, type WorldMap } from '../src/sim/worldmap';
 import { mergeSave } from '../src/sim/records';
-import { INTEREST_RADIUS, captureState } from '../src/net/replica';
+import { INTEREST_RADIUS, captureState, type WorldState } from '../src/net/replica';
+import { MOVES_PER_SNAPSHOT, diffState, limitMoves } from '../src/net/delta';
 import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from '../src/net/protocol';
 import { openDatabase } from './db';
 import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
@@ -51,6 +52,8 @@ export interface RunningServer {
   /** The shared world everyone plays in. */
   zone: GameWorld;
   repos: Repos;
+  /** Load figures: whole server ticks (simulation, routing and snapshots) and bytes sent. */
+  stats: ServerStats;
   /** Saves every loaded character now (tests and tooling). */
   saveAll(): void;
   /** Stops the server. `save: false` simulates a crash (nothing is saved on the way down). */
@@ -68,6 +71,20 @@ const MAX_STRIKES = 20;
 const DEVICE_LOCAL = new Set(['exchange', 'exchangeResetPractice']);
 /** Events about the server's own (unused) practice market are not sent. */
 const SERVER_ONLY_EVENTS = new Set<GameEvent['type']>(['exchange', 'exchangeResult']);
+
+/**
+ * The character record as compared for "has it changed": without the fields snapshots already
+ * carry every time (position, health, prayer, lantern), so walking about doesn't resend the record.
+ */
+const SNAPSHOT_FIELDS = new Set(['x', 'z', 'hp', 'prayerPoints', 'lanternBurn']);
+const characterKey = (record: object) => JSON.stringify(record, (k, v) => (SNAPSHOT_FIELDS.has(k) ? undefined : v));
+
+export interface ServerStats {
+  ticks: number;
+  tickMsTotal: number;
+  tickMsMax: number;
+  bytesSent: number;
+}
 
 export interface Session {
   key: string;
@@ -90,6 +107,10 @@ export interface Session {
   joyActive: boolean;
   events: GameEvent[];
   lastCharacter: string;
+  /** The last state this connection was sent; snapshots are deltas from it. */
+  lastState: WorldState | null;
+  /** Bytes sent to this character's connections (load measurement). */
+  bytesSent: number;
   strikes: number;
   tokens: number;
   lastImportTry: number;
@@ -124,8 +145,14 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const address = wss.address();
   const port = typeof address === 'object' && address ? address.port : opts.port ?? 8787;
 
-  const send = (ws: WebSocket | null, msg: ServerMessage) => {
-    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
+  const stats: ServerStats = { ticks: 0, tickMsTotal: 0, tickMsMax: 0, bytesSent: 0 };
+  const send = (ws: WebSocket | null, msg: ServerMessage, s?: Session) => {
+    if (!ws || ws.readyState !== ws.OPEN) return 0;
+    const data = JSON.stringify(msg);
+    ws.send(data);
+    stats.bytesSent += data.length;
+    if (s) s.bytesSent += data.length;
+    return data.length;
   };
   const refuse = (ws: WebSocket, error: string, code: ErrorCode) => {
     send(ws, { t: 'error', error, code, fatal: true });
@@ -303,7 +330,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
 
   function newSession(key: string, name: string, playerId: PlayerId, player: Player, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
-    return { key, name, playerId, player, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
+    return { key, name, playerId, player, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', lastState: null, bytesSent: 0, strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
   }
 
   /** Points a session at a connection (taking over from any older one) and sends the welcome. */
@@ -320,8 +347,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.ack = 0;
     s.strikes = 0;
     const character = zone.act(s.player, () => zone.characterRecord());
-    s.lastCharacter = JSON.stringify(character);
-    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: stateFor(s), ...(issued ? { session: issued } : {}) });
+    s.lastCharacter = characterKey(character);
+    s.lastState = stateFor(s);
+    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: s.lastState, ...(issued ? { session: issued } : {}) });
   }
 
   /** The character and their own things in the world (wisps, private loot), as saved. */
@@ -467,10 +495,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   function snapshot(s: Session) {
     const character = zone.act(s.player, () => zone.characterRecord());
-    const json = JSON.stringify(character);
+    const json = characterKey(character);
     const changed = json !== s.lastCharacter;
     if (changed) s.lastCharacter = json;
-    send(s.ws, { t: 'state', state: stateFor(s), events: s.events, ...(changed ? { character } : {}) });
+    const state = limitMoves(s.lastState!, stateFor(s), MOVES_PER_SNAPSHOT);
+    const delta = diffState(s.lastState!, state);
+    s.lastState = state;
+    send(s.ws, { t: 'state', delta, events: s.events, ...(changed ? { character } : {}) }, s);
     s.events = [];
   }
 
@@ -489,6 +520,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     while (acc >= TICK_SECONDS) {
       acc -= TICK_SECONDS;
       tick++;
+      const started = performance.now();
       for (const s of [...sessions.values()]) {
         if (!s.ws) {
           if (s.disconnectedAt !== null && clock() - s.disconnectedAt > graceMs) {
@@ -504,6 +536,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       zone.tick(TICK_SECONDS);
       routeTickEvents();
       if (tick % every === 0) for (const s of sessions.values()) if (s.ws) snapshot(s);
+      const took = performance.now() - started;
+      stats.ticks++;
+      stats.tickMsTotal += took;
+      stats.tickMsMax = Math.max(stats.tickMsMax, took);
     }
     sinceSave += elapsed * 1000;
     if (sinceSave >= saveIntervalMs) {
@@ -522,6 +558,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     sessions,
     zone,
     repos,
+    stats,
     saveAll,
     close: ({ save: doSave = true } = {}) =>
       new Promise<void>((resolve) => {

@@ -1,7 +1,8 @@
 import { GameWorld, TICK_SECONDS, type Command, type GameEvent, type PlayerId } from '../sim/world';
+import { patchState } from './delta';
 import { mergeSave } from '../sim/records';
 import { applyCharacter, applyState, type WorldState } from './replica';
-import { PROTOCOL_VERSION, contentVersion, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
+import { PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from './protocol';
 import { generateWorld } from '../sim/worldmap';
 
 /**
@@ -17,6 +18,9 @@ import { generateWorld } from '../sim/worldmap';
 
 /** How far in the past other entities are shown (ms): about one and a half snapshot gaps. */
 export const INTERP_DELAY_MS = 150;
+const MAX_INTERP_DELAY_MS = 450;
+/** A pause longer than this between positions means it stood still. */
+const HOLD_GAP_MS = 600;
 /** Commands handled on the device (the practice market never touches real wealth). */
 const DEVICE_LOCAL = new Set<Command['type']>(['exchange', 'exchangeResetPractice']);
 
@@ -58,6 +62,8 @@ export class NetClient {
   private sentMoving = false;
   private acc = 0;
   private samples = new Map<number, Sample[]>();
+  /** The last full state, which the next delta changes. */
+  private last: WorldState | null = null;
   private serverPos: { x: number; z: number } | null = null;
   private readonly now: () => number;
   /** The map, generated locally from the shared seed (the server checks it matches). */
@@ -172,6 +178,7 @@ export class NetClient {
       this.world = new GameWorld({ save: mergeSave({ character: msg.character }), playerId: msg.playerId, map: this.map });
       this.world.drainEvents();
     } else applyCharacter(this.world, msg.character);
+    this.last = msg.state;
     this.applySnapshot(msg.state, true);
     this.status = 'ready';
     if (!this.quietWelcome) this.events.push({ type: 'message', text: reconnected ? 'Reconnected.' : `Connected to the development server as ${this.world.player.name}.`, tone: 'good' });
@@ -200,9 +207,10 @@ export class NetClient {
       }
       return;
     }
-    if (msg.t !== 'state' || !this.world) return;
+    if (msg.t !== 'state' || !this.world || !this.last) return;
     if (msg.character) applyCharacter(this.world, msg.character);
-    this.applySnapshot(msg.state, false);
+    this.last = patchState(this.last, msg.delta);
+    this.applySnapshot(this.last, false);
     this.events.push(...msg.events);
   }
 
@@ -215,6 +223,11 @@ export class NetClient {
       // A jump (respawn, passage) restarts the trail instead of sliding across the map.
       const prev = list[list.length - 1];
       if (snap || (prev && Math.hypot(prev.x - x, prev.z - z) > 4)) list.length = 0;
+      // Positions come only when they change (and in a crowd, not every snapshot: see
+      // limitMoves), so an unchanged one adds nothing; something setting off after standing
+      // still starts from where it stood one snapshot ago instead of sliding from long before.
+      else if (prev && prev.x === x && prev.z === z) return;
+      else if (prev && t - prev.t > HOLD_GAP_MS) list.push({ t: t - 1000 / SNAPSHOT_HZ, x: prev.x, z: prev.z });
       list.push({ t, x, z });
       if (list.length > 6) list.shift();
       this.samples.set(id, list);
@@ -295,10 +308,15 @@ export class NetClient {
       p.prevZ = p.z;
     }
     // Everyone else: interpolate between snapshots, shown INTERP_DELAY_MS in the past.
-    const at = this.now() - INTERP_DELAY_MS;
+    const now = this.now();
     const place = (e: { id: number; x: number; z: number; prevX: number; prevZ: number }) => {
       const s = this.samples.get(e.id);
       if (!s?.length) return;
+      // Things updated less often (far away, or in a crowd) are shown a little further back, so
+      // there is always a next position to move towards.
+      let gap = Infinity;
+      for (let i = Math.max(1, s.length - 3); i < s.length; i++) gap = Math.min(gap, s[i].t - s[i - 1].t);
+      const at = now - Math.min(MAX_INTERP_DELAY_MS, Math.max(INTERP_DELAY_MS, Number.isFinite(gap) ? gap * 1.3 : 0));
       let x = s[s.length - 1].x;
       let z = s[s.length - 1].z;
       for (let i = s.length - 1; i > 0; i--) {

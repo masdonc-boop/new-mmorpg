@@ -331,7 +331,7 @@ Delivered:
   - Joystick movement is predicted with the simulation's own movement code (`GameWorld.predictMove`), sent as numbered inputs and reconciled against the server's acknowledged position.
   - Path movement follows the server smoothly. Other creatures and NPCs are interpolated 150 ms in the past.
   - The practice market runs on the device; the server ignores those commands.
-- **Measured:** a snapshot is about 3.8 KB in the village, about 38 KB/s at 10 snapshots a second. Change-only updates (deltas) are planned for 3A.5.
+- **Measured:** a snapshot is about 3.8 KB in the village, about 38 KB/s at 10 snapshots a second. Change-only updates (deltas) arrived in 3A.5 (about 8 KB/s with 50 players in sight).
 - **Tests:** `tests/net-server.test.ts` (9 tests). It starts a real server and connects real WebSocket clients:
   - Protocol parsing and the content version.
   - Welcome, and a matching replica.
@@ -368,7 +368,7 @@ How to run it:
 Delivered:
 - **Database** (`server/db.ts`): SQLite via `better-sqlite3` 13.0.3, with WAL and numbered migrations (`user_version`).
   - Tables: `accounts`, `sessions`, `characters` (with `record`, `zone`, `version`, `lease_owner`, `lease_epoch`) and `audit`.
-  - Each character's zone state (dropped loot and wisps) is stored with it while every character has its own world. It moves to per-zone storage in 3A.5.
+  - Each character's zone state (dropped loot and wisps) is stored with it while every character has its own world. Since 3A.5 that is the loot and wisps the character owns; unowned piles move to per-zone storage in 3A.8.
 - **Accounts** (`server/auth.ts`, `server/repo.ts`):
   - Passwords are hashed with Node's built-in scrypt (N=16384, r=8, p=1, 16-byte salt), compared in constant time.
   - Session tokens are 256-bit, stored as SHA-256 hashes, expire after 30 days unused, and are revoked on sign-out.
@@ -448,7 +448,65 @@ Acceptance:
 - Over-limit saves are clamped and reported.
 - The same save cannot be imported twice; the local save stays intact.
 
-### 3A.5 Shared world
+### 3A.5 Shared world: done
+
+How it works:
+- **One zone.** The server runs one `GameWorld` for Brightwater that every session joins.
+  - `world.players` holds everyone. The game's rules still say "the player": `act(p, fn)` points that at whoever's turn it is (a command, their tick, a creature attacking them, their pending hit landing). So the roughly 120 rules that read the player stay as they were.
+  - `addPlayer` and `removePlayer` bring a character in (from their record, with their own wisps and private loot) and take them out again. Creatures chasing someone who leaves go home.
+- **What is shared and what is personal.**
+  - Shared: resource nodes (one player mining a rock dry empties it for everyone), creatures, NPCs, fires and public ground piles.
+  - Personal: allotments (`player.patches`: the same plot shows each player their own crops), the house, wisps (only the owner sees or takes them; they count down only while the owner is in the world), and loot (private to the killer until it turns public).
+- **Creatures** pick the nearest player they can reach and fight whoever they target. Every hit remembers its attacker, so xp and the kill go to the right player, and one player dying doesn't cancel another's attacks.
+- **Events go by audience** (`src/net/audience.ts`). Each event is tagged with the player whose turn produced it.
+  - `self`: messages, bag, bank, xp, interfaces, and effects that don't say whose they are. These go only to that player.
+  - `nearby`: hits, attacks, projectiles, deaths and gathering. These go to players within the interest radius of where they happen.
+  - `zone`: nodes running out or coming back, and fires lit. These go to everyone.
+- **Snapshots** (`captureState`) are per viewer:
+  - the viewer's own fields;
+  - other players within 32 tiles (name, looks, worn gear, pose, combat level and health);
+  - creatures and NPCs within 32 tiles;
+  - only the piles and wisps that viewer may see. Other players' private loot and wisps are never sent.
+- **Change-only snapshots** (`src/net/delta.ts`, protocol v3).
+  - The server remembers the last state it sent each connection and sends only what changed: changed fields, `[id, x, z]` triples for things that only moved, and ids that went away. The client rebuilds the whole state, so everything after that is unchanged.
+  - Fields that count up every tick go as the time they started (`@swingAge`). Timers below zero go as zero. Headings are rounded to 0.1 rad. The character record is resent only when something other than position, health, prayer or lantern changes.
+- **Movement budget** (`limitMoves`). At most 12 position updates go in each snapshot. They are picked by how far the client's copy has drifted, weighted towards things close to the viewer, and whatever waits becomes more urgent. The client records a position only when it changes, and shows rarely-updated things further back (150 to 450 ms), so they still move smoothly.
+- **Shared views.** Other players, creatures and NPCs look the same to every viewer, so each is captured once per tick and shared by all that tick's snapshots.
+- **Rendering.** Other players are drawn with the hero model, their looks and worn equipment. Their pose (walking, attacking, gathering with the right tool, dead) comes from the snapshot, and their nameplate shows name, combat level and health.
+
+Delivered:
+- `src/sim/world.ts`: `players`, `act`, `addPlayer` and `removePlayer`; per-player allotments, wisps and loot; attackers on pending hits; `drainEventsWithActors`.
+- `src/net/audience.ts`, `src/net/delta.ts`, `src/net/replica.ts` (others, per-viewer filtering, shared views) and `src/net/client.ts` (deltas, adaptive interpolation).
+- `server/server.ts`:
+  - one shared zone with per-session routing and deltas;
+  - guests are also taken out after the grace period;
+  - `stats` (tick time and bytes sent).
+- `src/render/renderer.ts`: other players' models, poses, projectiles and nameplates.
+- `?autostart=Name` picks a guest name, so two browsers can join side by side.
+- Tests: `tests/multiplayer-sim.test.ts` (8) and `tests/net-multiplayer.test.ts` (6):
+  - **Deltas:** a delta always rebuilds exactly the next state, through play, loot, deaths and players joining and leaving.
+  - **Two clients:**
+    - each sees the other move;
+    - a rock mined dry by one is depleted for both;
+    - both fight the same wolf and see the same hits and health;
+    - the other player's pose comes across;
+    - xp, loot and messages reach only their own player.
+  - **Privacy:** private wisps reach only their owner.
+  - **Load:** 50 bots wander, chop and fight in the village (all in sight of each other: the worst case).
+  - **Fuzz conservation:** four accounts play random commands and keep dropping their connections. Every time a character comes back, it has exactly what was saved; a full restart loses nothing.
+
+Measured (50 bots in one place, in the development container while the rest of the test suite runs alongside):
+- Tick: about 5 ms on average, including simulation, routing and 50 snapshots every third tick. The worst single tick is about 30 to 40 ms (a snapshot tick during garbage collection).
+- Bandwidth: about 7.8 KB/s per client on average, 8.2 KB/s at worst (before 3A.5's work: about 38 KB/s for one player).
+
+Checked in two browsers: each sees the other, named and in their gear, and watches them walk.
+
+Left for later:
+- Dropped piles that nobody owns are not stored when the server stops (owned piles and wisps travel with their owner's record). They move to per-zone storage in 3A.8.
+- A player can't yet visit another player's house (an instanced house belongs to 3A.8).
+- No chat or trading yet (3A.6).
+
+Planned scope (kept for reference):
 
 Goal: several players in one Brightwater zone.
 - `ZoneWorld` with many players; events routed by audience; enemies target any player; loot ownership per player; personal allotments and house state.

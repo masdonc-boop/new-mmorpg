@@ -1,4 +1,5 @@
 import { ITEMS } from '../data/items';
+import type { StateDelta } from './delta';
 import type { WorldMap } from '../sim/worldmap';
 import type { Appearance, Command, GameEvent, PlayerId } from '../sim/world';
 import type { CharacterRecord } from '../sim/records';
@@ -9,7 +10,7 @@ import { validateCommand } from './validate';
  * The network protocol between the browser and the development server (docs/MULTIPLAYER.md 3A.2).
  * JSON messages over a WebSocket. Clients send intents only; the server sends state and events.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 /** Largest message a client may send (bytes); anything bigger is rejected unread. */
 export const MAX_CLIENT_MESSAGE = 8 * 1024;
 /** A save import (signed-in accounts only) may be larger. */
@@ -42,7 +43,8 @@ export type ClientMessage =
 export type ServerMessage =
   /** `session`: a token to sign in again without the password (only after a password sign-in). */
   | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string }
-  | { t: 'state'; state: WorldState; events: GameEvent[]; character?: CharacterRecord }
+  /** What changed since the last state this connection was sent (the welcome is the first). */
+  | { t: 'state'; delta: StateDelta; events: GameEvent[]; character?: CharacterRecord }
   | { t: 'error'; error: string; fatal?: boolean; code?: ErrorCode }
   | { t: 'pong'; at: number }
   /** The import worked: what was changed on the way in (a fresh `welcome` follows). */
