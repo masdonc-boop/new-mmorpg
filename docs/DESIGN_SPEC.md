@@ -127,6 +127,8 @@ Owner notes on P2 choices:
 **P3: multiplayer-dependent (on hold, owner decision)**
 13. Server-authoritative simulation, player trading, an exchange, shop stock shared between players, account-wide bank storage.
 
+Phase 3A plan: the multiplayer architecture, codebase audit and milestone roadmap are in `docs/MULTIPLAYER.md` (plan only; nothing built or hosted). Recommended first milestone: 3A.1, simulation readiness.
+
 Owner decisions so far:
 - On hold: no server is built until hosting is chosen (no paid services or public deployment without approval).
 - Sign-in, when it comes: simple username and password accounts stored on the game server, with hashed passwords.
