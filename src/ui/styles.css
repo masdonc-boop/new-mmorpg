@@ -2471,3 +2471,32 @@ button.danger {
   font-size: 12px;
   color: var(--muted);
 }
+.io-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--edge-soft);
+}
+.io-card b {
+  font-size: 18px;
+}
+.io-card span,
+.io-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+.io-text b {
+  color: var(--text);
+}
+.io-never {
+  display: block;
+  margin: 10px auto 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+}

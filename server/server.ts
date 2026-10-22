@@ -4,10 +4,11 @@ import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type PlayerId
 import { generateWorld, type WorldMap } from '../src/sim/worldmap';
 import { mergeSave } from '../src/sim/records';
 import { captureState } from '../src/net/replica';
-import { GUEST_NAME, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from '../src/net/protocol';
+import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from '../src/net/protocol';
 import { openDatabase } from './db';
 import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
 import { Repos, StaleWriteError } from './repo';
+import { prepareImport, type ImportPolicy } from './import';
 
 /**
  * Brightwater development server (docs/MULTIPLAYER.md 3A.2 and 3A.3).
@@ -33,6 +34,8 @@ export interface ServerOptions {
   saveIntervalMs?: number;
   /** How long a disconnected character stays in the world before being saved and logged out (ms). */
   graceMs?: number;
+  /** Importing browser saves (an owner decision; docs/MULTIPLAYER.md section 7). Default `full`. */
+  importPolicy?: ImportPolicy;
   /** This server instance's lease name (random by default). */
   instance?: string;
   /** Real-world clock (farming, sessions, rate limits); injectable for tests. */
@@ -85,6 +88,7 @@ export interface Session {
   lastCharacter: string;
   strikes: number;
   tokens: number;
+  lastImportTry: number;
 }
 
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
@@ -109,7 +113,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   const host = opts.host ?? '127.0.0.1';
   if (!['127.0.0.1', 'localhost', '::1'].includes(host)) log('WARNING: listening beyond this machine without TLS. Development use only.');
-  const wss = new WebSocketServer({ port: opts.port ?? 8787, host, maxPayload: 64 * 1024 });
+  const wss = new WebSocketServer({ port: opts.port ?? 8787, host, maxPayload: MAX_IMPORT_MESSAGE });
   await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
   const address = wss.address();
   const port = typeof address === 'object' && address ? address.port : opts.port ?? 8787;
@@ -142,7 +146,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
     ws.on('message', (data, isBinary) => {
       if (isBinary) return strike('Binary messages are not accepted.');
-      const msg = parseClientMessage(data.toString());
+      const msg = parseClientMessage(data.toString(), { allowImport: session?.accountId != null && session.ws === ws });
       if (!msg) return strike('Invalid message.');
       if (!session) {
         if (joining) return;
@@ -168,6 +172,10 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       if (msg.t === 'logout') {
         logout(session, token);
         session = null;
+        return;
+      }
+      if (msg.t === 'import') {
+        importSave(session, msg.save);
         return;
       }
       handle(session, msg);
@@ -288,7 +296,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   }
 
   function newSession(key: string, name: string, playerId: PlayerId, world: GameWorld, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
-    return { key, name, playerId, world, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE };
+    return { key, name, playerId, world, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
   }
 
   /** Points a session at a connection (taking over from any older one) and sends the welcome. */
@@ -324,15 +332,20 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       return true;
     } catch (err) {
       if (!(err instanceof StaleWriteError)) throw err;
-      log(`${s.name}: ${why} save refused (${err.message}); dropping this copy`);
-      repos.audit(s.accountId, 'stale-write', `${instance} ${why}`);
-      if (s.ws) {
-        send(s.ws, { t: 'error', error: 'This character is now playing somewhere else.', fatal: true, code: 'stale' });
-        s.ws.close(4001, 'stale');
-      }
-      sessions.delete(s.key);
+      dropStale(s, why, err);
       return false;
     }
+  }
+
+  /** This server's copy is out of date (another server or sign-in owns the character): drop it unsaved. */
+  function dropStale(s: Session, why: string, err: StaleWriteError) {
+    log(`${s.name}: ${why} save refused (${err.message}); dropping this copy`);
+    repos.audit(s.accountId, 'stale-write', `${instance} ${why}`);
+    if (s.ws) {
+      send(s.ws, { t: 'error', error: 'This character is now playing somewhere else.', fatal: true, code: 'stale' });
+      s.ws.close(4001, 'stale');
+    }
+    sessions.delete(s.key);
   }
 
   /** Saves and unloads a character, giving up its lease. */
@@ -349,6 +362,35 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (s.accountId !== null) unload(s, 'logout');
     ws?.close(1000, 'logout');
     log(`${s.name} signed out`);
+  }
+
+  /**
+   * Replaces a signed-in character with an imported browser save (once per account and per save),
+   * saving it straight away with the import record, then welcomes the client to the new world.
+   */
+  function importSave(s: Session, raw: Record<string, unknown>) {
+    const fail = (error: string) => send(s.ws, { t: 'error', error, code: 'import' });
+    if (s.accountId === null || s.characterId === null) return fail('Sign in to an account to bring a character over.');
+    if (repos.importBlocked(s.accountId, '') === 'account') return fail('This account has already brought a character over.');
+    if (clock() - s.lastImportTry < 5000) return fail('Please wait a moment before trying again.');
+    s.lastImportTry = clock();
+    const prepared = prepareImport(raw, { map, clock, playerId: s.playerId, name: s.name, current: s.world.characterRecord(), policy: opts.importPolicy ?? 'full' });
+    if (!prepared.ok) return fail(prepared.error);
+    const blocked = repos.importBlocked(s.accountId, prepared.hash);
+    if (blocked) return fail(blocked === 'account' ? 'This account has already brought a character over.' : 'That save has already been brought over to an account.');
+    try {
+      s.version = repos.importCharacter(s.characterId, s.accountId, s.epoch, s.version, prepared.record, {}, prepared.hash, prepared.report);
+    } catch (err) {
+      if (err instanceof StaleWriteError) return dropStale(s, 'import', err);
+      throw err;
+    }
+    s.world = prepared.world;
+    s.lastSaved = persisted(s);
+    s.events = [];
+    log(`${s.name} imported a browser save (${prepared.report.length} changes)`);
+    const ws = s.ws!;
+    send(ws, { t: 'imported', report: prepared.report });
+    bind(s, ws);
   }
 
   function handle(s: Session, msg: ClientMessage) {

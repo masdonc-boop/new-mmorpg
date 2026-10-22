@@ -48,6 +48,8 @@ export class NetClient {
   maxCorrection = 0;
   private ws: WebSocket | null = null;
   private fatal = false;
+  private pendingImport: { resolve: (report: string[]) => void; reject: (err: Error) => void } | null = null;
+  private quietWelcome = false;
   private attempts = 0;
   private events: GameEvent[] = [];
   private seq = 0;
@@ -120,6 +122,19 @@ export class NetClient {
     });
   }
 
+  /**
+   * Brings a browser-local save onto the signed-in account (once). Resolves with the server's report
+   * of what changed on the way in; the replica is then refreshed from the server's fresh welcome.
+   * The practice market and world state (ground piles, wisps) stay behind.
+   */
+  importSave(save: object): Promise<string[]> {
+    const { exchangePractice: _p, ground: _g, graves: _w, ...rest } = save as Record<string, unknown>;
+    return new Promise((resolve, reject) => {
+      this.pendingImport = { resolve, reject };
+      this.post({ t: 'import', save: rest });
+    });
+  }
+
   /** Signs out: the server saves the character and ends this session token. */
   logout() {
     this.fatal = true;
@@ -159,11 +174,23 @@ export class NetClient {
     } else applyCharacter(this.world, msg.character);
     this.applySnapshot(msg.state, true);
     this.status = 'ready';
-    this.events.push({ type: 'message', text: reconnected ? 'Reconnected.' : `Connected to the development server as ${this.world.player.name}.`, tone: 'good' });
+    if (!this.quietWelcome) this.events.push({ type: 'message', text: reconnected ? 'Reconnected.' : `Connected to the development server as ${this.world.player.name}.`, tone: 'good' });
+    this.quietWelcome = false;
     return this.world;
   }
 
   private receive(msg: ServerMessage) {
+    if (msg.t === 'imported') {
+      this.pendingImport?.resolve(msg.report);
+      this.pendingImport = null;
+      this.quietWelcome = true;
+      return;
+    }
+    if (msg.t === 'error' && msg.code === 'import' && this.pendingImport) {
+      this.pendingImport.reject(new Error(msg.error));
+      this.pendingImport = null;
+      return;
+    }
     if (msg.t === 'error') {
       this.events.push({ type: 'message', text: msg.error, tone: msg.fatal ? 'bad' : 'warn' });
       if (msg.fatal) {

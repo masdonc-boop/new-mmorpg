@@ -407,7 +407,39 @@ Acceptance:
 - A second login takes over safely, with no duplicated items. Stale-epoch writes are rejected (test).
 - Passwords are never stored or logged in plain text; login rate limits work (tests).
 
-### 3A.4 Browser save import
+### 3A.4 Browser save import: done
+
+How it works:
+- In network mode, after signing in to an account, a device that has an offline character is offered "Bring it over". The offer is shown once per server; "Don't ask again" and a finished import are remembered in `localStorage` (`brightwater.import.v1`).
+- The client uploads the save without the practice market, ground piles or wisps. The server rebuilds the character through the game's own restore path on a fresh world: aliases, item checks, one-time grants (toolbelt, ammo slot) and overflow. Then it applies the limits.
+- The imported character replaces the account's current character. It takes the account's name (the same rule as for new accounts) and is saved straight away, together with the `imports` record, in one transaction that needs the current lease and version.
+- The player sees a report of everything changed on the way in.
+
+Delivered:
+- `server/import.ts`: `prepareImport` and `saveHash`.
+  - Limits:
+    - xp at level 99 at most per skill;
+    - 5,000,000 coins and 25,000 of any other item, counted across bag, bank, gear, ammo, toolbelt, held items and shrine-held items; excess is taken from the bank first;
+    - saves up to 256 KB.
+  - Reported: caps, unknown items left behind, an invalid position (back to the shrine), unreadable looks (the account's looks kept) and the rename.
+  - **Trust policy** (owner decision, `importPolicy` server option):
+    - `full` (default, for a closed test);
+    - `progress` (skills, quests, grants, house and allotments; items and coins start fresh);
+    - `off`.
+- **Database migration 2:** an `imports` table, unique by account (once per account) and by save hash (the same save once anywhere). It stores the report, and an `import` audit entry is written.
+- **Protocol:** an `import` message, accepted only from a signed-in account (up to 300 KB; larger or earlier messages are refused unread); an `imported` reply with the report, followed by a fresh `welcome`; and an `import` error code.
+- **Client:** `NetClient.importSave(save)`, which never modifies the local save; the offer screen in `src/ui/importoffer.ts`; and the report shown in the message log.
+- **Fixtures:** now four save generations in `tests/fixtures/saves/`: P0-era, pre-toolbelt, mid-game (before the ammo slot, with a house and allotments) and current.
+- **Tests:** `tests/net-import.test.ts` (9 tests):
+  - Every fixture comes across with the same skills and every item, including the toolbelt and ammo migrations.
+  - Caps and the report.
+  - The practice market, ground piles and wisps stay behind.
+  - The `progress` and `off` policies, and non-saves refused.
+  - Over the network: the import survives a restart and is recorded; once per account and once per save; off on request; guests and signed-out connections refused; the local save is unchanged.
+
+Still an owner decision before any public launch: which policy to use (section 7). A player could alter a save to get past the once-per-save rule, so `full` only suits a closed test.
+
+Planned scope (kept for reference):
 
 Goal: bring existing characters to the server (section 7).
 

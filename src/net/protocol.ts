@@ -12,6 +12,8 @@ import { validateCommand } from './validate';
 export const PROTOCOL_VERSION = 2;
 /** Largest message a client may send (bytes); anything bigger is rejected unread. */
 export const MAX_CLIENT_MESSAGE = 8 * 1024;
+/** A save import (signed-in accounts only) may be larger. */
+export const MAX_IMPORT_MESSAGE = 300 * 1024;
 /** Server snapshots per second. */
 export const SNAPSHOT_HZ = 10;
 
@@ -30,6 +32,8 @@ export type ClientMessage =
   | { t: 'hello'; v: number; content: string; auth: Auth }
   /** Sign out: the server saves the character and ends the session token. */
   | { t: 'logout' }
+  /** Bring a browser-local save onto this account (once; docs/MULTIPLAYER.md section 7). */
+  | { t: 'import'; save: Record<string, unknown> }
   | { t: 'cmd'; cmd: Command }
   /** One tick of joystick movement, numbered so the server can acknowledge it. */
   | { t: 'input'; seq: number; dx: number; dz: number }
@@ -40,10 +44,12 @@ export type ServerMessage =
   | { t: 'welcome'; v: number; playerId: PlayerId; character: CharacterRecord; state: WorldState; session?: string }
   | { t: 'state'; state: WorldState; events: GameEvent[]; character?: CharacterRecord }
   | { t: 'error'; error: string; fatal?: boolean; code?: ErrorCode }
-  | { t: 'pong'; at: number };
+  | { t: 'pong'; at: number }
+  /** The import worked: what was changed on the way in (a fresh `welcome` follows). */
+  | { t: 'imported'; report: string[] };
 
 /** Machine-readable reasons, so the client knows whether to ask for a password or try again. */
-export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale';
+export type ErrorCode = 'auth' | 'taken' | 'locked' | 'version' | 'replaced' | 'session' | 'stale' | 'import';
 
 /** Guest names (development). Account names are checked by the server so it can say what's wrong. */
 export const GUEST_NAME = /^[A-Za-z][A-Za-z0-9 _-]{0,11}$/;
@@ -84,9 +90,14 @@ function validAuth(a: unknown): a is Auth {
   }
 }
 
-/** Parses and strictly validates a client message. Returns null for anything malformed. Never throws. */
-export function parseClientMessage(raw: unknown): ClientMessage | null {
-  if (typeof raw !== 'string' || raw.length > MAX_CLIENT_MESSAGE) return null;
+/**
+ * Parses and strictly validates a client message. Returns null for anything malformed. Never throws.
+ * `allowImport`: the connection is a signed-in account, so a (larger) save import is acceptable.
+ */
+export function parseClientMessage(raw: unknown, opts: { allowImport?: boolean } = {}): ClientMessage | null {
+  if (typeof raw !== 'string') return null;
+  if (raw.length > (opts.allowImport ? MAX_IMPORT_MESSAGE : MAX_CLIENT_MESSAGE)) return null;
+  if (raw.length > MAX_CLIENT_MESSAGE && !raw.startsWith('{"t":"import"')) return null;
   let m: unknown;
   try {
     m = JSON.parse(raw);
@@ -102,6 +113,9 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return m as ClientMessage;
     case 'logout':
       return onlyKeys(m, ['t']) ? { t: 'logout' } : null;
+    case 'import':
+      // The save itself is checked by the server's import (it runs the game's restore path).
+      return opts.allowImport && onlyKeys(m, ['t', 'save']) && isPlainObject(m.save) ? { t: 'import', save: m.save } : null;
     case 'cmd': {
       if (!onlyKeys(m, ['t', 'cmd'])) return null;
       const cmd = validateCommand(m.cmd);

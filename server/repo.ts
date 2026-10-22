@@ -137,6 +137,33 @@ export class Repos {
     this.db.prepare('UPDATE characters SET lease_owner = NULL WHERE id = ? AND lease_epoch = ?').run(characterId, epoch);
   }
 
+  // ---------------------------------------------------------------- imports
+
+  /** Whether this account has already imported a browser save, or this save was imported anywhere. */
+  importBlocked(accountId: number, saveHash: string): 'account' | 'save' | null {
+    if (this.db.prepare('SELECT 1 FROM imports WHERE account_id = ?').get(accountId)) return 'account';
+    if (this.db.prepare('SELECT 1 FROM imports WHERE save_hash = ?').get(saveHash)) return 'save';
+    return null;
+  }
+
+  /**
+   * Replaces a character with an imported one and records the import, in one transaction. The
+   * save needs the current lease and version like any other (throws StaleWriteError otherwise).
+   */
+  importCharacter(characterId: number, accountId: number, epoch: number, version: number, record: CharacterRecord, zone: ZoneState, saveHash: string, report: string[]): number {
+    return this.db.transaction(() => {
+      const v = this.saveCharacter(characterId, epoch, version, record, zone);
+      this.db.prepare('INSERT INTO imports (account_id, character_id, save_hash, at, report) VALUES (?, ?, ?, ?, ?)').run(accountId, characterId, saveHash, this.now(), JSON.stringify(report));
+      this.audit(accountId, 'import', `${saveHash.slice(0, 16)} ${report.length} changes`);
+      return v;
+    })();
+  }
+
+  importReport(accountId: number): string[] | null {
+    const r = this.db.prepare('SELECT report FROM imports WHERE account_id = ?').get(accountId) as { report: string } | undefined;
+    return r ? JSON.parse(r.report) : null;
+  }
+
   // ---------------------------------------------------------------- audit
 
   audit(accountId: number | null, kind: string, detail = '') {

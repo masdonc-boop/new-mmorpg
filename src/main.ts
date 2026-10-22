@@ -10,11 +10,14 @@ import type { GameEvent } from './sim/world';
 import { NetClient } from './net/client';
 import type { Auth } from './net/protocol';
 import { runSignIn } from './ui/signin';
+import { runImportOffer } from './ui/importoffer';
 
 const SAVE_KEY = 'brightwater.save.v1';
 const SETTINGS_KEY = 'brightwater.settings.v1';
 /** Network play: session tokens by server address (never passwords). */
 const SESSION_KEY = 'brightwater.session.v1';
+/** Network play: whether this device's offline character was brought over (or declined) per server. */
+const IMPORT_KEY = 'brightwater.import.v1';
 
 interface Settings {
   quality: 'high' | 'balanced' | 'low';
@@ -67,6 +70,8 @@ async function boot() {
   // ?server=ws://localhost:8787. The server owns the character; the local save is left untouched.
   const serverUrl = params.get('server');
   let net: NetClient | null = null;
+  /** Messages to show once the HUD exists. */
+  const notices: string[] = [];
   if (serverUrl) {
     // Sign in with a saved session token, or ask for a name and password (or a new account).
     const tokens = loadJson<Record<string, string>>(SESSION_KEY) ?? {};
@@ -94,6 +99,26 @@ async function boot() {
     }
     if (net.session) tokens[serverUrl] = net.session;
     saveJson(SESSION_KEY, tokens);
+    // Offer once to bring this device's offline character onto the account (docs/MULTIPLAYER.md §7).
+    const marks = loadJson<Record<string, string>>(IMPORT_KEY) ?? {};
+    if (save && auth.kind !== 'guest' && !marks[serverUrl]) {
+      loading.style.display = 'none';
+      const choice = await runImportOffer(app, save, world.player.name);
+      loading.style.display = '';
+      if (choice === 'never') marks[serverUrl] = 'declined';
+      if (choice === 'import') {
+        try {
+          const report = await net.importSave(save);
+          marks[serverUrl] = 'imported';
+          notices.push(`${save.name} came across to this account.`, ...report);
+        } catch (err) {
+          const why = (err as Error).message;
+          if (/already/.test(why)) marks[serverUrl] = 'imported';
+          notices.push(`Your character could not be brought over: ${why}`);
+        }
+      }
+      saveJson(IMPORT_KEY, marks);
+    }
   } else if (!save) {
     if (params.has('autostart')) {
       world = new GameWorld({ name: 'Tester' });
@@ -248,6 +273,7 @@ async function boot() {
     },
   }, (target) => target === canvas);
   controls.rotationEnabled = settings.rotation;
+  for (const text of notices) hud.handleEvent({ type: 'message', text, tone: 'info' });
 
   // HUD gestures never reach the world: Controls only handles gestures that start on the canvas.
   hud.root.addEventListener('click', (e) => {

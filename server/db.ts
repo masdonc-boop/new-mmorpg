@@ -45,6 +45,17 @@ const MIGRATIONS: string[] = [
     detail TEXT NOT NULL DEFAULT ''
   );
   `,
+  // 2: imports of browser-local saves (docs/MULTIPLAYER.md section 7): once per account, once per save.
+  `
+  CREATE TABLE imports (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL UNIQUE REFERENCES accounts(id),
+    character_id INTEGER NOT NULL REFERENCES characters(id),
+    save_hash TEXT NOT NULL UNIQUE,
+    at INTEGER NOT NULL,
+    report TEXT NOT NULL DEFAULT '[]'
+  );
+  `,
 ];
 
 export function openDatabase(path: string): Db {
