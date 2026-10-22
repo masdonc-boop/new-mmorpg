@@ -12,6 +12,7 @@ import { STYLES, combatXp, rollHit, type CombatStyle } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { SERVICES, isConvertService } from '../data/tanning';
+import { remapItemIds } from '../data/aliases';
 import { PRACTICE_ACCOUNT, PracticeMarket } from '../exchange/simulation';
 import type { Result as ExchangeResult, Side } from '../exchange/engine';
 import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
@@ -693,6 +694,8 @@ export class GameWorld {
 
   constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number } = {}) {
     this.clock = opts.clock ?? (() => Date.now());
+    // Older saves may hold item ids that have since been renamed: convert them first.
+    if (opts.save) opts = { ...opts, save: remapItemIds(opts.save) };
     this.map = generateWorld(opts.seed ?? 1337);
     this.market = PracticeMarket.restore(opts.save?.exchangePractice, this.clock) ?? new PracticeMarket(undefined, (opts.seed ?? 1337) ^ 0xe7c, this.clock);
     this.rng = mulberry32((opts.seed ?? 1337) ^ 0x5eed);

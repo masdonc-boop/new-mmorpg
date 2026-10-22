@@ -24,7 +24,7 @@ const lastMessage = (w: GameWorld) => {
 const away = (w: GameWorld) => stand(w, w.map.spawn.x + 6, w.map.spawn.z + 6);
 
 describe('Prayer', () => {
-  it('bones no longer stack, and burying gives Prayer xp (big bones more), one at a time', () => {
+  it('bones no longer stack, and burying gives Prayer xp (warlord’s bones more), one at a time', () => {
     expect(itemDef('bones').stackable).toBe(false);
     const w = new GameWorld();
     const p = w.player;
@@ -37,7 +37,7 @@ describe('Prayer', () => {
     run(w, 1.3);
     w.issue({ type: 'useItem', slot: slotOf(p.inventory, 'big_bones') });
     expect(p.skills.xp.prayer).toBe(19.5);
-    // Grukk drops big bones.
+    // Grukk drops warlord's bones.
     expect(Object.values(itemDef('big_bones'))).toBeTruthy();
   });
 

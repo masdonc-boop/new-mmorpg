@@ -100,7 +100,22 @@ Brightwater is an original fantasy MMORPG. It is inspired by the gameplay depth 
 6. **Grants:** use a one-time grant flag per migration (as `tools-v1` and `ammo-v1` do) so conversions run exactly once, with a message that tells the player what changed.
 7. **Tests:** for every rename, a test that loads an old save and checks quantities are conserved across the inventory, bank, equipment, belt and Exchange.
 
-## 5. Suggested order
+## 5. Owner approval and progress
+
+The owner approved the replacement direction on 2026-10-22, with two conditions:
+1. The Exchange work is finished or preserved first. Done: it was committed and published before replacements began.
+2. Replacements go in small, tested batches that protect saves, inventory items, equipment, recipes and progression.
+
+| Batch | Contents | Status |
+|---|---|---|
+| 1 | H3 (breastplate, greaves), H5 (warlord's bones), the item-id alias map applied to saves on load, and the originality guard test | Done |
+| 2 | H2 spark stones | Planned |
+| 3 | H1 vows | Planned |
+| 4 | H6 original metals | Planned |
+| 5 | H7 and H10 (fish, crops) with M6 | Planned |
+| 6 | H4, H8, H9 (leather set, furniture, thieving) | Planned |
+
+## 6. Suggested order
 
 1. H2 (spark stones) and H6 (original metals) together: they define magic and the gear ladder.
 2. H1 (vows) once H2 exists, since shrines charge spark stones.
