@@ -190,10 +190,10 @@ describe('4C.2 dungeon creatures', () => {
     const w = inside('sunken_shrine');
     const boss = w.enemies.find((e) => e.def.id === 'shrinekeeper')!;
     const guards = w.enemies.filter((e) => e.def.id === 'drowned_guardian');
-    expect(guards.length).toBe(4);
+    expect(guards.length).toBe(2);
     stand(w, boss.x - 2, boss.z);
     hurt(w, boss, 10);
-    expect(guards.filter((g) => g.state === 'chase').length).toBeGreaterThanOrEqual(2);
+    expect(guards.every((g) => g.state === 'chase')).toBe(true);
     hurt(w, boss, boss.hp - Math.floor(boss.def.maxHp * 0.3));
     w.drainEvents();
     (w as unknown as { act: (q: unknown, f: () => void) => void }).act(w.player, () => (w as unknown as { enemyAttack: (e: unknown) => void }).enemyAttack(boss));

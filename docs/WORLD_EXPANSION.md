@@ -245,7 +245,7 @@ Greymane is new compared with the plan in section 2: the highlands needed a boss
   - saving and reloading in Eastreach keeps you there.
 
 ### Not done yet
-- **The two dungeons:** the Sunken Shrine and the Old Watchtower are landmarks with sealed or barred doors.
+- ~~The two dungeons~~: built in Phase 4C (`docs/DUNGEONS.md`).
 - **Frostmere, the Ashen Barrens, Saltwind Harbour and more island quests** remain design only (section 2).
 - **No quest has level requirements.** A low-level player can accept either regional quest; the region's creatures are the gate.
 - **Travel:** there is no waystone teleport, so reaching Eastreach is a walk of about a minute from the village.

@@ -107,9 +107,9 @@ Hitpoints always gains its share. The total xp per damage is unchanged, so no fo
 ### Deferred
 - **Melee stances** with small level boosts, and special attacks.
 - **More combat skills:** Ranged and Magic have no separate "power" skill; Ranged and Magic max hits come from their own level, as before.
-- **Combat triangle:** creatures attack only in melee, so ranged and magic armour bonuses against them don't exist yet.
+- **Combat triangle:** partly done in Phase 4C. Dungeon creatures attack with ranged and magic, and magic is resisted with Defence and Magic together; armour has no per-style defence yet.
 - **Herblore and potions, and runecraft-like spark stone tiers:** spark stones are the only magic ammunition.
 - **Gear above level 45**, dyes, and gear degradation.
 - **Gloves, boots, capes, amulets and rings** are not drawn on the hero; head, body, legs, weapon and shield are.
 - **A Cairnhold tanner:** hides go to Rook in Brightwater.
-- **The dungeons themselves** (Phase 4C): the planned uniques in `src/data/dungeons.ts` aren't in the item list yet.
+- ~~The dungeons themselves~~: built in Phase 4C (`docs/DUNGEONS.md`); the planned uniques are now items.

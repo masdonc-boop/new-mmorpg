@@ -50,8 +50,8 @@ export const DUNGEONS: Record<string, DungeonDef> = {
     landmark: 'sunken_shrine',
     status: 'open',
     requirements: { quests: ['lanterns_of_heronwick'], combat: 30 },
-    recommended: { combat: 38, gearTier: 30, partySize: [1, 3] },
-    boss: { name: 'The Shrinekeeper', level: 42, style: 'magic' },
+    recommended: { combat: 44, gearTier: 30, partySize: [1, 3] },
+    boss: { name: 'The Shrinekeeper', level: 52, style: 'magic' },
     rewards: {
       guaranteed: [
         { item: 'coins', min: 400, max: 900 },
@@ -79,8 +79,8 @@ export const DUNGEONS: Record<string, DungeonDef> = {
     landmark: 'watchtower',
     status: 'open',
     requirements: { quests: ['ninefold_watch'], combat: 35 },
-    recommended: { combat: 44, gearTier: 40, partySize: [1, 3] },
-    boss: { name: 'The Last Watchcaptain', level: 48, style: 'melee' },
+    recommended: { combat: 46, gearTier: 30, partySize: [1, 3] },
+    boss: { name: 'The Last Watchcaptain', level: 58, style: 'melee' },
     rewards: {
       guaranteed: [
         { item: 'coins', min: 500, max: 1100 },

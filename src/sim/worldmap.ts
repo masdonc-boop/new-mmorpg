@@ -220,11 +220,11 @@ export const REGIONS: Region[] = [
   { id: 'mirefen', name: 'Mirefen Marsh', x: 162, z: 98, radius: 30, levels: 'Lv 15–30', danger: 2 },
   { id: 'heronwick', name: 'Heronwick', x: 147, z: 84, radius: 7, levels: 'Village', danger: 0 },
   { id: 'ninefold', name: 'Ninefold Stones', x: 178, z: 40, radius: 5, levels: 'Lv 22–34', danger: 2 },
-  { id: 'watchtower', name: 'Old Watchtower', x: 181, z: 21, radius: 6, levels: 'Barred · Lv 34', danger: 3 },
+  { id: 'watchtower', name: 'Old Watchtower', x: 181, z: 21, radius: 6, levels: 'Dungeon · combat 46+', danger: 3 },
   // Inside the dungeons (Phase 4C).
-  { id: 'shrine_halls', name: 'The Sunken Shrine', x: 51, z: 140, radius: 20, levels: 'Lv 34–42', danger: 3 },
-  { id: 'tower_halls', name: 'The Old Watchtower', x: 91, z: 140, radius: 20, levels: 'Lv 36–48', danger: 3 },
-  { id: 'sunken_shrine', name: 'Sunken Shrine', x: 177, z: 108, radius: 6, levels: 'Sealed · Lv 30', danger: 3 },
+  { id: 'shrine_halls', name: 'The Sunken Shrine', x: 51, z: 140, radius: 20, levels: 'Lv 34–52 · combat 44+', danger: 3 },
+  { id: 'tower_halls', name: 'The Old Watchtower', x: 91, z: 140, radius: 20, levels: 'Lv 36–58 · combat 46+', danger: 3 },
+  { id: 'sunken_shrine', name: 'Sunken Shrine', x: 177, z: 108, radius: 6, levels: 'Dungeon · combat 44+', danger: 3 },
 ];
 
 /** The Exchange plaza north-east of the village: a round kiosk with clerks, and a bank booth. */

@@ -139,6 +139,13 @@ Phase 3A plan: the multiplayer architecture, codebase audit and milestone roadma
 
 Details and deferred items: `docs/PROGRESSION.md`.
 
+**Phase 4C, dungeons (built):**
+- the Sunken Shrine and the Old Watchtower, each a shared zone behind a door that checks its requirements;
+- ranged and magic creatures, and bosses that rally their guards and enrage;
+- end chests with a claim for everyone who helped defeat the boss, and six uniques.
+
+Details: `docs/DUNGEONS.md`.
+
 Owner decisions so far:
 - On hold: no server is built until hosting is chosen (no paid services or public deployment without approval).
 - Sign-in, when it comes: simple username and password accounts stored on the game server, with hashed passwords.
