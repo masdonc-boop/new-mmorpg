@@ -279,7 +279,16 @@ Exchange collection boxes must survive reconnects and zone transfers, which they
 
 Each milestone is small, keeps the local single-player game working, and has acceptance criteria that tests can check. Milestones 3A.1 to 3A.4 run entirely on a developer machine.
 
-### 3A.1 Simulation readiness (no server) ← recommended first
+### 3A.1 Simulation readiness (no server): done
+
+Delivered:
+- **Player ids:** `PlayerId`, `LOCAL_PLAYER_ID` and `isValidPlayerId` in `src/sim/world.ts`. Players use 1–99 locally or 1,000,000 and up on a server, so they never clash with entity ids. `new GameWorld({ playerId })` builds a world for any id, and `issueFor(playerId, cmd)` accepts commands only for a player in the world. Saves record `playerId`, and loading under a new id keeps that player's ground piles and wisps theirs.
+- **Command validation:** `validateCommand` in `src/net/validate.ts`. It is exhaustive over all 47 command kinds: exact fields, ranges, known ids, no extra fields, and no prototype tricks. It never throws.
+- **Save split:** `splitSave` and `mergeSave` in `src/sim/records.ts` turn the save into `CharacterRecord`, `ZoneState` and `LocalState` (the practice market) and back exactly. `world.characterRecord()` and `world.zoneState()` give the parts directly. The browser save format is unchanged.
+- **Event audiences:** `EVENT_AUDIENCE` and `routeEvents` in `src/net/audience.ts` classify all 47 event kinds as self, nearby or zone. The client is unchanged.
+- **Tests:** `tests/net-readiness.test.ts`, with fixture saves in `tests/fixtures/saves/`, covers the checks below. The whole suite also passed once with the local player id temporarily set to 7.
+
+Planned scope (kept for reference):
 
 Goal: make the simulation multi-player-capable internally without changing how the game plays.
 - Replace `readonly id = 1` with assigned `PlayerId`s. Thread an acting player through command handling and updates (start with `issue(cmd)` → `issueFor(playerId, cmd)`; `world.player` remains "the local player").

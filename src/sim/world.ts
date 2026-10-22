@@ -28,8 +28,21 @@ import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
 import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
 import { LANTERN_SECONDS } from '../data/hollow';
+import { splitSave, type CharacterRecord, type ZoneState } from './records';
 
 export const TICK_SECONDS = 1 / 30;
+
+/**
+ * A player's entity id. Players use ids that can never clash with world entities (NPCs 100+,
+ * resource nodes 1000+, stations 3000+, agility 4000+, enemies 5000+, ground items 20000+): 1 to 99
+ * locally, or 1,000,000 and up on a server (docs/MULTIPLAYER.md, 3A.1).
+ */
+export type PlayerId = number;
+/** The id of the one player in local (single-player) mode. */
+export const LOCAL_PLAYER_ID: PlayerId = 1;
+export function isValidPlayerId(id: unknown): id is PlayerId {
+  return typeof id === 'number' && Number.isInteger(id) && ((id >= 1 && id < 100) || (id >= 1_000_000 && id <= 2_147_483_647));
+}
 export const PLAYER_SPEED = 4.4;
 const ENTITY_RADIUS = 0.28;
 
@@ -447,7 +460,7 @@ interface Mover {
 }
 
 export class Player implements Mover {
-  readonly id = 1;
+  readonly id: PlayerId;
   x: number;
   z: number;
   prevX: number;
@@ -525,7 +538,8 @@ export class Player implements Mover {
   checkpoints = new Set<string>(['home']);
   regionId: string | null = null;
 
-  constructor(public name: string, public appearance: Appearance, x: number, z: number) {
+  constructor(public name: string, public appearance: Appearance, x: number, z: number, id: PlayerId = LOCAL_PLAYER_ID) {
+    this.id = id;
     this.x = this.prevX = x;
     this.z = this.prevZ = z;
     this.skills = new Skills();
@@ -665,6 +679,8 @@ export type Interactable =
 
 export interface SaveData {
   version: 1;
+  /** The player's id when saved (optional: older saves were always player 1). */
+  playerId?: PlayerId;
   name: string;
   appearance: Appearance;
   x: number;
@@ -738,7 +754,9 @@ export class GameWorld {
   private pending: PendingHit[] = [];
   private byId = new Map<number, Enemy | ResourceNode | Npc | GroundItem | Station | Gravestone | Obstacle | FarmPatch | Hotspot | Doorway>();
 
-  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number } = {}) {
+  constructor(opts: { seed?: number; name?: string; appearance?: Appearance; save?: SaveData | null; clock?: () => number; playerId?: PlayerId } = {}) {
+    const playerId = opts.playerId ?? LOCAL_PLAYER_ID;
+    if (!isValidPlayerId(playerId)) throw new Error(`invalid player id ${playerId}`);
     this.clock = opts.clock ?? (() => Date.now());
     // Older saves may hold item ids that have since been renamed: convert them first.
     if (opts.save) opts = { ...opts, save: remapItemIds(opts.save) };
@@ -746,7 +764,7 @@ export class GameWorld {
     this.market = PracticeMarket.restore(opts.save?.exchangePractice, this.clock) ?? new PracticeMarket(undefined, (opts.seed ?? 1337) ^ 0xe7c, this.clock);
     this.rng = mulberry32((opts.seed ?? 1337) ^ 0x5eed);
     const s = opts.save;
-    this.player = new Player(s?.name ?? opts.name ?? 'Adventurer', s?.appearance ?? opts.appearance ?? DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z);
+    this.player = new Player(s?.name ?? opts.name ?? 'Adventurer', s?.appearance ?? opts.appearance ?? DEFAULT_APPEARANCE, this.map.spawn.x, this.map.spawn.z, playerId);
     if (s) this.loadPlayer(s);
     else this.giveStarterKit();
 
@@ -809,7 +827,10 @@ export class GameWorld {
         const qty = Math.floor(Number(g?.qty));
         const age = Number(g?.age);
         if (!g || typeof g.item !== 'string' || !isItemId(g.item) || !(qty > 0) || !Number.isFinite(g.x) || !Number.isFinite(g.z)) continue;
-        const pile = this.spawnGroundItem(g.item, qty, g.x, g.z, typeof g.owner === 'number' ? g.owner : null);
+        // Piles the saving player owned stay theirs even if their id has changed (saves without an
+        // id are from before ids could change, when the player was always 1).
+        const owner = typeof g.owner !== 'number' ? null : g.owner === (s.playerId ?? 1) ? this.player.id : g.owner;
+        const pile = this.spawnGroundItem(g.item, qty, g.x, g.z, owner);
         pile.age = Number.isFinite(age) && age > 0 ? age : 0;
       }
       this.groundItems = this.groundItems.filter((g) => !g.expired);
@@ -916,10 +937,21 @@ export class GameWorld {
 
   // ---------------------------------------------------------------- persistence
 
+  /** The character part of the save (docs/MULTIPLAYER.md 3A.1; see `src/sim/records.ts`). */
+  characterRecord(): CharacterRecord {
+    return splitSave(this.save()).character;
+  }
+
+  /** The zone part of the save: ground piles and shrine wisps. */
+  zoneState(): ZoneState {
+    return splitSave(this.save()).zone;
+  }
+
   save(): SaveData {
     const p = this.player;
     return {
       version: 1,
+      playerId: p.id,
       name: p.name,
       appearance: p.appearance,
       x: p.dead ? this.map.spawn.x : p.x,
@@ -1034,6 +1066,17 @@ export class GameWorld {
     if (e instanceof Doorway) return { kind: 'passage', entity: e };
     if (e instanceof Gravestone) return !e.expired && e.owner === this.player.id ? { kind: 'grave', entity: e } : null;
     return null;
+  }
+
+  /**
+   * A command from a specific player (a server passes the player bound to the connection, never one
+   * named in the message). Returns false, changing nothing, if that player isn't in this world.
+   * Only one player per world for now; shared worlds come in docs/MULTIPLAYER.md 3A.5.
+   */
+  issueFor(playerId: PlayerId, cmd: Command): boolean {
+    if (playerId !== this.player.id) return false;
+    this.issue(cmd);
+    return true;
   }
 
   issue(cmd: Command) {
