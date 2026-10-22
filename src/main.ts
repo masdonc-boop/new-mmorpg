@@ -75,7 +75,7 @@ async function boot() {
   if (serverUrl) {
     // Sign in with a saved session token, or ask for a name and password (or a new account).
     const tokens = loadJson<Record<string, string>>(SESSION_KEY) ?? {};
-    let auth: Auth | null = params.has('autostart') ? { kind: 'guest', name: 'Tester' } : tokens[serverUrl] ? { kind: 'token', token: tokens[serverUrl] } : null;
+    let auth: Auth | null = params.has('autostart') ? { kind: 'guest', name: params.get('autostart') || 'Tester' } : tokens[serverUrl] ? { kind: 'token', token: tokens[serverUrl] } : null;
     let message: string | undefined;
     let lastName: string | undefined;
     for (;;) {

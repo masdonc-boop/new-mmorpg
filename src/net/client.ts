@@ -221,6 +221,7 @@ export class NetClient {
     };
     for (const e of state.enemies) record(e.id, e.x, e.z);
     for (const n of state.npcs) record(n.id, n.x, n.z);
+    for (const o of state.others) record(o.id, o.x, o.z);
     // Own player: drop acknowledged inputs, then replay the rest from the server's position.
     this.pending = this.pending.filter((p) => p.seq > state.ack);
     this.serverPos = { x: state.player.x, z: state.player.z };
@@ -319,6 +320,7 @@ export class NetClient {
     };
     for (const e of w.enemies) place(e);
     for (const n of w.npcs) place(n);
+    for (const q of w.players.values()) if (q !== p) place(q);
     return this.acc / TICK_SECONDS;
   }
 

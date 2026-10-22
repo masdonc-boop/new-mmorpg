@@ -1,4 +1,6 @@
-import { GameWorld } from '../sim/world';
+import { GameWorld, Player, type Appearance } from '../sim/world';
+import { Equipment } from '../sim/equipment';
+import type { EquipSlot } from '../data/items';
 import type { ItemId } from '../data/items';
 import type { PrayerId } from '../data/prayers';
 import type { ItemStack } from '../sim/inventory';
@@ -29,6 +31,23 @@ export interface EntityState {
   f: Fields;
 }
 
+/** Another player as others see them: looks, worn gear, position and what they are doing. */
+export interface OtherPlayerState {
+  id: number;
+  name: string;
+  appearance: Appearance;
+  x: number;
+  z: number;
+  f: { facing: number; moving: boolean; swingAge: number; dead: boolean; style: string; hp: number };
+  /** Combat level and health fraction, for the name plate. */
+  combat: number;
+  health: number;
+  /** The kind of action (attack, gather, craft, …) and, when gathering, the skill. */
+  act: string | null;
+  skill: string | null;
+  gear: Partial<Record<EquipSlot, ItemId>>;
+}
+
 export interface WorldState {
   /** Server tick number. */
   tick: number;
@@ -36,6 +55,8 @@ export interface WorldState {
   /** The last movement input the server applied (for prediction and reconciliation). */
   ack: number;
   player: { x: number; z: number; f: Fields; prayers: string[] };
+  /** Other players within the interest radius. */
+  others: OtherPlayerState[];
   enemies: EntityState[];
   npcs: EntityState[];
   /** Depleted resource nodes, and nodes hit recently (id, seconds since the hit) for the shake. */
@@ -49,7 +70,7 @@ export interface WorldState {
 /** Player fields carried by the character record instead of snapshots. */
 const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow', 'bank', 'equipment', 'toolbelt', 'grants', 'autoGather', 'shrineHeld', 'furniture', 'laps', 'quests', 'checkpoints'] as const;
 /** Never copied by snapshots: identity, and positions handled by interpolation and prediction. */
-const PLAYER_SKIP = new Set<string>(['id', 'x', 'z', 'prevX', 'prevZ', 'joy', 'prayers', ...CHARACTER_FIELDS]);
+const PLAYER_SKIP = new Set<string>(['id', 'x', 'z', 'prevX', 'prevZ', 'joy', 'prayers', 'patches', 'remote', ...CHARACTER_FIELDS]);
 const ENEMY_SKIP = new Set(['id', 'def', 'spawnX', 'spawnZ', 'x', 'z', 'prevX', 'prevZ']);
 const NPC_SKIP = new Set(['id', 'def', 'baseFacing', 'patrol', 'x', 'z', 'prevX', 'prevZ']);
 
@@ -84,6 +105,22 @@ export function captureState(world: GameWorld, tick: number, ack: number, radius
     time: round(world.time),
     ack,
     player: { x: round(p.x), z: round(p.z), f: fieldsOf(p, PLAYER_SKIP), prayers: [...p.prayers] },
+    others: [...world.players.values()].filter((q) => q !== p && near(q)).map((q) => {
+      const node = q.action?.type === 'gather' ? world.get(q.action.node) : undefined;
+      return {
+        id: q.id,
+        name: q.name,
+        appearance: q.appearance,
+        x: round(q.x),
+        z: round(q.z),
+        f: { facing: round(q.facing), moving: q.moving, swingAge: round(Math.min(q.swingAge, 99)), dead: q.dead, style: q.style, hp: q.hp },
+        combat: q.skills.combatLevel(),
+        health: round(q.hp / q.maxHp),
+        act: q.action?.type ?? null,
+        skill: node && 'def' in node && 'skill' in node.def ? node.def.skill : null,
+        gear: q.equipment.toJSON(),
+      };
+    }),
     enemies: world.enemies.filter(near).map((e) => ({ id: e.id, x: round(e.x), z: round(e.z), f: fieldsOf(e, ENEMY_SKIP) })),
     npcs: world.npcs.filter(near).map((n) => ({ id: n.id, x: round(n.x), z: round(n.z), f: fieldsOf(n, NPC_SKIP) })),
     depleted: world.nodes.filter((n) => n.depleted).map((n) => n.id),
@@ -120,6 +157,30 @@ export function applyState(world: GameWorld, state: WorldState) {
   }
   world.syncDynamicEntities(state);
   world.time = state.time;
+  syncOthers(world, state.others);
+}
+
+/**
+ * Keeps the replica's other players in step: lightweight characters with the right name, looks, worn
+ * gear and pose (positions are interpolated by the client). Players out of range are removed.
+ */
+function syncOthers(world: GameWorld, others: OtherPlayerState[]) {
+  const seen = new Set<number>();
+  for (const o of others) {
+    seen.add(o.id);
+    let q = world.players.get(o.id);
+    if (!q) {
+      q = new Player(o.name, o.appearance, o.x, o.z, o.id);
+      world.players.set(o.id, q);
+    }
+    q.name = o.name;
+    q.appearance = o.appearance;
+    Object.assign(q, o.f);
+    q.remote = { act: o.act, skill: o.skill, combat: o.combat, health: o.health };
+    const gear = JSON.stringify(o.gear);
+    if (JSON.stringify(q.equipment.toJSON()) !== gear) q.equipment = Equipment.restore(o.gear, 1).equipment;
+  }
+  for (const id of [...world.players.keys()]) if (id !== world.player.id && !seen.has(id)) world.players.delete(id);
 }
 
 /**

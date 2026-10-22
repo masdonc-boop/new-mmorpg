@@ -4,7 +4,8 @@ import { NPCS, type NpcId } from '../data/npcs';
 import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, EXCHANGE, groundHeight, inHollow } from '../sim/worldmap';
-import { Doorway, Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type GameEvent, type GameWorld } from '../sim/world';
+import { Doorway, Enemy, FarmPatch, Gravestone, GroundItem, Hotspot, NPC_WALK_SPEED, Npc, Obstacle, ResourceNode, Station, type Appearance, type GameEvent, type GameWorld, type Player } from '../sim/world';
+import type { Equipment } from '../sim/equipment';
 import { itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { RECIPES } from '../data/recipes';
 import { CROSS_SPEED } from '../data/agility';
@@ -151,14 +152,12 @@ export class GameRenderer {
     this.setQuality('balanced');
   }
 
-  playerLook(): HeroLook {
-    const a = this.world.player.appearance;
-    return { skin: a.skin, hair: a.hair, hairStyle: a.hairStyle, tunic: a.tunic, trousers: a.trousers, bodyType: a.bodyType, gear: this.playerGear() };
+  playerLook(a: Appearance = this.world.player.appearance, eq: Equipment = this.world.player.equipment): HeroLook {
+    return { skin: a.skin, hair: a.hair, hairStyle: a.hairStyle, tunic: a.tunic, trousers: a.trousers, bodyType: a.bodyType, gear: this.playerGear(eq) };
   }
 
   /** Worn equipment as model gear (tints come from the item definitions). */
-  private playerGear(): HeroGear {
-    const eq = this.world.player.equipment;
+  private playerGear(eq: Equipment): HeroGear {
     const tint = (slot: EquipSlot) => {
       const it = eq.get(slot);
       return it ? itemDef(it).equip?.tint : undefined;
@@ -192,6 +191,66 @@ export class GameRenderer {
     this.gearKey = gearKey(this.world.player.equipment.toJSON());
     m.enableSilhouette();
     return m;
+  }
+
+  // ---------------------------------------------------------------- other players (network play)
+
+  private otherViews = new Map<number, { player: Player; model: CharacterRig; look: string }>();
+
+  /**
+   * Other players near you, drawn with the same character models as your own, in their own looks
+   * and worn gear. Their positions are already interpolated by the network client; their pose comes
+   * from what the server says they are doing.
+   */
+  private updateOtherPlayers(dt: number, t: number) {
+    const w = this.world;
+    const map = w.map;
+    for (const q of w.players.values()) {
+      if (q === w.player) continue;
+      const look = JSON.stringify([q.appearance, gearKey(q.equipment.toJSON())]);
+      let v = this.otherViews.get(q.id);
+      if (!v || v.look !== look) {
+        if (v) {
+          this.scene.remove(v.model.root);
+          v.model.dispose();
+        }
+        const lk = this.playerLook(q.appearance, q.equipment);
+        const model = ART.v2 ? new HeroModel(lk) : new Humanoid(lk, true);
+        model.root.position.set(q.x, groundHeight(map, q.x, q.z), q.z);
+        this.scene.add(model.root);
+        v = { player: q, model, look };
+        this.otherViews.set(q.id, v);
+      }
+      v.player = q;
+      const m = v.model;
+      const prevX = m.root.position.x;
+      const prevZ = m.root.position.z;
+      m.root.position.set(q.x, groundHeight(map, q.x, q.z), q.z);
+      const prevYaw = m.root.rotation.y;
+      m.root.rotation.y = smoothAngle(prevYaw, q.facing, dt * 14);
+      const r = q.remote;
+      let pose: Parameters<Humanoid['update']>[1] = q.dead ? 'dead' : q.swingAge < 0.5 ? 'attack' : q.moving ? 'walk' : 'idle';
+      let tool: HeldTool = q.style === 'melee' ? 'sword' : q.style === 'ranged' ? 'bow' : 'staff';
+      if (!q.dead && !q.moving && r?.act === 'gather' && r.skill) {
+        pose = r.skill === 'woodcutting' ? 'chop' : r.skill === 'mining' ? 'mine' : 'work';
+        tool = r.skill === 'woodcutting' ? 'axe' : r.skill === 'mining' ? 'pickaxe' : r.skill === 'fishing' ? 'net' : 'none';
+      } else if (!q.dead && !q.moving && (r?.act === 'craft' || r?.act === 'farm' || r?.act === 'build')) pose = r.act === 'build' ? 'smith' : 'work';
+      m.style = q.style;
+      m.setTool(tool);
+      if (m instanceof HeroModel) {
+        m.setTurnRate(dt > 0 ? angleDelta(prevYaw, m.root.rotation.y) / dt : 0);
+        m.setCombat(r?.act === 'attack' || q.swingAge < 2.5 ? 1 : 0, 0, 0);
+      }
+      const speed = dt > 0 ? Math.hypot(q.x - prevX, q.z - prevZ) / dt : 0;
+      m.update(dt, pose, speed, q.swingAge, t + q.id);
+    }
+    for (const [id, v] of this.otherViews) {
+      if (w.players.get(id) === v.player && v.player !== w.player) continue;
+      this.scene.remove(v.model.root);
+      v.model.dispose();
+      this.overlay.removePlate(id);
+      this.otherViews.delete(id);
+    }
   }
 
   private addEnemyView(e: Enemy) {
@@ -321,6 +380,8 @@ export class GameRenderer {
       pm.setCombat(ready, aim, draw);
     }
     pm.update(dt, pose, speed, p.swingAge, t);
+
+    this.updateOtherPlayers(dt, t);
 
     // Enemies
     for (const v of this.enemyViews.values()) {
@@ -832,6 +893,11 @@ export class GameRenderer {
       const r = this.playerModel.root.position;
       return this.project(r.x, r.y + 2.1, r.z);
     }
+    const other = this.otherViews.get(id);
+    if (other) {
+      const r = other.model.root.position;
+      return this.project(r.x, r.y + 2.1, r.z);
+    }
     const v = this.enemyViews.get(id);
     if (v) {
       const r = v.root.position;
@@ -876,6 +942,13 @@ export class GameRenderer {
       const near = Math.hypot(f.x - w.player.x, f.z - w.player.z) < 4;
       const a = near ? this.project(f.x, groundHeight(w.map, f.x, f.z) + 0.9, f.z) : null;
       this.overlay.plate(f.id, a, { name: w.patchState(f).text, kind: 'npc', show: near });
+    }
+    for (const v of this.otherViews.values()) {
+      const q = v.player;
+      const near = Math.hypot(q.x - w.player.x, q.z - w.player.z) < 16;
+      const r = v.model.root.position;
+      const a = near ? this.project(r.x, r.y + 2.3, r.z) : null;
+      this.overlay.plate(q.id, a, { name: q.name, level: q.remote?.combat, hp: Math.round((q.remote?.health ?? 1) * 100), maxHp: 100, kind: 'player', show: near && !q.dead });
     }
     for (const dw of w.doorways) {
       const near = Math.hypot(dw.x - w.player.x, dw.z - w.player.z) < 7;
@@ -967,9 +1040,12 @@ export class GameRenderer {
         break;
       }
       case 'projectile': {
-        const from = this.playerModel.root.position.clone().add(new THREE.Vector3(Math.sin(p.facing) * 0.4, 1.2, Math.cos(p.facing) * 0.4));
+        // From the local player, or another player nearby (network play).
+        const shooter = e.source === p.id ? { model: this.playerModel, facing: p.facing } : this.otherViews.has(e.source) ? { model: this.otherViews.get(e.source)!.model, facing: this.otherViews.get(e.source)!.player.facing } : null;
+        if (!shooter) break;
+        const from = shooter.model.root.position.clone().add(new THREE.Vector3(Math.sin(shooter.facing) * 0.4, 1.2, Math.cos(shooter.facing) * 0.4));
         // Arrows leave from the bow, spells from the wand tip, when the new rig holds one.
-        if (e.style !== 'melee' && this.playerModel instanceof HeroModel) this.playerModel.projectileOrigin(from);
+        if (e.style !== 'melee' && shooter.model instanceof HeroModel) shooter.model.projectileOrigin(from);
         const view = this.enemyViews.get(e.target);
         const getTo = () => (view ? view.root.position.clone().add(new THREE.Vector3(0, enemyHeight(view.enemy) * 0.45, 0)) : from);
         this.projectiles.spawn(e.style === 'magic' ? 'magic' : 'arrow', from, getTo, e.flight);

@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type PlayerId } from '../src/sim/world';
+import { GameWorld, TICK_SECONDS, type Appearance, type GameEvent, type Player, type PlayerId } from '../src/sim/world';
+import { routeEvents } from '../src/net/audience';
 import { generateWorld, type WorldMap } from '../src/sim/worldmap';
 import { mergeSave } from '../src/sim/records';
-import { captureState } from '../src/net/replica';
+import { INTEREST_RADIUS, captureState } from '../src/net/replica';
 import { GUEST_NAME, MAX_IMPORT_MESSAGE, PROTOCOL_VERSION, SNAPSHOT_HZ, contentVersion, parseClientMessage, type Auth, type ClientMessage, type ErrorCode, type ServerMessage } from '../src/net/protocol';
 import { openDatabase } from './db';
 import { RateLimiter, USERNAME, hashPassword, passwordProblem, verifyPassword } from './auth';
@@ -47,6 +48,8 @@ export interface RunningServer {
   port: number;
   /** Loaded characters by key (`acct:<id>` or `guest:<name>`). */
   sessions: Map<string, Session>;
+  /** The shared world everyone plays in. */
+  zone: GameWorld;
   repos: Repos;
   /** Saves every loaded character now (tests and tooling). */
   saveAll(): void;
@@ -70,7 +73,8 @@ export interface Session {
   key: string;
   name: string;
   playerId: PlayerId;
-  world: GameWorld;
+  /** This character in the shared world. */
+  player: Player;
   ws: WebSocket | null;
   /** Persistence (null for guests). */
   accountId: number | null;
@@ -102,6 +106,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const map: WorldMap = generateWorld(1337);
   const content = contentVersion(map);
   const sessions = new Map<string, Session>();
+  // One shared world for everyone (docs/MULTIPLAYER.md 3A.5); it starts empty.
+  const zone = new GameWorld({ noPlayer: true, map, clock });
   // Sign-in limits: per account name and per network address.
   const accountFails = new RateLimiter(5, 5 * 60_000, clock);
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
@@ -186,7 +192,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         session.ws = null;
         session.disconnectedAt = clock();
         session.inputs = [];
-        session.world.issueFor(session.playerId, { type: 'joystick', dx: 0, dz: 0 });
+        zone.issueFor(session.playerId, { type: 'joystick', dx: 0, dz: 0 });
         log(`${session.name} disconnected`);
       }
     });
@@ -266,8 +272,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     let s = sessions.get(key);
     if (!s) {
       const playerId = nextGuestId++;
-      const world = new GameWorld({ name, appearance, playerId, map, clock });
-      s = newSession(key, name, playerId, world, null, null, 0, 0);
+      const player = zone.addPlayer({ playerId, name, appearance });
+      s = newSession(key, name, playerId, player, null, null, 0, 0);
       sessions.set(key, s);
       log(`new guest ${name} (#${playerId})`);
     }
@@ -284,8 +290,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       // Load the character and take its lease: any older writer can no longer save it.
       const row = repos.characterFor(accountId)!;
       const leased = repos.acquireLease(row.id, instance);
-      const world = new GameWorld({ save: mergeSave({ character: leased.record, zone: leased.zone }), playerId: leased.playerId, map, clock });
-      s = newSession(key, leased.name, leased.playerId, world, accountId, leased.id, leased.leaseEpoch, leased.version);
+      // Into the shared world, with their own wisps and loot piles.
+      const player = zone.addPlayer({ playerId: leased.playerId, save: mergeSave({ character: leased.record, zone: leased.zone }), worldItems: true });
+      s = newSession(key, leased.name, leased.playerId, player, accountId, leased.id, leased.leaseEpoch, leased.version);
       s.lastSaved = persisted(s);
       sessions.set(key, s);
       log(`${s.name} signed in`);
@@ -295,8 +302,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     return s;
   }
 
-  function newSession(key: string, name: string, playerId: PlayerId, world: GameWorld, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
-    return { key, name, playerId, world, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
+  function newSession(key: string, name: string, playerId: PlayerId, player: Player, accountId: number | null, characterId: number | null, epoch: number, version: number): Session {
+    return { key, name, playerId, player, ws: null, accountId, characterId, epoch, version, lastSaved: '', disconnectedAt: null, inputs: [], lastSeq: 0, ack: 0, holding: 0, joyActive: false, events: [], lastCharacter: '', strikes: 0, tokens: MESSAGE_RATE, lastImportTry: 0 };
   }
 
   /** Points a session at a connection (taking over from any older one) and sends the welcome. */
@@ -312,13 +319,15 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     s.lastSeq = 0;
     s.ack = 0;
     s.strikes = 0;
-    s.world.drainEvents();
-    const character = s.world.characterRecord();
+    const character = zone.act(s.player, () => zone.characterRecord());
     s.lastCharacter = JSON.stringify(character);
-    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: captureState(s.world, tick, s.ack), ...(issued ? { session: issued } : {}) });
+    send(ws, { t: 'welcome', v: PROTOCOL_VERSION, playerId: s.playerId, character, state: stateFor(s), ...(issued ? { session: issued } : {}) });
   }
 
-  const persisted = (s: Session) => JSON.stringify([s.world.characterRecord(), s.world.zoneState()]);
+  /** The character and their own things in the world (wisps, private loot), as saved. */
+  const persisted = (s: Session) => zone.act(s.player, () => JSON.stringify([zone.characterRecord(), zone.zoneState({ ownedOnly: true })]));
+  /** A snapshot as this player sees it (their own state, and what is near them). */
+  const stateFor = (s: Session) => zone.act(s.player, () => captureState(zone, tick, s.ack));
 
   /** Saves a character if it changed. A stale lease ends the session without writing anything. */
   function save(s: Session, why: string): boolean {
@@ -345,13 +354,19 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       send(s.ws, { t: 'error', error: 'This character is now playing somewhere else.', fatal: true, code: 'stale' });
       s.ws.close(4001, 'stale');
     }
+    remove(s);
+  }
+
+  /** Takes a character out of the shared world (their wisps and private loot leave with them). */
+  function remove(s: Session) {
+    zone.removePlayer(s.playerId);
     sessions.delete(s.key);
   }
 
   /** Saves and unloads a character, giving up its lease. */
   function unload(s: Session, why: string) {
     if (save(s, why) && s.characterId !== null) repos.releaseLease(s.characterId, s.epoch);
-    sessions.delete(s.key);
+    if (sessions.get(s.key) === s) remove(s);
   }
 
   function logout(s: Session, token: string | null) {
@@ -374,7 +389,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (repos.importBlocked(s.accountId, '') === 'account') return fail('This account has already brought a character over.');
     if (clock() - s.lastImportTry < 5000) return fail('Please wait a moment before trying again.');
     s.lastImportTry = clock();
-    const prepared = prepareImport(raw, { map, clock, playerId: s.playerId, name: s.name, current: s.world.characterRecord(), policy: opts.importPolicy ?? 'full' });
+    const prepared = prepareImport(raw, { map, clock, playerId: s.playerId, name: s.name, current: zone.act(s.player, () => zone.characterRecord()), policy: opts.importPolicy ?? 'full' });
     if (!prepared.ok) return fail(prepared.error);
     const blocked = repos.importBlocked(s.accountId, prepared.hash);
     if (blocked) return fail(blocked === 'account' ? 'This account has already brought a character over.' : 'That save has already been brought over to an account.');
@@ -384,7 +399,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       if (err instanceof StaleWriteError) return dropStale(s, 'import', err);
       throw err;
     }
-    s.world = prepared.world;
+    // The old character leaves the world and the imported one takes its place.
+    zone.removePlayer(s.playerId);
+    s.player = zone.addPlayer({ playerId: s.playerId, save: mergeSave({ character: prepared.record }) });
     s.lastSaved = persisted(s);
     s.events = [];
     log(`${s.name} imported a browser save (${prepared.report.length} changes)`);
@@ -399,7 +416,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
         if (DEVICE_LOCAL.has(msg.cmd.type)) return;
         // Movement by joystick arrives as numbered inputs, not commands.
         if (msg.cmd.type === 'joystick') return;
-        s.world.issueFor(s.playerId, msg.cmd);
+        zone.issueFor(s.playerId, msg.cmd);
         return;
       case 'input':
         if (msg.seq <= s.lastSeq) return;
@@ -414,9 +431,9 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     }
   }
 
-  /** One server tick for one session: apply at most one movement input, then step the world. */
-  function step(s: Session) {
-    const w = s.world;
+  /** Applies at most one movement input for a session this tick. */
+  function applyInput(s: Session) {
+    const w = zone;
     if (s.inputs.length > MAX_INPUT_QUEUE) {
       const dropped = s.inputs.splice(0, s.inputs.length - MAX_INPUT_QUEUE);
       s.ack = dropped[dropped.length - 1].seq;
@@ -431,22 +448,35 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       w.issueFor(s.playerId, { type: 'joystick', dx: 0, dz: 0 });
       s.joyActive = false;
     }
-    w.tick(TICK_SECONDS);
-    for (const e of w.drainEvents()) if (!SERVER_ONLY_EVENTS.has(e.type)) s.events.push(e);
+  }
+
+  /** Sends each event to the players who should see it (docs/MULTIPLAYER.md 3A.5). */
+  function routeTickEvents() {
+    const events = zone.drainEventsWithActors().filter((e) => !SERVER_ONLY_EVENTS.has(e.event.type));
+    if (!events.length) return;
+    const byPlayer = new Map<PlayerId, Session>();
+    for (const s of sessions.values()) if (s.ws) byPlayer.set(s.playerId, s);
+    for (const { event, audience } of routeEvents(zone, events)) {
+      if (audience.kind === 'self') byPlayer.get(audience.player)?.events.push(event);
+      else
+        for (const s of byPlayer.values()) {
+          if (audience.kind === 'zone' || (Math.abs(s.player.x - audience.x) <= INTEREST_RADIUS && Math.abs(s.player.z - audience.z) <= INTEREST_RADIUS)) s.events.push(event);
+        }
+    }
   }
 
   function snapshot(s: Session) {
-    const character = s.world.characterRecord();
+    const character = zone.act(s.player, () => zone.characterRecord());
     const json = JSON.stringify(character);
     const changed = json !== s.lastCharacter;
     if (changed) s.lastCharacter = json;
-    send(s.ws, { t: 'state', state: captureState(s.world, tick, s.ack), events: s.events, ...(changed ? { character } : {}) });
+    send(s.ws, { t: 'state', state: stateFor(s), events: s.events, ...(changed ? { character } : {}) });
     s.events = [];
   }
 
-  // Fixed 30 Hz simulation; snapshots at SNAPSHOT_HZ. Signed-in characters keep playing through a
-  // short grace period after a disconnect (no escaping a fight by pulling the plug), then are saved
-  // and unloaded. Guests (development only) are paused instead.
+  // Fixed 30 Hz simulation of the shared world; snapshots at SNAPSHOT_HZ. Characters stay in the
+  // world through a short grace period after a disconnect (no escaping a fight by pulling the
+  // plug), then are saved (guests: discarded) and taken out.
   let last = performance.now();
   let acc = 0;
   let sinceSave = 0;
@@ -461,17 +491,19 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
       tick++;
       for (const s of [...sessions.values()]) {
         if (!s.ws) {
-          if (s.accountId === null) continue;
           if (s.disconnectedAt !== null && clock() - s.disconnectedAt > graceMs) {
-            unload(s, 'grace');
-            log(`${s.name} logged out after the grace period`);
-            continue;
+            if (s.accountId === null) remove(s);
+            else unload(s, 'grace');
+            log(`${s.name} left the world after the grace period`);
           }
+          continue;
         }
-        if (s.ws) s.tokens = Math.min(MESSAGE_RATE, s.tokens + MESSAGE_RATE * TICK_SECONDS);
-        step(s);
-        if (s.ws && tick % every === 0) snapshot(s);
+        s.tokens = Math.min(MESSAGE_RATE, s.tokens + MESSAGE_RATE * TICK_SECONDS);
+        applyInput(s);
       }
+      zone.tick(TICK_SECONDS);
+      routeTickEvents();
+      if (tick % every === 0) for (const s of sessions.values()) if (s.ws) snapshot(s);
     }
     sinceSave += elapsed * 1000;
     if (sinceSave >= saveIntervalMs) {
@@ -488,6 +520,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   return {
     port,
     sessions,
+    zone,
     repos,
     saveAll,
     close: ({ save: doSave = true } = {}) =>

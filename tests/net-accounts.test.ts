@@ -8,7 +8,7 @@ import { Repos, StaleWriteError } from '../server/repo';
 import { startServer, type RunningServer } from '../server/server';
 import { NetClient } from '../src/net/client';
 import type { Auth } from '../src/net/protocol';
-import { GameWorld } from '../src/sim/world';
+import { GameWorld, type Player } from '../src/sim/world';
 import { isBlocked } from '../src/sim/worldmap';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -49,7 +49,8 @@ async function pump(c: NetClient, ms: number) {
   }
 }
 const tempDb = () => join(mkdtempSync(join(tmpdir(), 'bw-')), 'test.sqlite');
-const owned = (w: GameWorld) => JSON.stringify([w.player.inventory.toJSON(), w.player.bank.toJSON(), w.player.equipment.toJSON(), w.player.skills.xp]);
+const ownedP = (p: Player) => JSON.stringify([p.inventory.toJSON(), p.bank.toJSON(), p.equipment.toJSON(), p.skills.xp]);
+const owned = (w: GameWorld) => ownedP(w.player);
 
 describe('3A.3 passwords, tokens and sign-in limits', () => {
   it('scrypt hashes are salted, never contain the password, and verify', async () => {
@@ -131,17 +132,17 @@ describe('3A.3 accounts and persistence over the network', () => {
     expect(c.session).toMatch(/^[A-Za-z0-9_-]{40,}$/);
     // Play a little (the harness stands the server-side player beside a tree).
     const s = [...first.s.sessions.values()][0];
-    const w = s.world;
+    const w = first.s.zone;
     (w as unknown as { rng: () => number }).rng = () => 0.3;
     const tree = w.nodes.find((n) => n.def.id === 'tree' && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => !isBlocked(w.map, n.x + a, n.z + b)))!;
     const [a, b] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([a, b]) => !isBlocked(w.map, tree.x + a, tree.z + b))!;
-    w.player.x = w.player.prevX = tree.x + a;
-    w.player.z = w.player.prevZ = tree.z + b;
+    s.player.x = s.player.prevX = tree.x + a;
+    s.player.z = s.player.prevZ = tree.z + b;
     c.issue({ type: 'interact', target: tree.id });
     await pump(c, 3500);
-    expect(w.player.inventory.count('logs')).toBeGreaterThan(0);
-    const before = owned(w);
-    const at = { x: w.player.x, z: w.player.z };
+    expect(s.player.inventory.count('logs')).toBeGreaterThan(0);
+    const before = ownedP(s.player);
+    const at = { x: s.player.x, z: s.player.z };
     expect(owned(world)).toBe(before);
     await first.s.close();
     running.splice(running.indexOf(first.s), 1);
@@ -162,9 +163,9 @@ describe('3A.3 accounts and persistence over the network', () => {
     const first = await serve(db);
     const { c } = await client(first.url, { kind: 'register', username: 'Elara', password: 'brightwater2' });
     const s = [...first.s.sessions.values()][0];
-    s.world.player.inventory.add('oak_logs', 5);
+    s.player.inventory.add('oak_logs', 5);
     first.s.saveAll();
-    s.world.player.inventory.add('oak_logs', 3);
+    s.player.inventory.add('oak_logs', 3);
     await first.s.close({ save: false });
     running.splice(running.indexOf(first.s), 1);
     const second = await serve(db);
@@ -178,16 +179,16 @@ describe('3A.3 accounts and persistence over the network', () => {
     const b = await serve(db, { instance: 'server-b' });
     const onA = await client(a.url, { kind: 'register', username: 'Torin', password: 'brightwater3' });
     const sa = [...a.s.sessions.values()][0];
-    sa.world.player.inventory.add('iron_bar', 4);
+    sa.player.inventory.add('iron_bar', 4);
     a.s.saveAll();
     // The same account signs in on server B, which takes the lease.
     const onB = await client(b.url, { kind: 'login', username: 'Torin', password: 'brightwater3' });
     expect(onB.world.player.inventory.count('iron_bar')).toBe(4);
     const sb = [...b.s.sessions.values()][0];
-    sb.world.player.inventory.remove('iron_bar', 4);
+    sb.player.inventory.remove('iron_bar', 4);
     b.s.saveAll();
     // Server A still has its old copy with the bars. Its next save is refused and the copy dropped.
-    sa.world.player.inventory.add('iron_bar', 10);
+    sa.player.inventory.add('iron_bar', 10);
     a.s.saveAll();
     expect(a.s.sessions.size).toBe(0);
     await pump(onA.c, 200);
@@ -200,13 +201,13 @@ describe('3A.3 accounts and persistence over the network', () => {
   it('signing in again on the same server takes over the same world (nothing reloaded or duplicated)', async () => {
     const { s, url } = await serve(':memory:');
     const one = await client(url, { kind: 'register', username: 'Lyra', password: 'brightwater4' });
-    const world = [...s.sessions.values()][0].world;
-    world.player.inventory.add('steel_bar', 2);
+    const world = [...s.sessions.values()][0].player;
+    world.inventory.add('steel_bar', 2);
     const two = await client(url, { kind: 'login', username: 'Lyra', password: 'brightwater4' });
     await pump(one.c, 200);
     expect(one.c.errorCode).toBe('replaced');
     expect(s.sessions.size).toBe(1);
-    expect([...s.sessions.values()][0].world).toBe(world);
+    expect([...s.sessions.values()][0].player).toBe(world);
     expect(two.world.player.inventory.count('steel_bar')).toBe(2);
   }, 15_000);
 
@@ -220,7 +221,7 @@ describe('3A.3 accounts and persistence over the network', () => {
     expect(c.status).toBe('ready');
     expect([...s.sessions.values()][0]).toBe(sess);
     // Now go away for good: after the grace period the character is saved and unloaded.
-    sess.world.player.inventory.add('bread', 1);
+    sess.player.inventory.add('bread', 1);
     c.close();
     await sleep(1500);
     expect(s.sessions.size).toBe(0);

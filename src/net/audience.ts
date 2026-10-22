@@ -1,12 +1,13 @@
 import type { GameEvent, GameWorld, PlayerId } from '../sim/world';
 
 /**
- * Who should receive each simulation event (docs/MULTIPLAYER.md, 3A.1). The local game shows every
- * event to its one player; a server uses this to route events:
+ * Who should receive each simulation event (docs/MULTIPLAYER.md 3A.1 and 3A.5). The local game shows
+ * every event to its one player; a server uses this to route events:
  *
- * - `self`: only the acting player (their messages, bag, bank, dialogue, interfaces, personal house
- *   and allotments).
- * - `nearby`: players who can see where it happened (attacks, damage, deaths, gathering, effects).
+ * - `self`: only the player whose turn produced it (their messages, bag, bank, dialogue,
+ *   interfaces, personal house and allotments, and effects that don't say whose they are).
+ * - `nearby`: players who can see where it happened. These events name the entities involved,
+ *   so other players' screens can show them on the right character or creature.
  * - `zone`: everyone in the zone (shared world changes such as a node running out or a fire lit).
  *
  * The table is exhaustive over `GameEvent`, so a new event type must be classified to compile.
@@ -20,16 +21,17 @@ export const EVENT_AUDIENCE: Record<GameEvent['type'], AudienceKind> = {
   death: 'nearby',
   respawn: 'nearby',
   gather: 'nearby',
-  heal: 'nearby',
-  pickpocket: 'nearby',
-  stunned: 'nearby',
-  bury: 'nearby',
-  quench: 'nearby',
-  obstacle: 'nearby',
-  equipment: 'nearby',
   nodeDepleted: 'zone',
   nodeRespawned: 'zone',
   fireLit: 'zone',
+  // Visible effects that don't name whose they are: only their player (others see snapshots).
+  heal: 'self',
+  pickpocket: 'self',
+  stunned: 'self',
+  bury: 'self',
+  quench: 'self',
+  obstacle: 'self',
+  equipment: 'self',
   xp: 'self',
   levelUp: 'self',
   loot: 'self',
@@ -80,31 +82,28 @@ function anchorOf(e: GameEvent): number | null {
       return e.source;
     case 'death':
     case 'respawn':
-    case 'heal':
       return e.id;
     case 'gather':
       return e.node;
-    case 'pickpocket':
-      return e.npc;
-    case 'obstacle':
-      return e.obstacle;
     default:
       return null;
   }
 }
 
 /**
- * Gives each event its audience. `actor` is the player whose command or update produced the events
- * (in a one-player world, that player). Nearby events are placed at their entity, or at the actor.
+ * Gives each event its audience. Each event comes with the player whose turn produced it (from
+ * `drainEventsWithActors`); a plain list is treated as the local player's. Nearby events are placed
+ * at the entity they name, or at that player.
  */
-export function routeEvents(world: GameWorld, events: GameEvent[], actor: PlayerId = world.player.id): RoutedEvent[] {
-  return events.map((event) => {
+export function routeEvents(world: GameWorld, events: GameEvent[] | { event: GameEvent; actor: PlayerId }[]): RoutedEvent[] {
+  return events.map((x) => {
+    const { event, actor } = 'event' in x ? x : { event: x, actor: world.player.id };
     const kind = EVENT_AUDIENCE[event.type];
     if (kind === 'self') return { event, audience: { kind, player: actor } };
     if (kind === 'zone') return { event, audience: { kind } };
-    if (event.type === 'quench') return { event, audience: { kind, x: event.x, z: event.z } };
     const id = anchorOf(event);
-    const at = id === world.player.id || id === null ? world.player : world.get(id);
-    return { event, audience: { kind, x: at?.x ?? world.player.x, z: at?.z ?? world.player.z } };
+    const actorPlayer = world.playerById(actor) ?? world.player;
+    const at = (id !== null ? world.playerById(id) ?? world.get(id) : null) ?? actorPlayer;
+    return { event, audience: { kind, x: at.x, z: at.z } };
   });
 }

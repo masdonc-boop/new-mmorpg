@@ -3,7 +3,7 @@ import { startServer, type RunningServer, type Session } from '../server/server'
 import { NetClient } from '../src/net/client';
 import { PROTOCOL_VERSION, contentVersion, parseClientMessage } from '../src/net/protocol';
 import { generateWorld, isBlocked } from '../src/sim/worldmap';
-import type { GameWorld } from '../src/sim/world';
+import type { GameWorld, Player } from '../src/sim/world';
 
 let server: RunningServer;
 let url = '';
@@ -36,12 +36,12 @@ async function join(name: string, latencyMs = 0) {
 }
 /** Test harness only: stand the server-side player next to something. */
 function standBeside(s: Session, x: number, z: number) {
-  const w = s.world;
+  const w = server.zone;
   const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([a, b]) => ({ x: x + a, z: z + b })).find((p) => !isBlocked(w.map, p.x, p.z))!;
-  w.player.x = w.player.prevX = spot.x;
-  w.player.z = w.player.prevZ = spot.z;
+  s.player.x = s.player.prevX = spot.x;
+  s.player.z = s.player.prevZ = spot.z;
 }
-const sameBag = (a: GameWorld, b: GameWorld) => expect(JSON.stringify(a.player.inventory.toJSON())).toBe(JSON.stringify(b.player.inventory.toJSON()));
+const sameBag = (a: GameWorld, b: Player) => expect(JSON.stringify(a.player.inventory.toJSON())).toBe(JSON.stringify(b.inventory.toJSON()));
 
 /** A raw socket for misbehaving-client tests. */
 function raw(): Promise<{ ws: WebSocket; got: string[]; closed: Promise<void> }> {
@@ -80,50 +80,50 @@ describe('3A.2 authoritative solo play over the network', () => {
     expect(c.playerId).toBe(s.playerId);
     expect(s.playerId).toBeGreaterThanOrEqual(1_000_000);
     expect(world.player.id).toBe(s.playerId);
-    sameBag(world, s.world);
+    sameBag(world, s.player);
     expect(world.player.name).toBe('Wren');
     c.close();
   }, 10_000);
 
   it('plays through commands: chop a tree, bank the logs, fletch shafts; the replica follows', async () => {
     const { c, world, s } = await join('Ash');
-    const w = s.world;
+    const w = server.zone;
     (w as unknown as { rng: () => number }).rng = () => 0.3;
     const tree = w.nodes.find((n) => n.def.id === 'tree' && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => !isBlocked(w.map, n.x + a, n.z + b)))!;
     standBeside(s, tree.x, tree.z);
     await pump(c, 300);
     c.issue({ type: 'interact', target: tree.id });
     await pump(c, 4000);
-    expect(w.player.inventory.count('logs')).toBeGreaterThan(0);
-    sameBag(world, w);
-    expect(Math.hypot(world.player.x - w.player.x, world.player.z - w.player.z)).toBeLessThan(0.1);
+    expect(s.player.inventory.count('logs')).toBeGreaterThan(0);
+    sameBag(world, s.player);
+    expect(Math.hypot(world.player.x - s.player.x, world.player.z - s.player.z)).toBeLessThan(0.1);
     // Fletch arrow shafts anywhere (knife on the toolbelt).
     c.issue({ type: 'openAnywhere', kind: 'fletching' });
     c.issue({ type: 'craft', recipe: 'arrow_shafts', count: 1 });
     await pump(c, 2500);
-    expect(w.player.inventory.count('arrow_shafts')).toBe(12);
+    expect(s.player.inventory.count('arrow_shafts')).toBe(12);
     // Bank everything at the banker.
     const banker = w.npcs.find((n) => n.def.service === 'bank')!;
     standBeside(s, banker.x, banker.z);
     await pump(c, 300);
     c.issue({ type: 'interact', target: banker.id });
     await pump(c, 1500);
-    expect(w.player.bankAt).not.toBeNull();
-    expect(world.player.bankAt).toBe(w.player.bankAt);
+    expect(s.player.bankAt).not.toBeNull();
+    expect(world.player.bankAt).toBe(s.player.bankAt);
     c.issue({ type: 'bankDepositAll' });
     await pump(c, 600);
-    expect(w.player.bank.count('arrow_shafts')).toBe(12);
+    expect(s.player.bank.count('arrow_shafts')).toBe(12);
     expect(world.player.bank.count('arrow_shafts')).toBe(12);
-    sameBag(world, w);
+    sameBag(world, s.player);
     c.close();
   }, 20_000);
 
   it('a tampering client cannot change anything except through valid commands', async () => {
     const { c, s } = await join('Moss');
-    const before = JSON.stringify(s.world.characterRecord());
+    const before = JSON.stringify(server.zone.act(s.player, () => server.zone.characterRecord()));
     c.close();
     const { ws, got, closed } = await raw();
-    const content = contentVersion(s.world.map);
+    const content = contentVersion(server.zone.map);
     ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION, content, auth: { kind: 'guest', name: 'Moss' } }));
     await sleep(200);
     for (const m of [
@@ -136,8 +136,8 @@ describe('3A.2 authoritative solo play over the network', () => {
     ]) ws.send(m);
     await sleep(500);
     expect(got.some((g) => g.includes('Invalid message'))).toBe(true);
-    expect(JSON.stringify(s.world.characterRecord())).toBe(before);
-    expect(s.world.player.hp).toBeLessThanOrEqual(s.world.player.maxHp);
+    expect(JSON.stringify(server.zone.act(s.player, () => server.zone.characterRecord()))).toBe(before);
+    expect(s.player.hp).toBeLessThanOrEqual(s.player.maxHp);
     // Keep misbehaving: the server disconnects.
     for (let i = 0; i < 25; i++) ws.send('{"t":"nope"}');
     await closed;
@@ -163,17 +163,17 @@ describe('3A.2 authoritative solo play over the network', () => {
 
   it('the practice market stays on the device; the server ignores it', async () => {
     const { c, world, s } = await join('Pell');
-    const clerk = s.world.npcs.find((n) => n.def.id === 'clerk_pell')!;
+    const clerk = server.zone.npcs.find((n) => n.def.id === 'clerk_pell')!;
     standBeside(s, clerk.x, clerk.z);
     await pump(c, 300);
     c.issue({ type: 'interact', target: clerk.id });
     await pump(c, 1500);
     expect(world.player.exchangeAt).not.toBeNull();
-    const serverOrders = s.world.market.playerOrders().length;
+    const serverOrders = server.zone.market.playerOrders().length;
     c.issue({ type: 'exchange', req: { op: 'place', nonce: world.market.exchange.nextNonce('practice:you'), slot: 0, side: 'buy', item: 'logs', qty: 1, price: 1 } });
     await pump(c, 300);
     expect(world.market.playerOrders().length).toBe(1);
-    expect(s.world.market.playerOrders().length).toBe(serverOrders);
+    expect(server.zone.market.playerOrders().length).toBe(serverOrders);
     c.close();
   }, 10_000);
 
@@ -188,7 +188,7 @@ describe('3A.2 authoritative solo play over the network', () => {
     await pump(c, 1200);
     c.issue({ type: 'joystick', dx: 0, dz: 0 });
     await pump(c, 1200);
-    const sp = s.world.player;
+    const sp = s.player;
     expect(Math.hypot(world.player.x - sp.x, world.player.z - sp.z)).toBeLessThan(0.05);
     expect(sp.x - start.x).toBeGreaterThan(2);
     // Corrections while moving were small (no visible snapping).

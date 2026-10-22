@@ -543,6 +543,11 @@ export class Player implements Mover {
   regionId: string | null = null;
   /** This player's own allotments (everyone tends their own patches at the same plot). */
   patches: FarmPatch[] = [];
+  /**
+   * Network replica only: what another player is doing, as their screen-side copy knows it (the
+   * full action stays on the server). Null for the local player and in local play.
+   */
+  remote: { act: string | null; skill: string | null; combat: number; health: number } | null = null;
 
   constructor(public name: string, public appearance: Appearance, x: number, z: number, id: PlayerId = LOCAL_PLAYER_ID) {
     this.id = id;

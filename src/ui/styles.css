@@ -116,6 +116,13 @@ button {
 .plate-npc .plate-name {
   color: #fff59d;
 }
+/* Other players (network play): friendly blue names and green health. */
+.plate-player .plate-name {
+  color: #bfe3ff;
+}
+.plate-player .plate-fill {
+  background: linear-gradient(#7be07b, #2f9e45);
+}
 .plate-name .lvl {
   color: #ffd84d;
   font-weight: 700;

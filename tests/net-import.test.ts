@@ -6,7 +6,7 @@ import { IMPORT_COIN_CAP, IMPORT_ITEM_CAP, IMPORT_MAX_XP, prepareImport, type Im
 import { startServer, type RunningServer } from '../server/server';
 import { NetClient } from '../src/net/client';
 import { PROTOCOL_VERSION, contentVersion, type Auth } from '../src/net/protocol';
-import { GameWorld, type SaveData } from '../src/sim/world';
+import { GameWorld, type Player, type SaveData } from '../src/sim/world';
 import { generateWorld } from '../src/sim/worldmap';
 
 const FILES = import.meta.glob('./fixtures/saves/*.json', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
@@ -18,7 +18,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Everything a character owns, by item (bag, held, bank, gear, ammo, belt, shrine-held). */
 function owned(w: GameWorld): Record<string, number> {
-  const p = w.player;
+  return ownedP(w.player);
+}
+function ownedP(p: Player): Record<string, number> {
   const out: Record<string, number> = {};
   const add = (item: string, n: number) => (out[item] = (out[item] ?? 0) + n);
   for (const s of p.inventory.slots) if (s) add(s.item, s.qty);
@@ -146,7 +148,7 @@ describe('3A.4 importing over the network', () => {
     expect(world.player.bank.count('coins')).toBe(5000);
     expect(world.player.name).toBe('Rowan');
     const s = [...first.s.sessions.values()][0];
-    expect(owned(s.world)).toEqual(owned(world));
+    expect(ownedP(s.player)).toEqual(owned(world));
     expect(first.s.repos.importReport(s.accountId!)).toEqual(report);
     expect(first.s.repos.auditLog(s.accountId!).some((e) => e.kind === 'import')).toBe(true);
     await first.s.close();
