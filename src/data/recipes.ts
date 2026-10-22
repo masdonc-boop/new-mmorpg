@@ -113,6 +113,9 @@ export const RECIPES: Record<string, RecipeDef> = {
   shortbow: r({ id: 'shortbow', station: 'fletching', skill: 'fletching', level: 4, xp: 7, inputs: [{ item: 'shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'shortbow', qty: 1 }, seconds: 1.2 }),
   riverwood_wand: r({ id: 'riverwood_wand', station: 'fletching', skill: 'fletching', level: 10, xp: 20, inputs: [{ item: 'logs', qty: 1 }, { item: 'dull_spark', qty: 4 }], output: { item: 'riverwood_wand', qty: 1 }, seconds: 1.8, tool: 'knife' }),
   wooden_shield: r({ id: 'wooden_shield', station: 'fletching', skill: 'fletching', level: 7, xp: 15, inputs: [{ item: 'logs', qty: 2 }], output: { item: 'wooden_shield', qty: 1 }, seconds: 1.5, tool: 'knife' }),
+  // Original bows and arrows: the riverwood longbow (seasoned oak, strung in one go) and glimsteel tips.
+  riverwood_longbow: r({ id: 'riverwood_longbow', station: 'fletching', skill: 'fletching', level: 24, xp: 42, inputs: [{ item: 'oak_logs', qty: 2 }, { item: 'bowstring', qty: 1 }], output: { item: 'riverwood_longbow', qty: 1 }, seconds: 2.2, tool: 'knife' }),
+  glimsteel_arrow: r({ id: 'glimsteel_arrow', station: 'fletching', skill: 'fletching', level: 30, xp: 48, inputs: [{ item: 'arrow_shafts', qty: 12 }, { item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_arrow', qty: 12 }, seconds: 1.5 }),
   oak_shortbow_u: r({ id: 'oak_shortbow_u', station: 'fletching', skill: 'fletching', level: 16, xp: 19, inputs: [{ item: 'oak_logs', qty: 1 }], output: { item: 'oak_shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   oak_shortbow: r({ id: 'oak_shortbow', station: 'fletching', skill: 'fletching', level: 16, xp: 19, inputs: [{ item: 'oak_shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'oak_shortbow', qty: 1 }, seconds: 1.2 }),
   // ---- Crafting (needle and thread on leather; chisel on gems; flax at the spinning wheel)
@@ -129,7 +132,9 @@ export const RECIPES: Record<string, RecipeDef> = {
   sealed_jerkin: r({ id: 'sealed_jerkin', station: 'crafting', skill: 'crafting', level: 20, xp: 38, inputs: [{ item: 'leather_body', qty: 1 }, { item: 'slime_gel', qty: 3 }], output: { item: 'sealed_jerkin', qty: 1 }, seconds: 2.2, tool: 'needle' }),
   dull_spark: r({ id: 'dull_spark', station: 'crafting', skill: 'crafting', level: 1, xp: 6, inputs: [{ item: 'spark_quartz', qty: 1 }], output: { item: 'dull_spark', qty: 8 }, seconds: 1.5, tool: 'chisel' }),
   emberglass_wand: r({ id: 'emberglass_wand', station: 'crafting', skill: 'crafting', level: 35, xp: 70, inputs: [{ item: 'emberglass_shard', qty: 2 }, { item: 'oak_logs', qty: 1 }], output: { item: 'emberglass_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
-  cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 20, xp: 50, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
+  // Gems: polish river agate (8) and cut ironcrag garnet (18; recipe id kept).
+  polished_agate: r({ id: 'polished_agate', station: 'crafting', skill: 'crafting', level: 8, xp: 22, inputs: [{ item: 'river_agate', qty: 1 }], output: { item: 'polished_agate', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
+  cut_sapphire: r({ id: 'cut_sapphire', station: 'crafting', skill: 'crafting', level: 18, xp: 46, inputs: [{ item: 'sapphire', qty: 1 }], output: { item: 'cut_sapphire', qty: 1 }, seconds: 1.8, tool: 'chisel' }),
   // ---- Cooking
   // Brightfin (recipe id kept for saves and offers in progress).
   shrimps: r({ id: 'shrimps', station: 'range', skill: 'cooking', level: 1, xp: 28, inputs: [{ item: 'raw_shrimps', qty: 1 }], output: { item: 'shrimps', qty: 1 }, seconds: 1.8, fail: { chance: 0.32, stopLevel: 16, output: 'burnt_fish' } }),
@@ -159,7 +164,7 @@ export const USE_COMBOS: { a: ItemId; b: ItemId[]; opens: AnywhereKind }[] = [
   { a: 'bowstring', b: ['shortbow_u', 'oak_shortbow_u'], opens: 'fletching' },
   { a: 'arrow_shafts', b: ['bronze_bar'], opens: 'fletching' },
   { a: 'needle', b: ['leather', 'wolf_fang', 'leather_body'], opens: 'crafting' },
-  { a: 'chisel', b: ['sapphire', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },
+  { a: 'chisel', b: ['sapphire', 'river_agate', 'spark_quartz', 'emberglass_shard'], opens: 'crafting' },
 ];
 
 export function useCombo(x: ItemId, y: ItemId): AnywhereKind | null {

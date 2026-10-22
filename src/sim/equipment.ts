@@ -58,6 +58,8 @@ export class Equipment {
       if (!it) continue;
       const e = itemDef(it).equip;
       armour += e?.armour ?? 0;
+      // Arrows only help bows.
+      if (s === 'ammo' && style !== 'ranged') continue;
       if (s !== 'weapon') {
         extraAccuracy += e?.accuracy ?? 0;
         extraPower += e?.power ?? 0;

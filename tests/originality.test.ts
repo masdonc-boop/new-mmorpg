@@ -7,9 +7,11 @@ import { xpForLevel } from '../src/data/skills';
 import { RESOURCES } from '../src/data/resources';
 import { RECIPES } from '../src/data/recipes';
 import { CROPS, SEEDS_PER_PATCH } from '../src/data/farming';
+import { PLAYER_SPEED } from '../src/sim/world';
+import { reclaimFee } from '../src/sim/death';
 
 /** RuneScape-specific names that must not appear in item names (grows with each originality batch). */
-const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i, /potato/i, /onion/i, /cabbage/i, /\bcowl\b/i, /\bchaps\b/i, /vambraces/i, /crude wooden/i];
+const BANNED_ITEM_WORDS = [/platebody/i, /platelegs/i, /\bbig bones\b/i, /\brunes?\b/i, /mithril/i, /adamant/i, /\bdragon\b/i, /shrimp/i, /anchov/i, /potato/i, /onion/i, /cabbage/i, /\bcowl\b/i, /\bchaps\b/i, /vambraces/i, /crude wooden/i, /sapphire/i];
 
 describe('Originality guard', () => {
   it('no item uses a banned RuneScape-specific name', () => {
@@ -387,5 +389,74 @@ describe('Batch 6: wolfhide, furniture and thieving', () => {
     for (let t = 0; t < 30 * 2; t++) w.tick();
     expect(p.inventory.count('raw_shrimps')).toBe(1);
     expect(p.skills.xp.thieving).toBeGreaterThan(xpForLevel(14));
+  });
+});
+
+describe('Batch 7b: gems, shrine wisps, Exchange limits, Agility and bows', () => {
+  const tick = (w: GameWorld, seconds: number) => {
+    for (let t = 0; t < seconds * 30; t++) w.tick();
+  };
+
+  it('sapphires carry over as ironcrag garnets; river agate turns up in fishing nets', () => {
+    const w = new GameWorld();
+    w.player.bank.add('sapphire', 2);
+    w.player.bank.add('cut_sapphire', 1);
+    const p = new GameWorld({ save: JSON.parse(JSON.stringify(w.save())) as SaveData }).player;
+    expect([p.bank.count('sapphire'), p.bank.count('cut_sapphire')]).toEqual([2, 1]);
+    expect([ITEMS.sapphire.name, ITEMS.cut_sapphire.name]).toEqual(['Uncut ironcrag garnet', 'Ironcrag garnet']);
+    expect(RESOURCES.net_spot.rareDrop).toEqual({ item: 'river_agate', chance: 0.012 });
+    expect(RECIPES.polished_agate).toMatchObject({ level: 8, tool: 'chisel', output: { item: 'polished_agate' } });
+  });
+
+  it('a faded wisp’s items wait at the shrines and come back for a tenth of their value', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.shrineHeld = [{ item: 'iron_sword', qty: 1 }, { item: 'logs', qty: 3 }, { item: 'coins', qty: 40 }];
+    const cost = reclaimFee(ITEMS.iron_sword.value) + 3 * reclaimFee(ITEMS.logs.value);
+    expect(w.reclaimCost()).toBe(cost + 40);
+    w.issue({ type: 'reclaimHeld' });
+    expect(p.shrineHeld.length).toBe(3);
+    const altar = w.map.checkpoints[0];
+    p.x = p.prevX = altar.x + 1;
+    p.z = p.prevZ = altar.z;
+    p.inventory.remove('coins', p.inventory.count('coins'));
+    p.inventory.add('coins', cost);
+    w.issue({ type: 'reclaimHeld' });
+    expect(p.shrineHeld).toEqual([]);
+    expect(p.inventory.count('iron_sword')).toBe(1);
+    expect(p.inventory.count('logs')).toBe(3);
+    // The coins the wisp carried come back free; the offering was paid from the bag.
+    expect(p.inventory.count('coins')).toBe(40);
+  });
+
+  it('Agility makes you a little faster (none at level 1, 8% at most)', () => {
+    const w = new GameWorld();
+    expect(w.playerSpeed()).toBe(PLAYER_SPEED);
+    w.player.skills.addXp('agility', xpForLevel(21));
+    expect(w.playerSpeed()).toBeCloseTo(PLAYER_SPEED * 1.04);
+    w.player.skills.addXp('agility', xpForLevel(80));
+    expect(w.playerSpeed()).toBeCloseTo(PLAYER_SPEED * 1.08);
+  });
+
+  it('glimsteel-tipped arrows fire from the ammo slot and help only bows; the longbow is fletched from oak', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    p.skills.addXp('ranged', xpForLevel(25));
+    p.equipment.slots.ammo = 'glimsteel_arrow';
+    p.equipment.ammoQty = 10;
+    p.style = 'ranged';
+    expect(w.firingAmmo()).toBe('glimsteel_arrow');
+    expect(w.ammoLeft()).toBe(10);
+    expect(p.equipment.bonuses('ranged').extraPower).toBe(5);
+    expect(p.equipment.bonuses('melee').extraPower).toBe(0);
+    p.style = 'melee';
+    expect(w.firingAmmo()).toBeNull();
+    p.skills.addXp('fletching', xpForLevel(24));
+    p.inventory.add('oak_logs', 2);
+    p.inventory.add('bowstring', 1);
+    w.issue({ type: 'openAnywhere', kind: 'fletching' });
+    w.issue({ type: 'craft', recipe: 'riverwood_longbow', count: 1 });
+    tick(w, 3);
+    expect(p.inventory.count('riverwood_longbow')).toBe(1);
   });
 });

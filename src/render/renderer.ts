@@ -721,20 +721,27 @@ export class GameRenderer {
   private graveGeo: THREE.BufferGeometry | null = null;
   private graveMat = new THREE.MeshLambertMaterial({ color: '#9aa0a6' });
 
+  private wispMat = new THREE.MeshBasicMaterial({ color: '#bff4ff', transparent: true, opacity: 0.85 });
+  private wispCoreMat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
+
+  /** A shrine wisp: a soft glowing orb with a bright core, hovering over a little cairn. */
   private makeGrave(): THREE.Group {
     if (!this.graveGeo) {
-      const slab = new THREE.BoxGeometry(0.5, 0.55, 0.14).translate(0, 0.3, 0);
-      const top = new THREE.CylinderGeometry(0.25, 0.25, 0.14, 16, 1, false, 0, Math.PI).rotateX(Math.PI / 2).rotateZ(Math.PI / 2).translate(0, 0.575, 0);
-      const base = new THREE.BoxGeometry(0.66, 0.08, 0.3).translate(0, 0.04, 0);
-      this.graveGeo = merge([slab.toNonIndexed(), top.toNonIndexed(), base.toNonIndexed()]);
-      slab.dispose();
-      top.dispose();
-      base.dispose();
+      const a = new THREE.DodecahedronGeometry(0.14, 0).translate(0, 0.07, 0);
+      const b = new THREE.DodecahedronGeometry(0.1, 0).translate(0.12, 0.05, 0.05);
+      this.graveGeo = merge([a.toNonIndexed(), b.toNonIndexed()]);
+      a.dispose();
+      b.dispose();
     }
     const g = new THREE.Group();
-    const m = new THREE.Mesh(this.graveGeo, this.graveMat);
-    m.castShadow = true;
-    g.add(m);
+    const cairn = new THREE.Mesh(this.graveGeo, this.graveMat);
+    cairn.castShadow = true;
+    g.add(cairn);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), this.wispMat);
+    orb.add(new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), this.wispCoreMat));
+    orb.position.y = 0.85;
+    orb.name = 'wisp';
+    g.add(orb);
     return g;
   }
 
@@ -828,10 +835,12 @@ export class GameRenderer {
     }
     for (const v of this.graveViews.values()) {
       const g = v.grave;
+      const orb = v.root.getObjectByName('wisp');
+      if (orb) orb.position.y = 0.85 + Math.sin(performance.now() / 600 + g.id) * 0.08;
       const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 14;
-      const a = near ? this.project(g.x, v.root.position.y + 1.0, g.z) : null;
+      const a = near ? this.project(g.x, v.root.position.y + 1.35, g.z) : null;
       const left = Math.ceil(g.secondsLeft);
-      this.overlay.plate(g.id, a, { name: `Your gravestone · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, kind: 'npc', show: near });
+      this.overlay.plate(g.id, a, { name: `Your shrine wisp · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, kind: 'npc', show: near });
     }
     for (const v of this.npcViews) {
       const n = v.npc;

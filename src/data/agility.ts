@@ -27,6 +27,10 @@ export const VILLAGE_COURSE: ObstacleDef[] = [
 ];
 
 export const LAP_BONUS = 30;
+/** Fleet of foot: each Agility level past 1 adds 0.2% walking speed, up to 8%. */
+export function agilitySpeedBonus(level: number): number {
+  return Math.min(0.08, Math.max(0, level - 1) * 0.002);
+}
 /** Crossing speed in tiles per second. */
 export const CROSS_SPEED = 1.6;
 /** Damage taken when slipping off an obstacle. */

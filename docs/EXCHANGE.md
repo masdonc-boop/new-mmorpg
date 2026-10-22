@@ -69,7 +69,7 @@ The engine never accepts client-supplied quantities owned, coin balances, fill a
 - An order's total value can't exceed the 2,147,483,647 coin cap.
 - The item must be tradeable, and the slot must exist and be free.
 - The account must cover the escrow from its free balance.
-- Buy limits apply per item over 4 hours (OSRS-style). Open buy offers count toward the limit.
+- Buy limits apply per item over 3 hours (`BUY_LIMIT_WINDOW_HOURS`). Open buy offers count toward the limit.
 
 **Escrow.** Placing an offer immediately moves its coins (buy: qty × limit) or items (sell: qty) out of the free balance into the order. Escrowed value can't be spent twice.
 
@@ -142,7 +142,7 @@ Nothing is ever created or destroyed by a trade.
 
 | Feature | Practice market (local) | Live (needs backend) |
 |---|---|---|
-| Buy and sell offers, 8 slots, item search, price guide, history | ✅ | Same interface |
+| Buy and sell offers, 6 slots, item search, price guide, history | ✅ | Same interface |
 | Matching by price and time, partial fills, cancel, collect | ✅ engine | Hosted engine |
 | Escrow accounting, audit chain, replay protection | ✅ engine | Plus database transactions |
 | Trading with other real players | ❌ simulated traders only | Required |

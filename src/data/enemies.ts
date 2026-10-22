@@ -77,6 +77,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'big_bones', min: 1, max: 1, chance: 1 },
       { item: 'coins', min: 150, max: 400, chance: 1 },
       { item: 'sapphire', min: 1, max: 2, chance: 0.5 },
+      { item: 'glimsteel_arrow', min: 8, max: 20, chance: 0.3 },
       { item: 'bronze_arrow', min: 30, max: 60, chance: 0.6 },
       { item: 'air_rune', min: 30, max: 60, chance: 0.6 },
     ],

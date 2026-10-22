@@ -1,7 +1,7 @@
 import { isItemId, itemDef, type ItemId } from '../data/items';
 
 /**
- * Brightwater Exchange engine: a central buy/sell order book (OSRS Grand Exchange style).
+ * Brightwater Exchange engine: a central buy/sell order book.
  *
  * Server-authoritative by design. Everything that changes balances goes through `submit()`, which
  * runs one request at a time (a single writer), validates it against the engine's own ledger (never
@@ -19,7 +19,9 @@ export type Asset = ItemId | 'coins';
 /** Largest coin amount anywhere (OSRS-style cash cap); also caps an order's total value. */
 export const MAX_COINS = 2_147_483_647;
 export const MAX_QTY = 1_000_000;
-export const DEFAULT_SLOTS = 8;
+export const DEFAULT_SLOTS = 6;
+/** Buy limits count purchases over this window (Brightwater's market day is split into three-hour watches). */
+export const BUY_LIMIT_WINDOW_HOURS = 3;
 
 export interface Order {
   id: number;
@@ -85,7 +87,7 @@ export type Result =
 export interface ExchangeOptions {
   clock?: () => number;
   slots?: number;
-  /** Max quantity of an item one account may buy per window (OSRS buy limits), or undefined for none. */
+  /** Max quantity of an item one account may buy per window, or undefined for none. */
   buyLimit?: (item: ItemId) => number | undefined;
   buyLimitWindowMs?: number;
   /** How many recent results to remember per account for exact replays. */
@@ -135,7 +137,7 @@ export class Exchange {
   constructor(opts: ExchangeOptions = {}) {
     this.clock = opts.clock ?? (() => Date.now());
     this.slots = opts.slots ?? DEFAULT_SLOTS;
-    this.opts = { buyLimit: opts.buyLimit, buyLimitWindowMs: opts.buyLimitWindowMs ?? 4 * 3600_000, replayMemory: opts.replayMemory ?? 64, logLimit: opts.logLimit ?? 400 };
+    this.opts = { buyLimit: opts.buyLimit, buyLimitWindowMs: opts.buyLimitWindowMs ?? BUY_LIMIT_WINDOW_HOURS * 3600_000, replayMemory: opts.replayMemory ?? 64, logLimit: opts.logLimit ?? 400 };
   }
 
   // ---------------------------------------------------------------- queries
@@ -263,7 +265,7 @@ export class Exchange {
       if (limit !== undefined) {
         const open = [...this.orders.values()].filter((o) => o.account === r.account && o.item === r.item && o.side === 'buy' && o.status === 'active').reduce((a, o) => a + o.qty - o.filled, 0);
         const left = limit - this.boughtRecently(r.account, r.item, now) - open;
-        if (r.qty > left) return { ok: false, error: `Buy limit: you can buy ${Math.max(0, left)} more ${itemDef(r.item).name.toLowerCase()} for now (${limit} every 4 hours).` };
+        if (r.qty > left) return { ok: false, error: `Buy limit: you can buy ${Math.max(0, left)} more ${itemDef(r.item).name.toLowerCase()} for now (${limit} every ${this.opts.buyLimitWindowMs / 3600_000} hours).` };
       }
       if (this.balance(r.account, 'coins') < r.qty * r.price) return { ok: false, error: 'Not enough coins.' };
     } else if (this.balance(r.account, r.item) < r.qty) return { ok: false, error: `You don’t have ${r.qty} ${itemDef(r.item).name.toLowerCase()}.` };

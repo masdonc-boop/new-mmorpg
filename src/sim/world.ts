@@ -17,10 +17,10 @@ import { PRACTICE_ACCOUNT, PracticeMarket } from '../exchange/simulation';
 import type { Result as ExchangeResult, Side } from '../exchange/engine';
 import { BUILD_SECONDS, HOTSPOTS, NAILS, furnitureDef, type HotspotDef } from '../data/construction';
 import { CROPS, MAX_WEEDS, PATCH_LIVES, RAKE_XP, SEEDS_PER_PATCH, WEED_MINUTES, cropForSeed, lifeLossChance, type CropId } from '../data/farming';
-import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef } from '../data/agility';
+import { CROSS_SPEED, LAP_BONUS, SLIP_DAMAGE, VILLAGE_COURSE, slipChance, type ObstacleDef, agilitySpeedBonus } from '../data/agility';
 import { BONES, WARDLEAF_XP, BULWARK_DAMAGE, MENDING_REGEN_SECONDS, REGEN_SECONDS, conflicts, prayerDef, type PrayerId } from '../data/prayers';
 import { FIRE_LIFE, FIRE_LOGS, LIGHT_SECONDS, lightChance } from '../data/firemaking';
-import { GRAVE_SECONDS, KEEP_ON_DEATH, takeLostOnDeath } from './death';
+import { GRAVE_SECONDS, KEEP_ON_DEATH, reclaimFee, takeLostOnDeath } from './death';
 import { Toolbelt, addToBelt, bestTool, removeFromBelt, type ToolChoice } from './toolbelt';
 import { toolLabel, type ToolCategory } from '../data/tools';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
@@ -137,6 +137,8 @@ export type Command =
   | { type: 'chargeSparks' }
   /** Burn carried wardleaf as incense at the shrine or a waystone (Devotion). */
   | { type: 'burnIncense' }
+  /** Reclaim items a faded wisp carried to the shrines (at the shrine or a waystone, for a fee). */
+  | { type: 'reclaimHeld' }
   /** Quench hot glimsteel blooms into bars in running water (stand at the river's edge). */
   | { type: 'quench' }
   /** Gameplay options that are part of the character (saved with it). */
@@ -283,8 +285,8 @@ export class GroundItem {
 }
 
 /**
- * Where a player's at-risk items go when they die (OSRS-style gravestone). Only its owner can loot
- * it, and it crumbles, with whatever is left, after GRAVE_SECONDS of play.
+ * A shrine wisp: where a player's at-risk items wait after they fall. Only its owner can take them
+ * back; after GRAVE_SECONDS of play it fades and carries what is left to the shrines.
  */
 export class Gravestone {
   age = 0;
@@ -456,6 +458,8 @@ export class Player implements Mover {
   autoGather = false;
   /** What happened to the player's items at their latest death (for the death screen). */
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
+  /** Items carried to the shrines by faded wisps, waiting to be reclaimed for a fee. */
+  shrineHeld: ItemStack[] = [];
   craftTimer = 0;
   fireTimer = 0;
   /** Prayer points (max = Prayer level). Fractions never show; they drain a whole point at a time. */
@@ -663,6 +667,8 @@ export interface SaveData {
   options?: { autoGather?: boolean };
   /** Gravestones still standing (optional for older saves). */
   graves?: SavedGrave[];
+  /** Items held at the shrines after a wisp faded (optional for older saves). */
+  shrineHeld?: { item: string; qty: number }[];
   /** One-time grants already received (optional for older saves). */
   grants?: string[];
   /** Toolbelt contents by category (optional for older saves). */
@@ -778,6 +784,12 @@ export class GameWorld {
       }
       this.graves = this.graves.filter((g) => !g.expired);
     }
+    if (s && Array.isArray(s.shrineHeld)) {
+      for (const it of s.shrineHeld) {
+        const qty = Math.floor(Number(it?.qty));
+        if (it && typeof it.item === 'string' && isItemId(it.item) && qty > 0) addTo(this.player.shrineHeld, it.item, qty);
+      }
+    }
   }
 
   /** Tools every character should own once (older saves receive them after the production update). */
@@ -884,6 +896,7 @@ export class GameWorld {
       patches: this.patches.map((f) => ({ weeds: f.weeds, crop: f.crop, plantedAt: f.plantedAt, lives: f.lives, bareSince: f.bareSince })),
       prayerPoints: p.dead ? p.skills.level('prayer') : p.prayerPoints,
       graves: this.graves.filter((g) => !g.expired).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })) })),
+      shrineHeld: this.player.shrineHeld.map((i) => ({ ...i })),
       grants: [...p.grants],
       toolbelt: p.toolbelt.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
@@ -1165,6 +1178,9 @@ export class GameWorld {
       case 'burnIncense':
         this.burnIncense();
         break;
+      case 'reclaimHeld':
+        this.reclaimHeld();
+        break;
       case 'quench':
         this.quench();
         break;
@@ -1313,7 +1329,7 @@ export class GameWorld {
     }
     const joyMag = Math.hypot(p.joy.x, p.joy.z);
     if (joyMag > 0.15) {
-      const speed = PLAYER_SPEED * Math.min(1, 0.35 + joyMag);
+      const speed = this.playerSpeed() * Math.min(1, 0.35 + joyMag);
       this.moveEntity(p, p.joy.x / joyMag, p.joy.z / joyMag, speed * dt);
       p.moving = true;
       p.facing = Math.atan2(p.joy.x, p.joy.z);
@@ -1357,7 +1373,7 @@ export class GameWorld {
   }
 
   private followPath(p: Player, dt: number) {
-    let budget = PLAYER_SPEED * dt;
+    let budget = this.playerSpeed() * dt;
     while (budget > 0 && p.path.length > 0) {
       const wp = p.path[0];
       const d = dist(p.x, p.z, wp.x, wp.z);
@@ -1466,16 +1482,17 @@ export class GameWorld {
     if (!joystickActive) p.facing = Math.atan2(e.x - p.x, e.z - p.z);
     if (p.attackTimer > 0) return;
 
-    if (style.ammo && this.ammoLeft() <= 0) {
-      const name = itemDef(style.ammo).name.toLowerCase();
-      if (style.ammoWorn && p.inventory.has(style.ammo)) this.message(`Equip your ${name} first: bows fire from the ammo slot. Tap them in your bag.`, 'warn');
+    const ammo = this.firingAmmo();
+    if (ammo && this.ammoLeft() <= 0) {
+      const name = itemDef(ammo).name.toLowerCase();
+      if (style.ammoWorn && p.inventory.slots.some((s) => s && itemDef(s.item).equip?.ammoFor === p.style)) this.message(`Equip your ${name} first: bows fire from the ammo slot. Tap them in your bag.`, 'warn');
       else this.message(`You have no ${name} left. Switch style or find more.`, 'warn');
       p.action = null;
       return;
     }
-    if (style.ammo) {
-      if (style.ammoWorn) p.equipment.useAmmo(style.ammo);
-      else p.inventory.remove(style.ammo, 1);
+    if (ammo) {
+      if (style.ammoWorn) p.equipment.useAmmo(ammo);
+      else p.inventory.remove(ammo, 1);
       if (style.ammoWorn && !p.equipment.slots.ammo) this.emit({ type: 'equipment' });
     }
 
@@ -1504,12 +1521,28 @@ export class GameWorld {
     }
   }
 
+  /** Walking speed: Agility makes you a little quicker on your feet (up to 8% faster at level 41). */
+  playerSpeed(): number {
+    return PLAYER_SPEED * (1 + agilitySpeedBonus(this.player.skills.level('agility')));
+  }
+
   /** Shots or casts left for the current style (worn ammo for bows, spark stones in the bag for magic). */
   ammoLeft(): number {
     const p = this.player;
     const style = STYLES[p.style];
-    if (!style.ammo) return Infinity;
-    return style.ammoWorn ? (p.equipment.slots.ammo === style.ammo ? p.equipment.ammoQty : 0) : p.inventory.count(style.ammo);
+    const ammo = this.firingAmmo();
+    if (!ammo) return Infinity;
+    return style.ammoWorn ? (p.equipment.slots.ammo === ammo ? p.equipment.ammoQty : 0) : p.inventory.count(ammo);
+  }
+
+  /** What the current style fires: any worn arrows for bows (bronze or glimsteel), spark stones for wands. */
+  firingAmmo(): ItemId | null {
+    const p = this.player;
+    const style = STYLES[p.style];
+    if (!style.ammo) return null;
+    const worn = p.equipment.slots.ammo;
+    if (style.ammoWorn && worn && itemDef(worn).equip?.ammoFor === p.style) return worn;
+    return style.ammo;
   }
 
   private damageEnemy(e: Enemy, damage: number, hit: boolean, style: CombatStyle) {
@@ -1604,7 +1637,10 @@ export class GameWorld {
     for (const g of this.graves) {
       g.age += dt;
       if (g.expired) {
-        if (g.items.length) this.message('Your gravestone has crumbled away, and the items in it are gone.', 'bad');
+        if (g.items.length) {
+          for (const s of g.items) addTo(this.player.shrineHeld, s.item, s.qty);
+          this.message('Your shrine wisp has faded and carried your things to the shrines. Reclaim them at the shrine or any waystone, for a small offering.', 'warn');
+        }
         this.byId.delete(g.id);
         removed = true;
       }
@@ -1639,11 +1675,11 @@ export class GameWorld {
       return;
     }
     if (g.items.length === 0) {
-      this.message(`You take back all ${moved} item${moved === 1 ? '' : 's'} from your gravestone.`, 'good');
+      this.message(`The wisp hands back all ${moved} item${moved === 1 ? '' : 's'} and drifts away.`, 'good');
       this.byId.delete(g.id);
       this.graves = this.graves.filter((x) => x !== g);
     } else {
-      this.message(`You take back ${moved} item${moved === 1 ? '' : 's'}. ${g.count} still wait in your gravestone: make room and tap it again.`, 'warn');
+      this.message(`You take back ${moved} item${moved === 1 ? '' : 's'}. ${g.count} still wait with your wisp: make room and tap it again.`, 'warn');
       this.emit({ type: 'inventoryFull' });
     }
   }
@@ -2305,7 +2341,8 @@ export class GameWorld {
     // A rare find only happens when there is room for it.
     if (n.def.rareDrop && this.rng() < n.def.rareDrop.chance && p.inventory.add(n.def.rareDrop.item, 1) === 1) {
       this.emit({ type: 'loot', item: n.def.rareDrop.item, qty: 1 });
-      this.message(`You found an ${itemDef(n.def.rareDrop.item).name.toLowerCase()}!`, 'good');
+      const found = itemDef(n.def.rareDrop.item).name.toLowerCase();
+      this.message(`You found ${/^[aeiou]/.test(found) ? 'an' : 'a'} ${found}!`, 'good');
     }
     const full = p.inventory.capacityFor(n.def.item) <= 0;
     if (this.rng() < n.def.depleteChance) {
@@ -2797,6 +2834,57 @@ export class GameWorld {
     this.message(`The ${altar.name}'s light fills the chips: ${n} spark stone${n === 1 ? '' : 's'}.`, 'good');
   }
 
+  /** The coins needed to reclaim everything held at the shrines. */
+  reclaimCost(): number {
+    return this.player.shrineHeld.reduce((a, s) => a + s.qty * reclaimFee(itemDef(s.item).value), 0);
+  }
+
+  /**
+   * Takes back what a faded wisp carried to the shrines: as much as fits and can be paid for, item
+   * by item (a tenth of each item's value, at least a coin). Coins come from the bag.
+   */
+  private reclaimHeld() {
+    const p = this.player;
+    const altar = this.nearAltar();
+    if (!altar) {
+      this.message('Your held things can be reclaimed at the shrine or a waystone.', 'warn');
+      return;
+    }
+    if (!p.shrineHeld.length) {
+      this.message('The shrines hold nothing of yours.');
+      return;
+    }
+    let moved = 0;
+    let paid = 0;
+    for (const s of p.shrineHeld) {
+      if (s.item === 'coins') {
+        const n = p.inventory.add('coins', s.qty);
+        s.qty -= n;
+        moved += n;
+        continue;
+      }
+      const fee = reclaimFee(itemDef(s.item).value);
+      while (s.qty > 0 && p.inventory.count('coins') >= fee) {
+        const sim = p.inventory.clone();
+        sim.remove('coins', fee);
+        if (sim.capacityFor(s.item) <= 0) break;
+        p.inventory.remove('coins', fee);
+        p.inventory.add(s.item, 1);
+        s.qty--;
+        moved++;
+        paid += fee;
+      }
+    }
+    p.shrineHeld = p.shrineHeld.filter((s) => s.qty > 0);
+    if (moved === 0) {
+      this.message(p.inventory.isFull() ? 'Your inventory is full.' : `You need coins in your bag for the offering (${this.reclaimCost()} for everything).`, 'warn');
+      return;
+    }
+    this.emit({ type: 'equipment' });
+    const left = p.shrineHeld.reduce((a, s) => a + s.qty, 0);
+    this.message(`The ${altar.name} returns ${moved} item${moved === 1 ? '' : 's'} for an offering of ${paid} coin${paid === 1 ? '' : 's'}.${left ? ` ${left} still wait here.` : ''}`, left ? 'warn' : 'good');
+  }
+
   /** Wardleaf incense: every carried leaf burns at once, for Devotion xp and a point of devotion each. */
   private burnIncense() {
     const p = this.player;
@@ -3023,7 +3111,7 @@ export class GameWorld {
     this.message(`Oh dear, you have been defeated! You keep your ${keep} most valuable items: ${keptText}.`, 'bad');
     if (grave) {
       const r = regionAt(grave.x, grave.z);
-      this.message(`Your other ${lostCount} item${lostCount === 1 ? ' is' : 's are'} in a gravestone where you fell${r ? ` (${r.name})` : ''}. Reach it within ${GRAVE_SECONDS / 60} minutes to take them back.`, 'warn');
+      this.message(`A shrine wisp guards your other ${lostCount} item${lostCount === 1 ? '' : 's'} where you fell${r ? ` (${r.name})` : ''}. Reach it within ${GRAVE_SECONDS / 60} minutes to take them back; after that they wait at the shrines.`, 'warn');
     }
     for (const e of this.enemies) {
       if (e.target === p.id) {

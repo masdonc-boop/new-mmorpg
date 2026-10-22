@@ -382,7 +382,7 @@ export class Hud {
       else if (n && n.def.skill === 'thieving') text = `🤏 Stealing from the ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
       else if (n) text = n.def.skill === 'fishing' ? `🎣 Fishing${w.isGathering ? '…' : ''}` : `${n.def.skill === 'woodcutting' ? '🪓 Chopping' : '⛏️ Mining'} ${n.def.name.toLowerCase()}${w.isGathering ? '…' : ''}`;
     } else if (a?.type === 'talk' || a?.type === 'station') text = '💬 Walking over…';
-    else if (a?.type === 'grave') text = '🪦 Going to your gravestone…';
+    else if (a?.type === 'grave') text = '✨ Going to your shrine wisp…';
     else if (a?.type === 'firemaking') text = '🔥 Lighting a fire…';
     else if (a?.type === 'pickpocket') text = '🤏 Pickpocketing…';
     else if (a?.type === 'build') text = `🔨 Building ${furnitureDef(a.furniture)?.name.toLowerCase() ?? ''}…`;
@@ -493,7 +493,7 @@ export class Hud {
       const d = p.lastDeath;
       const kept = d?.kept.length ? d.kept.map((k) => `<img src="${itemIcon(k.item)}" alt=""> ${k.qty > 1 ? `${k.qty} × ` : ''}${itemDef(k.item).name}`).join('<br>') : 'Nothing';
       const lost = d?.grave
-        ? `Your other ${d.lost} item${d.lost === 1 ? ' is' : 's are'} in a gravestone where you fell. Reach it within ${GRAVE_SECONDS / 60} minutes of play and tap it to take ${d.lost === 1 ? 'it' : 'them'} back. After that, ${d.lost === 1 ? 'it is' : 'they are'} gone.`
+        ? `A shrine wisp guards your other ${d.lost} item${d.lost === 1 ? '' : 's'} where you fell. Reach it within ${GRAVE_SECONDS / 60} minutes of play and tap it to take ${d.lost === 1 ? 'it' : 'them'} back. After that the wisp carries ${d.lost === 1 ? 'it' : 'them'} to the shrines, where you can reclaim ${d.lost === 1 ? 'it' : 'them'} for a small offering.`
         : 'You carried nothing else, so nothing was lost.';
       this.death.innerHTML = `
         <div class="death-card">
@@ -1137,6 +1137,10 @@ export class Hud {
     } else if (altar && chips > 0) {
       b = { id: -1, text: `✨ ${altar.name} · charge ${chips} spark chip${chips === 1 ? '' : 's'}`, d: 0, cmd: { type: 'chargeSparks' } };
       this.promptCmd = b.cmd!;
+    } else if (altar && p.shrineHeld.length) {
+      const n = p.shrineHeld.reduce((a, s) => a + s.qty, 0);
+      b = { id: -1, text: `✨ ${altar.name} · reclaim ${n} held item${n === 1 ? '' : 's'} (${w.reclaimCost()} coins)`, d: 0, cmd: { type: 'reclaimHeld' } };
+      this.promptCmd = b.cmd!;
     } else if (altar && leaves > 0) {
       b = { id: -1, text: `🌿 ${altar.name} · burn ${leaves} wardleaf as incense`, d: 0, cmd: { type: 'burnIncense' } };
       this.promptCmd = b.cmd!;
@@ -1287,7 +1291,7 @@ export class Hud {
       this.cb.command({ type: 'openAnywhere', kind: partner });
       return true;
     }
-    if (st.item === 'leather' || st.item === 'sapphire') {
+    if (st.item === 'leather' || st.item === 'sapphire' || st.item === 'river_agate') {
       this.addLog(`You need ${st.item === 'leather' ? 'a needle' : 'a chisel'} (in your bag or toolbelt) for that. Tilly sells them.`, 'warn');
       return false;
     }

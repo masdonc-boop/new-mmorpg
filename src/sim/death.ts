@@ -2,10 +2,19 @@ import { EQUIP_SLOTS, itemDef, type EquipSlot } from '../data/items';
 import type { Equipment } from './equipment';
 import { addTo, type Inventory, type ItemStack } from './inventory';
 
-/** OSRS rule: on death you keep your three most valuable items; everything else carried is at risk. */
-export const KEEP_ON_DEATH = 3;
-/** A gravestone holds the rest for this long (simulation time, so it only counts down while playing). */
-export const GRAVE_SECONDS = 15 * 60;
+/** On death you keep your four most valuable items; everything else carried goes to a shrine wisp. */
+export const KEEP_ON_DEATH = 4;
+/**
+ * A shrine wisp guards the rest where you fell for this long (simulation time, so it only counts
+ * down while playing). When it fades it carries what is left to the shrines, where it can be
+ * reclaimed for a fee. (Internally the wisp is still called a grave.)
+ */
+export const GRAVE_SECONDS = 20 * 60;
+
+/** Coins the shrine asks per item reclaimed after a wisp fades: a tenth of its value, at least 1. */
+export function reclaimFee(value: number): number {
+  return Math.max(1, Math.ceil(value * 0.1));
+}
 
 type Holding = { item: ItemStack['item']; qty: number; value: number; inv?: number; eq?: EquipSlot };
 

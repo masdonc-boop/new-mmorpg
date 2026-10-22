@@ -118,7 +118,7 @@ export class PracticeMarket {
   }
 }
 
-/** OSRS-style buy limits per 4 hours: generous for resources, tighter for gear. */
+/** Buy limits per window: generous for resources, tighter for gear. */
 export function buyLimitFor(item: ItemId): number {
   const k = itemDef(item).kind;
   return k === 'weapon' || k === 'armour' || k === 'tool' ? 70 : k === 'food' ? 6000 : 13_000;

@@ -18,7 +18,7 @@ const kill = (w: GameWorld) => (w as unknown as { killPlayer: () => void }).kill
 const slotOf = (inv: Inventory, item: ItemId) => inv.slots.findIndex((s) => s?.item === item);
 const reload = (w: GameWorld) => new GameWorld({ save: JSON.parse(JSON.stringify(w.save())) as SaveData });
 
-/** Every item the player owns anywhere (bag, worn, belt, bank, held, gravestones), by item id. */
+/** Every item the player owns anywhere (bag, worn, belt, bank, held, wisps, shrines), by item id. */
 function owned(w: GameWorld): Record<string, number> {
   const p = w.player;
   const out: Record<string, number> = {};
@@ -29,6 +29,7 @@ function owned(w: GameWorld): Record<string, number> {
   for (const s of p.bank.toJSON()) add(s.item, s.qty);
   for (const s of p.overflow) add(s.item, s.qty);
   for (const g of w.graves) if (!g.expired) for (const s of g.items) add(s.item, s.qty);
+  for (const s of p.shrineHeld) add(s.item, s.qty);
   return out;
 }
 
@@ -136,8 +137,8 @@ describe('Ammo slot', () => {
   });
 });
 
-describe('Death: keep 3, the rest to a gravestone', () => {
-  it('keeps the three most valuable units, splitting stacks, and never touches the toolbelt', () => {
+describe('Death: keep 4, the rest with a shrine wisp', () => {
+  it('keeps the four most valuable units, splitting stacks, and never touches the toolbelt', () => {
     const inv = new Inventory();
     const eq = new Equipment();
     inv.add('iron_platebody'); // 180
@@ -148,11 +149,13 @@ describe('Death: keep 3, the rest to a gravestone', () => {
     eq.ammoQty = 30;
     inv.add('air_rune', 10); // 2 each
     eq.slots.head = 'bronze_helm'; // 20
+    eq.slots.feet = 'leather_boots'; // 14
     const { kept, lost } = takeLostOnDeath(inv, eq);
     expect(kept).toEqual([
       { item: 'iron_platebody', qty: 1 },
       { item: 'iron_sword', qty: 1 },
       { item: 'bronze_helm', qty: 1 },
+      { item: 'leather_boots', qty: 1 },
     ]);
     expect(inv.count('iron_platebody')).toBe(1);
     expect(eq.get('weapon')).toBe('iron_sword');
@@ -169,9 +172,9 @@ describe('Death: keep 3, the rest to a gravestone', () => {
     inv.add('air_rune', 10);
     inv.add('coins', 10);
     const { kept, lost } = takeLostOnDeath(inv, eq);
-    expect(kept).toEqual([{ item: 'air_rune', qty: 3 }]);
-    expect(inv.count('air_rune')).toBe(3);
-    expect(lost).toEqual(expect.arrayContaining([{ item: 'air_rune', qty: 7 }, { item: 'coins', qty: 10 }]));
+    expect(kept).toEqual([{ item: 'air_rune', qty: 4 }]);
+    expect(inv.count('air_rune')).toBe(4);
+    expect(lost).toEqual(expect.arrayContaining([{ item: 'air_rune', qty: 6 }, { item: 'coins', qty: 10 }]));
   });
 
   it('dying moves the rest into a gravestone; nothing is duplicated or lost', () => {
@@ -194,20 +197,20 @@ describe('Death: keep 3, the rest to a gravestone', () => {
     expect(carried).toBe(KEEP_ON_DEATH);
   });
 
-  it('with three items or fewer, nothing is lost and no gravestone appears', () => {
+  it('with four items or fewer, nothing is lost and no wisp appears', () => {
     const w = new GameWorld();
     const p = w.player;
     p.inventory.slots.fill(null);
     p.equipment.clearAmmo();
     p.inventory.add('iron_sword');
-    p.inventory.add('bread', 2);
+    p.inventory.add('bread', 3);
     kill(w);
     expect(w.graves.length).toBe(0);
     expect(p.inventory.count('iron_sword')).toBe(1);
-    expect(p.inventory.count('bread')).toBe(2);
+    expect(p.inventory.count('bread')).toBe(3);
   });
 
-  it('tapping the gravestone takes the items back (what fits), and it disappears once empty', () => {
+  it('tapping the wisp takes the items back (what fits), and it disappears once empty', () => {
     const w = new GameWorld();
     const p = w.player;
     p.inventory.add('logs', 20);
@@ -231,7 +234,7 @@ describe('Death: keep 3, the rest to a gravestone', () => {
     expect(owned(w)).toEqual(before);
   });
 
-  it('a gravestone lasts 15 minutes of play, survives save and load, then crumbles', () => {
+  it('a wisp lasts 20 minutes of play, survives save and load, then carries what is left to the shrines', () => {
     const w = new GameWorld();
     w.player.inventory.add('logs', 6);
     kill(w);
@@ -243,13 +246,18 @@ describe('Death: keep 3, the rest to a gravestone', () => {
     expect(w2.graves.length).toBe(1);
     expect(w2.graves[0].secondsLeft).toBeCloseTo(30, 0);
     expect(w2.graves[0].items).toEqual(items);
+    const before = owned(w2);
     run(w2, 31);
     expect(w2.graves.length).toBe(0);
-    expect(w2.drainEvents().some((e) => e.type === 'message' && e.text.includes('crumbled'))).toBe(true);
-    expect(reload(w2).graves.length).toBe(0);
+    expect(w2.drainEvents().some((e) => e.type === 'message' && e.text.includes('carried your things to the shrines'))).toBe(true);
+    expect(w2.player.shrineHeld).toEqual(items);
+    expect(owned(w2)).toEqual(before);
+    const w3 = reload(w2);
+    expect(w3.graves.length).toBe(0);
+    expect(w3.player.shrineHeld).toEqual(items);
   });
 
-  it('only its owner can use a gravestone', () => {
+  it('only its owner can use a wisp', () => {
     const w = new GameWorld();
     const g = new Gravestone(99999, 0, 0, w.player.id + 1, [{ item: 'logs', qty: 1 } as ItemStack]);
     (w as unknown as { byId: Map<number, unknown> }).byId.set(g.id, g);

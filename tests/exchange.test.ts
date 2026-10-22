@@ -138,17 +138,20 @@ describe('Exchange: partial fills, cancelling and collecting', () => {
     expect(send({ op: 'collect', account: 's', orderId: id })).toMatchObject({ ok: false, error: 'Nothing to collect yet.' });
   });
 
-  it('eight offer slots per account; buy limits per item over 4 hours', () => {
+  it('six offer slots per account; buy limits per item over 3 hours', () => {
     const { t, fund, place } = setup({ buyLimit: (item) => (item === 'iron_sword' ? 2 : undefined) });
     fund('a', 'coins', 100_000);
-    for (let s = 0; s < 8; s++) expect(place('a', 'buy', 'logs', 1, 1, s).ok).toBe(true);
+    for (let s = 0; s < 6; s++) expect(place('a', 'buy', 'logs', 1, 1, s).ok).toBe(true);
+    expect(place('a', 'buy', 'logs', 1, 1, 6)).toMatchObject({ ok: false, error: 'No such offer slot.' });
     const { place: place2, fund: fund2, t: t2 } = setup({ buyLimit: (item) => (item === 'iron_sword' ? 2 : undefined) });
     fund2('a', 'coins', 100_000);
     fund2('s', 'iron_sword', 5);
     place2('s', 'sell', 'iron_sword', 5, 50);
     expect(place2('a', 'buy', 'iron_sword', 2, 50, 0).ok).toBe(true);
     expect(place2('a', 'buy', 'iron_sword', 1, 50, 1)).toMatchObject({ ok: false, error: expect.stringContaining('Buy limit') });
-    t2.now += 4 * 3600_000;
+    t2.now += 2.9 * 3600_000;
+    expect(place2('a', 'buy', 'iron_sword', 1, 50, 1).ok).toBe(false);
+    t2.now += 0.2 * 3600_000;
     expect(place2('a', 'buy', 'iron_sword', 1, 50, 1).ok).toBe(true);
     expect(t.now).toBeGreaterThan(0);
   });

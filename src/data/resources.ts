@@ -27,9 +27,9 @@ export interface ResourceDef {
 export const RESOURCES: Record<ResourceType, ResourceDef> = {
   tree: { id: 'tree', name: 'Tree', skill: 'woodcutting', levelReq: 1, xp: 22, item: 'logs', tool: 'axe', baseChance: 0.55, depleteChance: 0.25, respawnSeconds: 12, actionSeconds: 1.8 },
   oak: { id: 'oak', name: 'Oak tree', skill: 'woodcutting', levelReq: 12, xp: 34, item: 'oak_logs', tool: 'axe', baseChance: 0.4, depleteChance: 0.15, respawnSeconds: 20, actionSeconds: 1.8 },
-  copper_rock: { id: 'copper_rock', name: 'Copper rock', skill: 'mining', levelReq: 1, xp: 16, item: 'copper_ore', tool: 'pickaxe', baseChance: 0.55, depleteChance: 0.5, respawnSeconds: 8, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.01 } },
-  tin_rock: { id: 'tin_rock', name: 'Tin rock', skill: 'mining', levelReq: 1, xp: 16, item: 'tin_ore', tool: 'pickaxe', baseChance: 0.55, depleteChance: 0.5, respawnSeconds: 8, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.01 } },
-  coal_rock: { id: 'coal_rock', name: 'Coal rock', skill: 'mining', levelReq: 24, xp: 42, item: 'coal_ore', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
+  copper_rock: { id: 'copper_rock', name: 'Copper rock', skill: 'mining', levelReq: 1, xp: 16, item: 'copper_ore', tool: 'pickaxe', baseChance: 0.55, depleteChance: 0.5, respawnSeconds: 8, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.008 } },
+  tin_rock: { id: 'tin_rock', name: 'Tin rock', skill: 'mining', levelReq: 1, xp: 16, item: 'tin_ore', tool: 'pickaxe', baseChance: 0.55, depleteChance: 0.5, respawnSeconds: 8, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.008 } },
+  coal_rock: { id: 'coal_rock', name: 'Coal rock', skill: 'mining', levelReq: 24, xp: 42, item: 'coal_ore', tool: 'pickaxe', baseChance: 0.3, depleteChance: 0.6, respawnSeconds: 30, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.015 } },
   // Glimmerite: Brightwater's own metal, from the deepest Ironcrag veins (Mining 40).
   glimmerite_rock: { id: 'glimmerite_rock', name: 'Glimmerite vein', skill: 'mining', levelReq: 40, xp: 65, item: 'glimmerite_ore', tool: 'pickaxe', baseChance: 0.25, depleteChance: 0.7, respawnSeconds: 45, actionSeconds: 1.8 },
   // Duskiron: picked from the slag heaps of the Goblin Encampment (dangerous ground; Mining 55).
@@ -47,8 +47,8 @@ export const RESOURCES: Record<ResourceType, ResourceDef> = {
   // The fishmonger's ice chest by the river: brightfin, and eels for the more practised hand.
   ice_chest: { id: 'ice_chest', name: 'Fishmonger’s ice chest', skill: 'thieving', levelReq: 14, xp: 24, item: 'raw_shrimps', baseChance: 1, depleteChance: 1, respawnSeconds: 5, actionSeconds: 1.2, catches: [{ item: 'raw_anchovies', level: 18, xp: 24, chance: 0.35 }] },
   // Shallows: brightfin from level 1; mudskipper eels from the muddy edges from level 12.
-  net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 12, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, catches: [{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }] },
-  iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 12, xp: 32, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.02 } },
+  net_spot: { id: 'net_spot', name: 'Fishing spot', skill: 'fishing', levelReq: 1, xp: 12, item: 'raw_shrimps', tool: 'small_net', baseChance: 0.5, depleteChance: 0, respawnSeconds: 0, actionSeconds: 2.4, rareDrop: { item: 'river_agate', chance: 0.012 }, catches: [{ item: 'raw_anchovies', level: 12, xp: 36, chance: 0.4 }] },
+  iron_rock: { id: 'iron_rock', name: 'Iron rock', skill: 'mining', levelReq: 12, xp: 32, item: 'iron_ore', tool: 'pickaxe', baseChance: 0.4, depleteChance: 0.6, respawnSeconds: 14, actionSeconds: 1.8, rareDrop: { item: 'sapphire', chance: 0.015 } },
 };
 
 /** Success chance per swing: grows with level and with the tool's tier (iron beats bronze). */

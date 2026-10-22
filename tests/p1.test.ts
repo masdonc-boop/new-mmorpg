@@ -322,12 +322,12 @@ describe('Crafting', () => {
     expect(w.craftBlocker('leather_gloves')).toContain('needle');
   });
 
-  it('cuts sapphires with a chisel from Crafting 20', () => {
+  it('cuts ironcrag garnets with a chisel from Crafting 18', () => {
     const w = new GameWorld();
     const p = w.player;
     p.inventory.add('sapphire');
-    expect(w.craftBlocker('cut_sapphire')).toContain('Crafting level 20');
-    p.skills.addXp('crafting', xpForLevel(20));
+    expect(w.craftBlocker('cut_sapphire')).toContain('Crafting level 18');
+    p.skills.addXp('crafting', xpForLevel(18));
     w.issue({ type: 'craft', recipe: 'cut_sapphire', count: 1 });
     run(w, 2.5);
     expect(p.inventory.count('cut_sapphire')).toBe(1);

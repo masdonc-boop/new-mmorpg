@@ -41,11 +41,11 @@
 | Agility | Village course (5 obstacles, lap bonus); slips on the beam at low level | Many courses, shortcuts, run energy | One course; no shortcuts; no run energy to restore |
 | Farming | 4 allotments: rake, plant 2 seeds, real-time growth (36–48 min), harvest with lives; sunroot, wardleaf (shrine incense), glowcaps, bluebell flax | Same, plus herbs, trees, disease, compost, watering | Disease, compost, watering, other patch types |
 | Construction | House north of the village with 4 spaces (chair, bookcase, table, bed); planks from the sawmill, nails from the anvil; build, remove, rebuild | Instanced house, rooms, many hotspots, estate agent | Rooms, buying the house, more furniture; nails are one per plank |
-| Crafting | Tanner (2 coins a pelt), needle and thread on tanned wolfhide (the wolfhide set, plus a gel-sealed jerkin), fang amulet, chisel on sapphires, flax spun into bowstrings | Same pattern (cowhide, thread used 1 per 5 items) | Pottery, glass, jewellery; thread is used one per item (simplification) |
+| Crafting | Tanner (2 coins a pelt), needle and thread on tanned wolfhide (the wolfhide set, plus a gel-sealed jerkin), fang amulet, chisel on garnets and river agate, flax spun into bowstrings | Same pattern (cowhide, thread used 1 per 5 items) | Pottery, glass, jewellery; thread is used one per item (simplification) |
 | Cooking | Range and fire; burn chance falls with level; food heals | Same | More foods, multi-step food (bread, pies), stop-burn by level per food |
 | Shops | Fixed price, unlimited stock, buy and sell | Stock levels that restock; price changes with stock | Stock and restock, dynamic pricing |
 | Ground items | Drops on the ground, owner-only then public, then despawn | Same structure (shorter timers) | Timers differ (approved, 4.2) |
-| Death | Keep the 3 most valuable items; the rest go to a gravestone for 15 minutes of play (owner only), then are lost. Toolbelt is never at risk | Keep 3; gravestone, then a paid reclaim | No reclaim office; no protect-item prayer or skulls yet |
+| Death | Keep the 4 most valuable items (5 with the Keepsake vow); a shrine wisp guards the rest for 20 minutes of play (owner only), then carries them to the shrines, where they can be reclaimed for a tenth of their value. Toolbelt is never at risk | Keep some; a marker, then a paid reclaim | No PvP rules yet |
 | Quests | 1 quest with item and XP rewards | Many quests; quest points; requirements | More quests, quest points, quest requirements on content |
 | Economy | Coins, shop buy and sell; the Exchange plaza with a full order-book engine running as a clearly labelled **practice market** (simulated traders, practice balances) | Player trading, Grand Exchange | Live player-to-player trading and the real-wealth bridge need the multiplayer backend (see docs/EXCHANGE.md) |
 | Combat | Custom real-time system (section 5) | Tick-based OSRS combat | Intentional exception |
@@ -94,7 +94,7 @@ When an OSRS-style system touches combat (Prayer, special attacks, task-based co
 Each step is a separate development pass with its own tests and an Android check.
 
 **P0: consistency decisions (done)**
-1. **Death rule:** OSRS-style keep-3 with a gravestone (section 8). The owner had no preference, so the recommended option was used.
+1. **Death rule:** keep 4, with a shrine wisp and a paid shrine reclaim (section 8; reworked for originality, `docs/ORIGINALITY.md` M10). The owner had no preference.
 2. **Auto-continue gathering (4.5):** a setting, off by default.
 3. **Ammo slot:** arrows are worn as a stack and bows fire from it; runes stay in the bag, as in OSRS.
 
@@ -148,11 +148,12 @@ Owner decisions so far:
   - **New characters:** start with bronze pickaxe, bronze axe, hammer, knife and small net on the belt.
 - **Banking:** tools move between the bank and the belt through the bag. Take off the belt to bank; withdraw, then tap to add.
 
-## 8. Death and gravestones (implemented)
+## 8. Death and shrine wisps (implemented)
 
-- **What you keep:** your 3 most valuable items by value, counted one unit at a time across the bag and worn gear (ammo included), so a stack can be partly kept. Worn gear wins ties. Kept items stay where they were.
-- **What goes to the gravestone:** everything else you carried. Toolbelt tools are never at risk (a QoL store for tools), and neither are the bank or "held for you" items.
-- **The gravestone:** stands where you fell, shows a countdown, and only its owner can use it. Tap it to take back as much as fits; the rest waits. It lasts 15 minutes of play (the timer is saved and only runs while playing, as in OSRS), then crumbles with whatever is left. Dying again makes a separate gravestone.
-- **No gravestone** appears if you carried 3 items or fewer.
-- **Code:** `src/sim/death.ts` (`takeLostOnDeath`, `KEEP_ON_DEATH`, `GRAVE_SECONDS`); `Gravestone` in `src/sim/world.ts`; saved as `graves`.
-- **Not yet:** a reclaim office for expired graves, Protect Item, and PvP skull rules (they need Prayer and multiplayer).
+- **What you keep:** your 4 most valuable items by value (5 with the Keepsake vow), counted one unit at a time across the bag and worn gear (ammo included), so a stack can be partly kept. Worn gear wins ties. Kept items stay where they were.
+- **What the wisp guards:** everything else you carried. Toolbelt tools are never at risk (a QoL store for tools), and neither are the bank or "held for you" items.
+- **The shrine wisp:** a glowing orb that hovers where you fell, shows a countdown, and only its owner can use it. Tap it to take back as much as fits; the rest waits. It lasts 20 minutes of play (the timer is saved and only runs while playing). Dying again makes a separate wisp.
+- **When a wisp fades** it carries what is left to the shrines. Reclaim it at the shrine or any waystone for an offering of a tenth of each item's value (at least 1 coin each; coins themselves come back free). Nothing is ever destroyed.
+- **No wisp** appears if you carried 4 items or fewer.
+- **Code:** `src/sim/death.ts` (`takeLostOnDeath`, `KEEP_ON_DEATH`, `GRAVE_SECONDS`, `reclaimFee`); `Gravestone` (the wisp) and `reclaimHeld` in `src/sim/world.ts`; saved as `graves` and `shrineHeld`.
+- **Not yet:** PvP rules (they need multiplayer).

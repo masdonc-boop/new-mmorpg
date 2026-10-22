@@ -141,7 +141,7 @@ describe('Devotion and vows (originality batch 3)', () => {
     expect(hits[0].amount).toBe(Math.max(1, Math.round(raw.amount * 0.5)));
   });
 
-  it('Keepsake keeps a fourth item on death; vows end and devotion refills on respawn', () => {
+  it('Keepsake keeps a fifth item on death; vows end and devotion refills on respawn', () => {
     const w = new GameWorld();
     const p = w.player;
     p.skills.addXp('prayer', xpForLevel(25));
@@ -150,10 +150,11 @@ describe('Devotion and vows (originality batch 3)', () => {
     p.inventory.add('iron_sword');
     p.inventory.add('iron_helm');
     p.inventory.add('iron_shield');
+    p.inventory.add('iron_platelegs');
     w.issue({ type: 'togglePrayer', prayer: 'keepsake' });
     (w as unknown as { killPlayer: () => void }).killPlayer();
-    expect(p.lastDeath?.keep).toBe(4);
-    expect(p.lastDeath?.kept.map((k) => k.item).sort()).toEqual(['iron_helm', 'iron_platebody', 'iron_shield', 'iron_sword']);
+    expect(p.lastDeath?.keep).toBe(5);
+    expect(p.lastDeath?.kept.map((k) => k.item).sort()).toEqual(['iron_helm', 'iron_platebody', 'iron_platelegs', 'iron_shield', 'iron_sword']);
     expect(p.prayers.size).toBe(0);
     w.issue({ type: 'respawn', at: 'home' });
     expect(p.prayerPoints).toBe(25);

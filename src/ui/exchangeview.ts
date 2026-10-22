@@ -132,8 +132,11 @@ export class ExchangeView {
   private renderOffers() {
     const orders = this.x.ordersOf(PRACTICE_ACCOUNT);
     const grid = el('div', 'gx-slots gx-list');
-    for (let slot = 0; slot < this.x.slots; slot++) {
+    // Offers placed before the slot count dropped to six stay visible until collected.
+    const shown = Math.max(this.x.slots, ...orders.map((o) => o.slot + 1));
+    for (let slot = 0; slot < shown; slot++) {
       const o = orders.find((x) => x.slot === slot);
+      if (!o && slot >= this.x.slots) continue;
       if (!o) {
         const card = el('div', 'gx-slot empty', `<div class="gx-slot-title">Slot ${slot + 1} · empty</div>`);
         const btns = el('div', 'gx-slot-btns');
