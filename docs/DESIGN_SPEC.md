@@ -1,19 +1,21 @@
 # Brightwater Design Specification: OSRS as the Gameplay Reference
 
 **Status:** permanent design direction, adopted with the toolbelt update.
-**Owner decision:** Brightwater closely follows *Old School RuneScape* (OSRS) for gameplay systems, progression, economy, inventory, banking, skills, equipment, quests and general mechanics.
+**Owner decision:** Brightwater closely follows *Old School RuneScape* (OSRS) for gameplay systems, progression, economy, inventory, banking, skills, equipment and general mechanics.
+
+**Permanent originality requirement (takes precedence):** `docs/ORIGINALITY.md`. OSRS is a reference for *general mechanics only*. Quests, bosses, fish, trees, ores, metals, plants, monsters, equipment, materials and their names, lore and data tables must be Brightwater's own. Real-world species and materials are fine; RuneScape-specific fiction is not.
 
 ## 1. Principles
 
-1. **Mechanics follow OSRS.** When a system exists in OSRS, Brightwater's version should behave the way an OSRS player expects:
-   - 28-slot inventory, non-stacking resources and stacking currency, ammo and runes
+1. **Mechanics follow OSRS; content never does.** When a system exists in OSRS, Brightwater's version should feel the way an OSRS player expects, but its content and numbers are Brightwater's own (see `docs/ORIGINALITY.md`). Systems:
+   - 28-slot inventory, non-stacking resources and stacking currency and ammo
    - levels 1–99 on the classic XP curve, no professions, every skill trainable by every character
    - level-gated gear, tools and recipes
    - banks, shops, quests, and so on
 2. **Generic MMORPG replacements need approval.** Brightwater does not swap OSRS-style mechanics for generic MMO systems without explicit owner approval. Examples of what not to do:
    - talent trees, gear score, auto-loot, quest markers that play the game for you
    - stamina bars on gathering, crafting queues that run offline
-3. **Everything creative is original.** We follow OSRS's *rules*, never its *content*. Code, art, models, icons, names of places, characters, quests, lore and all writing are Brightwater's own. Common fantasy vocabulary such as "bronze sword", "shrimps" or "furnace" is fine. RuneScape's distinctive proper nouns, quest plots, dialogue, music, item art or maps are not used.
+3. **Everything creative is original.** We follow OSRS's *rules*, never its *content*. Code, art, models, icons, names of places, characters, quests, bosses, resources, items, lore and all writing are Brightwater's own, and so are item ladders and level/XP tables. Real-world words such as "bronze sword", "oak" or "furnace" are fine. RuneScape-specific fiction (resources, creatures, gods, kingdoms, questlines, items, dialogue, artwork, music, geography) is never used, and renaming an OSRS thing does not make it original. The current audit and replacement plan is in `docs/ORIGINALITY.md` section 3.
 4. **Approved differences** are limited to four areas:
    - Brightwater's stylized 3D graphics
    - its world map, environments, characters and lore
@@ -26,7 +28,7 @@
 | System | Brightwater today | OSRS reference | Gap |
 |---|---|---|---|
 | XP curve | 1–99, classic exponential table (`data/skills.ts`) | Same curve | None |
-| Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Prayer, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking, Firemaking, Crafting, Thieving, Agility, Farming, Construction (19) | 23 skills | Missing: Herblore, Slayer, Runecraft, Hunter |
+| Skills | Attack, Strength, Defence, Hitpoints, Ranged, Magic, Prayer, Woodcutting, Mining, Fishing, Smithing, Fletching, Cooking, Firemaking, Crafting, Thieving, Agility, Farming, Construction (19) | 23 skills | Not yet: original equivalents planned as Herbalism, Bounty, Arcana and Hunting (no RuneScape-specific skill names; `docs/ORIGINALITY.md` M8) |
 | Inventory | 28 slots; resources one per slot; coins, ammo and runes stack | Same | Noted (inventory item) and drag-to-reorder missing; we use press-and-hold then tap to move |
 | Bank | 200 slots, all items stack, search, categories, up to 9 tabs plus main, placeholders (setting), deposit and withdraw 1/5/X/all | 800 slots (fewer on free worlds), tabs, placeholders, noted withdrawal, deposit worn items | Withdraw-as-note, deposit-equipment button, tab reordering by drag |
 | Equipment | All 11 slots: head, cape, neck, ammo, weapon, shield, body, legs, hands, feet, ring (arrows worn as a stack; amulets add accuracy and power to every style) | Same 11 slots | No rings yet (they need gold and jewellery) |
@@ -43,7 +45,7 @@
 | Cooking | Range and fire; burn chance falls with level; food heals | Same | More foods, multi-step food (bread, pies), stop-burn by level per food |
 | Shops | Fixed price, unlimited stock, buy and sell | Stock levels that restock; price changes with stock | Stock and restock, dynamic pricing |
 | Ground items | Drops on the ground, owner-only then public, then despawn | Same structure (shorter timers) | Timers differ (approved, 4.2) |
-| Death | Keep the 3 most valuable items; the rest go to a gravestone for 15 minutes of play (owner only), then are lost. Toolbelt is never at risk | Keep 3; gravestone, then Death's Office reclaim for a fee | No reclaim office; no protect-item prayer or skulls yet |
+| Death | Keep the 3 most valuable items; the rest go to a gravestone for 15 minutes of play (owner only), then are lost. Toolbelt is never at risk | Keep 3; gravestone, then a paid reclaim | No reclaim office; no protect-item prayer or skulls yet |
 | Quests | 1 quest with item and XP rewards | Many quests; quest points; requirements | More quests, quest points, quest requirements on content |
 | Economy | Coins, shop buy and sell; the Exchange plaza with a full order-book engine running as a clearly labelled **practice market** (simulated traders, practice balances) | Player trading, Grand Exchange | Live player-to-player trading and the real-wealth bridge need the multiplayer backend (see docs/EXCHANGE.md) |
 | Combat | Custom real-time system (section 5) | Tick-based OSRS combat | Intentional exception |
@@ -51,7 +53,7 @@
 
 ## 3. Missing OSRS-style features (not yet scheduled)
 
-- **Skills:** Herblore, Slayer, Runecraft, Hunter.
+- **Skills:** Herbalism, Bounty, Arcana and Hunting (original equivalents; see `docs/ORIGINALITY.md` M8).
 - **Equipment:** rings (jewellery) and equipment stat tables (stab, slash and crush style bonuses, adapted to custom combat).
 - **Banking:** noting, deposit worn items.
 - **Economy:** shop stock and restock, player trading, an exchange.
@@ -85,7 +87,7 @@ The combat system is a deliberate Brightwater feature. OSRS rules apply everywhe
 - **Hitpoints:** ×10 scale (level 10 = 100 HP). Food values are scaled to match.
 - **Auto-retaliate:** always on. Gathering and crafting are interrupted when attacked.
 
-When an OSRS feature touches combat (Prayer, special attacks, Slayer and so on), it is adapted to these rules rather than ported literally, with owner approval.
+When an OSRS-style system touches combat (Prayer, special attacks, task-based combat and so on), it is adapted to these rules rather than ported literally, with owner approval.
 
 ## 6. Prioritized roadmap
 

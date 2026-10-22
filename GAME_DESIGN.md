@@ -3,6 +3,8 @@
 Living design document for a mobile-first, stylized 2.5D isometric fantasy MMORPG inspired by the depth and longevity of Old School RuneScape. Phase 1 is a single-player vertical slice; everything below marked **(future)** is a binding long-term decision the architecture must support.
 
 > **Gameplay reference:** Brightwater closely follows Old School RuneScape for its gameplay systems, with original art, world, characters and lore, our custom combat, and individually approved quality-of-life additions (starting with the toolbelt). See [docs/DESIGN_SPEC.md](docs/DESIGN_SPEC.md) for the comparison with OSRS, the approved deviations, the combat exceptions and the roadmap.
+>
+> **Originality (permanent):** OSRS is a reference for general mechanics only. All quests, bosses, resources, items, monsters, names, lore and data tables are Brightwater's own. See [docs/ORIGINALITY.md](docs/ORIGINALITY.md) for the rules, the audit of existing content and the save-safe replacement plan.
 
 ## Long-term pillars (binding decisions)
 

@@ -1,0 +1,109 @@
+# Brightwater Originality Requirement (permanent)
+
+**Status:** permanent owner requirement. It applies to every development phase and takes precedence over "follow OSRS" wherever the two meet.
+
+Brightwater is an original fantasy MMORPG. It is inspired by the gameplay depth and progression of Old School RuneScape (OSRS), but has its own identity.
+
+## 1. Rules
+
+**What OSRS may be used for:** a reference for *general gameplay mechanics*:
+- skills and XP progression
+- the inventory and banking
+- gathering, processing and crafting loops
+- trading and a player-driven economy
+
+**What must be original:**
+1. **Quests:** stories, objectives, characters, dialogue, locations and rewards.
+2. **Major bosses:** names, appearance, lore, combat mechanics, arenas and unique drops.
+3. **Content:** fantasy fish, trees, ores, metals, plants, monsters, equipment and crafting materials. Each needs its own purpose, lore, mechanics and look.
+4. **Real-world species and materials** (oak, willow, salmon, trout, iron, copper, gold, etc.) may be used naturally.
+5. **Never reproduce RuneScape-specific fiction:**
+   - resources, named creatures, gods, kingdoms, questlines and items
+   - dialogue, artwork, music and world geography
+   - named sets or ladders: no mithril, adamant, rune, dragon, or any rune-based magic economy
+6. **Keep Brightwater's own** visual style, map and custom combat system.
+7. **Fit new resources in:** each one belongs logically in gathering → processing → crafting → equipment → quests → the Exchange economy.
+8. **No reskins.** Renaming an OSRS thing is not original. New content needs a distinct purpose, lore, mechanics and visual identity.
+9. **Keep reviewing** existing content (section 3 is the current audit).
+10. **Preserve what works:** working features and player save compatibility when replacing content (section 4).
+
+**Checks for every new piece of content:**
+- Does an OSRS player recognise it as a specific OSRS thing (name, item set, level/XP table, quest, location)? If yes, redesign it.
+- Does it have its own reason to exist in Brightwater's world and economy (lore, a use, a sink)?
+- Are its numbers (levels, XP, rates) tuned for Brightwater rather than copied from an OSRS table?
+
+## 2. How this changes the existing design direction
+
+`docs/DESIGN_SPEC.md` said "mechanics follow OSRS". That now means **systems and feel**, never *content or data tables*:
+
+**Still fine (general mechanics):**
+- 1–99 skills on an exponential curve, 28 slots, stacking rules, the bank
+- tool tiers, resource depletion, burn chances
+- level-gated gear, an order-book exchange, buy limits, gravestones
+
+**Not fine (specific content):**
+- copied item names and sets, copied quest structures, copied boss designs
+- copied level/XP numbers for specific items, OSRS-specific jargon names
+
+## 3. Audit of existing content (2026-10)
+
+**Severity:**
+- **High:** recognisably RuneScape-specific. Replace in the next content pass.
+- **Medium:** mechanic or data copied too literally (exact level/XP tables or item ladders). Re-tune or redesign when that system is next touched.
+- **Low:** acceptable as is.
+
+### High: replace
+
+| # | Existing content | Why it's too close | Recommended replacement |
+|---|---|---|---|
+| H1 | **Prayer names**: Thick Skin, Burst of Strength, Clarity of Thought, Sharp Eye, Mystic Will, Rock Skin, Superhuman Strength, Improved Reflexes, Rapid Heal, Protect Item, Hawk Eye, Mystic Lore, Steel Skin, Ultimate Strength, Incredible Reflexes, Protect from Melee. Also their exact unlock levels and drain values (`src/data/prayers.ts`) | The OSRS prayer book copied name for name and level for level | **"Vows" of the Brightwater shrines.** Shrine spirits tied to the village's lore: Hearth (warding), Ember (strength), Lantern (focus), Wind (ranged), Tide (magic). Each has 3 tiers with Brightwater names (e.g. *Hearthward*, *Emberheart*, *Lanternsight*), plus original utilities in place of the copies: *Keepsake* (keep an extra item), *Mending Song* (faster regeneration), and a guard vow that **reduces** (not blocks) creature damage and costs extra while used. New unlock levels and drain rates. Optionally rename the skill **Devotion** |
+| H2 | **Air runes** as the magic ammo (`air_rune`, the magic style's cost, drops, shop, quest reward) | "Runes" consumed per cast are RuneScape's signature magic system | **Spark stones:** small charged crystals chipped from a new original ore (H6) and charged at the shrine. Wands draw from a *focus charge* that spark stones refill. Gives magic its own gathering → crafting loop |
+| H3 | **Platebody / platelegs** item names (bronze, iron, steel) | RuneScape-specific naming | **Breastplate** and **greaves** (or *cuirass* and *tassets*). Same slots and stats |
+| H4 | **Leather set and levels:** gloves 1, boots 7, cowl 9, vambraces 11, body 14, chaps 18, made from tanned hides (`src/data/recipes.ts`) | The OSRS leather ladder copied piece for piece and level for level | Keep leatherwork, but design an original set from Brightwater materials: **wolfhide** wraps, hood, jerkin and breeches, plus a **slime-gel-sealed** waterproof variant. New levels |
+| H5 | **Big bones** (`big_bones`) | RuneScape item name | **Warlord's bones** (Grukk only), or a size ladder tied to Brightwater monsters (e.g. *wolf bones*, *goblin bones*) with different Prayer XP |
+| H6 | **No original ores or metals** beyond the real ones; the bronze → iron → steel ladder (with coal for steel at Smithing 30) follows OSRS exactly | Fails rule 3 (original metals required), and the next OSRS tier would be mithril | Keep real bronze, iron and steel as the early tiers. Above them, original metals: **Glimmerite** (a pale ore in Ironcrag's deep veins, alloyed with silver into *glimsteel*), **Duskiron** (from the Goblin Encampment's slag heaps, heavy and dark), **Emberglass** (volcanic, for magic foci). Each needs its own processing step (e.g. glimsteel must be quenched at the river) |
+| H7 | **Shrimps → anchovies** with a small fishing net, levels 1 and 15, "burnt fish" | OSRS's first fishing pair, tool and levels | Original river and coastal fish: **brightfin** (shallows, net), **mudskipper eel** (riverbank, trap), **glass trout** (clear pools, rod), **ember carp** (warm springs, a fire-resistant food). Keep "small net" generic as *hand net* |
+| H8 | **Crude wooden chair** and other furniture with OSRS names, levels and XP (`src/data/construction.ts`) | OSRS Construction furniture copied | Brightwater furniture with its own names (e.g. *settler's stool*, *riverwood bench*, *lantern shelf*, *hearth bed*), levels and materials (riverwood planks, gel varnish, spark-stone lamps). Keep the build, remove and rebuild loop |
+| H9 | **Thieving targets and numbers:** man/woman level 1 for 8 XP and 3 coins; farmer 10 for 14.5 XP with potato seeds; guard 40 for 46.8 XP and 30 coins; bakery stall 5 for 16 XP; seed stall 27 for 10 XP | OSRS pickpocket and stall table | Keep the townsfolk (original names), but: new XP and levels; **original targets** (a gambler at the inn, a smuggler at the docks, a goblin quartermaster); original stalls (*Tilly's spice cart*, *fishmonger's ice chest*) with Brightwater loot |
+| H10 | **Farming allotments:** potato, onion and cabbage at levels 1, 5 and 7, with OSRS planting and harvest XP, 3 seeds per patch, "lives" | OSRS allotment table copied | Keep the patch loop, plus **original crops**: *sunroot* (a cooking staple), *bluebell flax* (feeds Crafting), *glowcap mushrooms* (shade beds, a light source), *wardleaf* (shrine incense for the Prayer/Devotion rework). New levels, XP and growth times |
+
+### Medium: re-tune when the system is next touched
+
+| # | Existing content | Issue | Recommendation |
+|---|---|---|---|
+| M1 | Smithing levels, XP and bar counts (bronze dagger 1, steel bar = iron ore + 2 coal at 30, steel item levels 30–48) | Exact OSRS table | Re-tune levels and XP; give each metal a distinct property (bronze is cheap and repairable, iron is heavy, steel is balanced) |
+| M2 | Mining levels (iron 15, coal 30) and the uncut sapphire rare drop | Exact OSRS numbers; sapphire is real but the drop table mirrors OSRS | Re-tune levels. Make gems Brightwater-specific finds (e.g. *river agate*, *ironcrag garnet*) feeding jewellery |
+| M3 | Firemaking XP (logs 40, oak 60) and levels; the tinderbox ladder | Exact OSRS numbers | Re-tune. Add original fire uses (signal beacons, smoke curing fish) |
+| M4 | Crafting: flax → bowstring at Crafting 10 on a spinning wheel; sapphire cutting at 20; tanning 1:1 hide to leather | OSRS loop and numbers | Keep the spinning wheel (real), but use original fibres (bluebell flax, H10) and re-tune |
+| M5 | Fletching: arrow shafts ×15 per log, shortbow (u) at 5, oak shortbow at 20 | OSRS fletching table | Re-tune quantities and levels; add original bows (riverwood longbow, glimsteel-tipped arrows) |
+| M6 | Cooking burn table (shrimps stop burning at 18, anchovies at 34, meat at 20); bread heals 30 | Values mirror OSRS foods | Follows H7. Brightwater foods with their own heal values and effects |
+| M7 | Agility course XP (7.5 per obstacle, lap bonus ≈ 40) | Gnome-course-like numbers | Re-tune; give Agility an original benefit (shortcuts and a stamina system that suits custom combat) |
+| M8 | Roadmap skill names **Runecraft** and **Slayer** (`docs/DESIGN_SPEC.md`) | RuneScape-specific skill names | Replace with original skills that fill the same roles: **Arcana** (crafting spark stones and foci, tied to H2/H6), and **Bounty** or **Hunting Lodge** (task-based combat contracts from Captain Bram). Keep Herblore as **Herbalism** with original herbs |
+| M9 | Exchange buy limits on a 4-hour window; 8 offer slots; "Grand Exchange" in docs | Mechanic is fine, but the exact window, slot count and name are OSRS's | In-game name is already the *Brightwater Exchange*. Re-tune the window and slot count before live trading; keep "Grand Exchange" only as a design reference in internal docs |
+| M10 | Death: keep 3 most valuable items, gravestone for 15 minutes | Mechanic copied closely, including the numbers | Keep the idea (allowed mechanic), but give it Brightwater lore: a *shrine wisp* holds your things, with a duration tuned to Brightwater. Consider a fee paid at the shrine to reclaim expired items |
+
+### Low: acceptable as is
+
+- **Places, NPCs and enemies:** Brightwater, Slime Meadows, Whispering Woods, Ironcrag Hills, the Goblin Encampment and the Exchange Plaza. Elder Maren, Tilly Thimble, Captain Bram, Hilda Ironhand, Wendell Coinsworth, Rook Hidewell, Bertram Ashby, Osric, Maud, Farmer Wren, Clerks Pell and Imogen, Hal Tallow. Meadow Slime and Timber Wolf.
+- **Grukk the Warlord** is an original name. Goblins are generic folklore, but Grukk still needs original lore, mechanics, an arena and unique drops before he counts as a "major boss" (rule 2).
+- **Quest "The Elder's Request":** original story and dialogue. Its rewards include air runes (fix with H2).
+- **Generic real materials and tools:** logs, oak, copper, tin, iron, steel, bronze, coal, leather, flax, wolf pelts, fangs, bread, raw and cooked meat, hammer, knife, needle, chisel, saw, rake, spade, seed dibber, tinderbox, nails, planks.
+- **Systems:** the toolbelt, the bank (tabs, placeholders), the order-book exchange engine, custom combat, the art style and the map.
+
+## 4. Replacing content without breaking saves
+
+1. **Keep internal ids stable where possible** and change only display names and data (e.g. `air_rune` can display as *Spark stone*). Ids never appear to players.
+2. **When an id must change**, add an **alias map** (`old id → new id`) that `Inventory.restore`, `Bank.restore`, the equipment and toolbelt restores and the Exchange restore apply on load. Old saves convert in place, and quantities are kept.
+3. **When a whole item disappears** (e.g. shrimps), convert it to its closest replacement 1:1 (shrimps → brightfin). Never delete it. Anything that can't map goes to "held for you".
+4. **Prayer rework:** prayers aren't saved (only points). Rename freely; points and the Prayer level carry over.
+5. **Furniture:** map built pieces to their replacements (`crude_chair → settler_stool`) in the house restore.
+6. **Grants:** use a one-time grant flag per migration (as `tools-v1` and `ammo-v1` do) so conversions run exactly once, with a message that tells the player what changed.
+7. **Tests:** for every rename, a test that loads an old save and checks quantities are conserved across the inventory, bank, equipment, belt and Exchange.
+
+## 5. Suggested order
+
+1. H2 (spark stones) and H6 (original metals) together: they define magic and the gear ladder.
+2. H1 (vows) once H2 exists, since shrines charge spark stones.
+3. H7 and H10 (fish, crops) with the cooking re-tune (M6).
+4. H3, H4, H5, H8 and H9 (names and tables) as one "originality pass", with the alias map from section 4.
+5. Medium items whenever their system is next worked on.
