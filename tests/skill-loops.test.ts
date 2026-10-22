@@ -301,6 +301,31 @@ describe('Complete loops', () => {
     expect(RECIPES.glass_trout).toMatchObject({ level: 20, fail: { stopLevel: 42 } });
   });
 
+  it('ember carp: warm springs in the Ironcrag Hills, a rod and Fishing 35; never burns; restores devotion', () => {
+    const w = new GameWorld();
+    const p = w.player;
+    const springs = w.nodes.filter((n) => n.def.id === 'warm_spring');
+    expect(springs.length).toBe(2);
+    for (const n of springs) expect(SIDES.some(([a, b]) => !isBlocked(w.map, n.x + a, n.z + b))).toBe(true);
+    setRng(w, 0.01);
+    workNode(w, 'warm_spring');
+    run(w, 4);
+    expect(p.inventory.count('raw_ember_carp')).toBe(0);
+    p.skills.addXp('fishing', xpForLevel(35));
+    workNode(w, 'warm_spring');
+    run(w, 4);
+    expect(p.inventory.count('raw_ember_carp')).toBeGreaterThan(0);
+    expect(RECIPES.ember_carp.fail).toBeUndefined();
+    // Full health, but devotion to restore: it can still be eaten.
+    w.issue({ type: 'moveTo', x: p.x, z: p.z });
+    p.skills.addXp('prayer', xpForLevel(20));
+    p.prayerPoints = 10;
+    p.inventory.add('ember_carp', 1);
+    w.issue({ type: 'useItem', slot: p.inventory.slots.findIndex((x) => x?.item === 'ember_carp') });
+    expect(p.prayerPoints).toBe(14);
+    expect(p.inventory.count('ember_carp')).toBe(0);
+  });
+
   it('older characters are given a rod once', () => {
     const w = new GameWorld();
     delete w.player.toolbelt.slots.fishing_rod;

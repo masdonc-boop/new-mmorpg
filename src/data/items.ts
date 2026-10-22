@@ -99,6 +99,8 @@ export interface ItemDef {
   kind: 'material' | 'tool' | 'food' | 'ammo' | 'currency' | 'trophy' | 'weapon' | 'armour';
   value: number;
   heal?: number;
+  /** Food that also restores devotion points (the Ember spirit's fish). */
+  devotion?: number;
   equip?: EquipDef;
   /** Tools: toolbelt category, tier and use requirement (see data/tools.ts). */
   tool?: ToolInfo;
@@ -248,6 +250,9 @@ export const ITEMS = {
   // Glass trout: so clear you can see the river through it. Rod-caught in the clear pools upriver.
   raw_glass_trout: def({ id: 'raw_glass_trout', name: 'Raw glass trout', examine: 'Nearly see-through, with a faint silver spine. Cook it first.', stackable: false, kind: 'material', value: 16, icon: { shape: 'fish', color: '#cfe8ee', accent: '#ffffff' } }),
   glass_trout: def({ id: 'glass_trout', name: 'Glass trout', examine: 'Flaky, clean and delicate. Heals 30 HP.', stackable: false, kind: 'food', value: 26, heal: 30, icon: { shape: 'fish', color: '#e8d0b0', accent: '#fff6e8' } }),
+  // Ember carp: lives in the hot springs of the Ironcrag Hills. Its scales shrug off flame, so it never burns.
+  raw_ember_carp: def({ id: 'raw_ember_carp', name: 'Raw ember carp', examine: 'Warm to the touch, with scales like banked coals. It cannot burn.', stackable: false, kind: 'material', value: 30, icon: { shape: 'fish', color: '#d8602a', accent: '#ffd27a' } }),
+  ember_carp: def({ id: 'ember_carp', name: 'Ember carp', examine: 'Rich and smoky. Heals 34 HP and rekindles 4 devotion.', stackable: false, kind: 'food', value: 48, heal: 34, devotion: 4, icon: { shape: 'fish', color: '#b8481e', accent: '#ffe0a0' } }),
   // Brightwater's river fish (ids kept from earlier content so saves carry over: docs/ORIGINALITY.md H7).
   raw_shrimps: def({ id: 'raw_shrimps', name: 'Raw brightfin', examine: 'A little river fish whose gold-edged fins flash in the shallows. Cook it first.', stackable: false, kind: 'material', value: 3, icon: { shape: 'fish', color: '#d8dfe6', accent: '#f5c542' } }),
   shrimps: def({ id: 'shrimps', name: 'Brightfin', examine: 'Crisp, golden and sweet. Heals 16 HP.', stackable: false, kind: 'food', value: 6, heal: 16, icon: { shape: 'fish', color: '#e0b060', accent: '#fff2c8' } }),

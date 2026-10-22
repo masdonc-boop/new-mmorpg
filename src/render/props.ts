@@ -916,7 +916,8 @@ export class ResourceView {
     }
     for (const [type, list] of byType) {
       const isTree = type === 'tree' || type === 'oak';
-      if (type === 'net_spot' || type === 'rod_spot') {
+      if (type === 'net_spot' || type === 'rod_spot' || type === 'warm_spring') {
+        if (type === 'warm_spring') this.addSpringPools(list);
         this.addFishingSpots(list);
         continue;
       }
@@ -975,7 +976,7 @@ export class ResourceView {
       const bubbles: THREE.Mesh[] = [];
       for (let i = 0; i < 3; i++) {
         const r = new THREE.Mesh(ringGeo, ringMat.clone());
-        r.position.set(n.x + (i - 1) * 0.12, WATER_Y + 0.03, n.z + ((i * 7) % 3) * 0.08 - 0.08);
+        r.position.set(n.x + (i - 1) * 0.12, this.surfaceY(n) + 0.03, n.z + ((i * 7) % 3) * 0.08 - 0.08);
         r.renderOrder = 5;
         rings.push(r);
         this.group.add(r);
@@ -987,6 +988,28 @@ export class ResourceView {
       }
       this.spots.push({ rings, bubbles, seed: k * 1.7 });
     });
+  }
+
+  /** Water surface for a fishing spot: the river, or the top of a warm spring's pool. */
+  private surfaceY(n: ResourceNode): number {
+    return n.def.id === 'warm_spring' ? groundHeight(this.map, n.x, n.z) + 0.1 : WATER_Y;
+  }
+
+  /** Warm springs: a ring of stones round a pool of milky-blue water. */
+  private addSpringPools(list: ResourceNode[]) {
+    const parts: THREE.BufferGeometry[] = [];
+    for (const n of list) {
+      const y = groundHeight(this.map, n.x, n.z);
+      parts.push(part(Cyl(0.62, 0.62, 0.06, 16), '#7fd0d8', { x: n.x, y: y + 0.08, z: n.z, jitter: 0 }));
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        parts.push(part(blob(0.16, 0, 0.2, n.x * 3 + i), i % 2 ? '#8a8478' : '#a09888', { x: n.x + Math.cos(a) * 0.7, y: y + 0.08, z: n.z + Math.sin(a) * 0.7, sy: 0.7, jitter: 0.05 }));
+      }
+    }
+    if (!parts.length) return;
+    const m = new THREE.Mesh(merge(parts), makeWorldMaterial());
+    m.receiveShadow = true;
+    this.group.add(m);
   }
 
   private animateSpots() {
@@ -1001,7 +1024,7 @@ export class ResourceView {
       sp.bubbles.forEach((b, i) => {
         const k = (t * 0.9 + i * 0.27 + sp.seed) % 1;
         const a = i * 1.9 + sp.seed;
-        b.position.set(c.x + Math.cos(a) * 0.25, WATER_Y + 0.02 + k * 0.18, c.z + Math.sin(a) * 0.25);
+        b.position.set(c.x + Math.cos(a) * 0.25, c.y - 0.01 + k * 0.18, c.z + Math.sin(a) * 0.25);
         b.scale.setScalar(1 - k * 0.6);
       });
     }

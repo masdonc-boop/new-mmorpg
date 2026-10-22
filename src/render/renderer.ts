@@ -705,6 +705,11 @@ export class GameRenderer {
         if (n.def.id !== 'ember_vent' || n.depleted || Math.abs(n.x - p.x) > 20 || Math.abs(n.z - p.z) > 20 || Math.random() > 0.35) continue;
         this.particles.emit({ x: n.x, y: groundHeight(w.map, n.x, n.z) + 0.6, z: n.z, count: 1, color: ['#ff6a2a', '#ffb340', '#ffd27a'], speed: 0.2, up: 1.1, gravity: -0.3, life: 1.1, size: 0.05, spread: 0.25 });
       }
+      // Warm springs steam gently.
+      for (const n of w.nodes) {
+        if (n.def.id !== 'warm_spring' || Math.abs(n.x - p.x) > 20 || Math.abs(n.z - p.z) > 20 || Math.random() > 0.3) continue;
+        this.particles.emit({ x: n.x + (Math.random() - 0.5) * 0.8, y: groundHeight(w.map, n.x, n.z) + 0.2, z: n.z + (Math.random() - 0.5) * 0.8, count: 1, color: ['#f4f4f0', '#dfe8ea'], speed: 0.1, up: 0.6, gravity: -0.15, life: 1.8, size: 0.16, spread: 0.2 });
+      }
     }
     for (const [id, v] of this.fireViews) {
       if (seen.has(id)) continue;

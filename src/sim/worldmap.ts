@@ -518,6 +518,8 @@ export function generateWorld(seed = 1337): WorldMap {
   placeLater('ember_vent', 91, 24, 4, 3.5, 0xe3b7);
   // Spark quartz on the Ironcrag slopes, near the first copper (Mining 5).
   placeLater('spark_quartz_rock', 86, 56, 5, 3, 0x5a4c);
+  // Warm springs high in the eastern Ironcrag Hills (rod fishing for ember carp).
+  placeLater('warm_spring', 96, 68, 2, 4, 0xca4b);
   // A flax patch south-east of the wheat fields (Crafting: spin into bowstrings).
   placeLater('flax', 72, 87, 8, 3, 0xf1a5);
   // The crafting corner beside the smithy: a spinning wheel (the tanner stands just south).

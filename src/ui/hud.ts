@@ -1118,7 +1118,7 @@ export class Hud {
         if (n.def.service === 'exchange') consider(n.id, n.x, n.z, '⚖️ Exchange · buy and sell offers (practice market)', (n.def.reach ?? 1.9) + 1);
         if (n.def.service === 'sawmill') consider(n.id, n.x, n.z, '🪚 Sawmill · turn logs into planks', (n.def.reach ?? 1.9) + 1);
       }
-      for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, nd.def.id === 'rod_spot' ? '🎣 Clear pool · glass trout (rod, Fishing 20)' : '🎣 Fishing spot · net brightfin and eels (needs a hand net)', 2.6);
+      for (const nd of w.nodes) if (nd.def.skill === 'fishing') consider(nd.id, nd.x, nd.z, nd.def.id === 'rod_spot' ? '🎣 Clear pool · glass trout (rod, Fishing 20)' : nd.def.id === 'warm_spring' ? '🎣 Warm spring · ember carp (rod, Fishing 35)' : '🎣 Fishing spot · net brightfin and eels (needs a hand net)', 2.6);
       for (const hs of w.hotspots) consider(hs.id, hs.x, hs.z, `🔨 ${p.furniture[hs.def.id] ? furnitureDef(p.furniture[hs.def.id])!.name : hs.def.name} · ${p.furniture[hs.def.id] ? 'remove' : 'build'}`, 1.6);
       for (const f of w.patches) consider(f.id, f.x, f.z, `🌱 Allotment · ${w.patchState(f).text}`, 2.2);
       for (const o of w.obstacles) {

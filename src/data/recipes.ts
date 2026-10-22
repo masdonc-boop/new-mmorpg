@@ -148,6 +148,8 @@ export const RECIPES: Record<string, RecipeDef> = {
   cooked_meat: r({ id: 'cooked_meat', station: 'range', skill: 'cooking', level: 1, xp: 32, inputs: [{ item: 'raw_meat', qty: 1 }], output: { item: 'cooked_meat', qty: 1 }, seconds: 1.8, fail: { chance: 0.3, stopLevel: 22, output: 'burnt_meat' } }),
   // Roasted sunroot (recipe id kept for saves).
   baked_potato: r({ id: 'baked_potato', station: 'range', skill: 'cooking', level: 5, xp: 24, inputs: [{ item: 'potato', qty: 1 }], output: { item: 'baked_potato', qty: 1 }, seconds: 2, fail: { chance: 0.3, stopLevel: 26, output: 'burnt_potato' } }),
+  // Ember carp: fire-proof scales, so it never burns.
+  ember_carp: r({ id: 'ember_carp', station: 'range', skill: 'cooking', level: 35, xp: 80, inputs: [{ item: 'raw_ember_carp', qty: 1 }], output: { item: 'ember_carp', qty: 1 }, seconds: 2.4 }),
   // Glass trout: delicate, burns easily until you have the knack.
   glass_trout: r({ id: 'glass_trout', station: 'range', skill: 'cooking', level: 20, xp: 58, inputs: [{ item: 'raw_glass_trout', qty: 1 }], output: { item: 'glass_trout', qty: 1 }, seconds: 2, fail: { chance: 0.4, stopLevel: 42, output: 'burnt_fish' } }),
   // Mudskipper eel: smoked slowly over the coals.

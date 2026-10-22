@@ -83,7 +83,7 @@ Every skill shown in the Skills panel can be trained end to end. Tools are real 
 | Magic | air runes | anywhere | Magic style uses one rune per cast (Tilly sells runes, slimes drop them) |
 | Woodcutting | bronze axe | trees everywhere, oaks from level 15 | Logs (one per slot) |
 | Mining | bronze pickaxe | Ironcrag Hills (copper, tin, iron) | Ore (one per slot) |
-| Fishing | hand net; riverwood rod | bubbling spots in the river just west of the village; clear pools upriver by the Whispering Woods | Raw brightfin; mudskipper eels from level 12; glass trout on a rod from level 20; spots never deplete |
+| Fishing | hand net; riverwood rod | bubbling spots in the river just west of the village; clear pools upriver by the Whispering Woods; warm springs in the eastern Ironcrag Hills | Raw brightfin; mudskipper eels from level 12; glass trout on a rod from level 20; ember carp in the Ironcrag warm springs from level 35; spots never deplete |
 | Smithing | hammer (anvil only) | furnace and anvil beside the smithy | Ore → bars (furnace) → weapons and armour (anvil) |
 | Fletching | knife (logs), bowstring (stringing) | anywhere: use a knife on logs | Arrow shafts, unstrung bows → strung bows, wooden shield, arrows (shafts + bronze bar) |
 | Cooking | none | range outside the inn, campfire by the fishing spots | Raw fish or meat → food (can burn at low levels) |

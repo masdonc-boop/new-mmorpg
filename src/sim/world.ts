@@ -2444,13 +2444,15 @@ export class GameWorld {
     }
     if (d.kind === 'food' && d.heal) {
       if (p.eatTimer > 0) return;
-      if (p.hp >= p.maxHp) {
+      const devotionRoom = d.devotion ? p.skills.level('prayer') - p.prayerPoints : 0;
+      if (p.hp >= p.maxHp && devotionRoom <= 0) {
         this.message('You are already at full health.');
         return;
       }
       p.inventory.removeAt(slot, 1);
       const before = p.hp;
       p.hp = Math.min(p.maxHp, p.hp + d.heal);
+      if (d.devotion && devotionRoom > 0) p.prayerPoints += Math.min(d.devotion, devotionRoom);
       p.eatTimer = 1.2;
       p.attackTimer = Math.max(p.attackTimer, 0.6);
       this.emit({ type: 'heal', id: p.id, amount: p.hp - before });
