@@ -181,6 +181,10 @@ button {
   color: #9ecbff;
   font-size: 15px;
 }
+.dmg-block {
+  color: #d8dee6;
+  letter-spacing: 0.02em;
+}
 .heal {
   color: var(--good);
 }
@@ -572,6 +576,74 @@ button {
   flex-direction: column;
   align-items: flex-end;
   gap: 10px;
+}
+.style-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+/* 5B: the training mode chip sits on the combat button's upper left, out of the joystick's way. */
+.train-chip {
+  position: absolute;
+  top: -8px;
+  right: 58px;
+  z-index: 2;
+  min-height: 34px;
+  padding: 4px 10px;
+  border-radius: 17px;
+  border: 2px solid var(--edge);
+  background: rgba(24, 20, 36, 0.92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.4);
+}
+.train-pop {
+  position: absolute;
+  bottom: 96px;
+  right: 0;
+  z-index: 3;
+  width: min(300px, calc(100vw - 32px));
+  padding: 10px;
+  border-radius: 14px;
+  border: 2px solid var(--edge);
+  background: rgba(24, 20, 36, 0.96);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+.train-pop.hidden {
+  display: none;
+}
+.tp-head {
+  font-weight: 900;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--gold);
+}
+.tp-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.tp-row button {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+.tp-row button.on {
+  border-color: var(--gold);
+  background: rgba(245, 197, 66, 0.2);
+}
+.tp-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  opacity: 0.85;
 }
 .style-btn {
   position: relative;
@@ -2103,7 +2175,8 @@ button.danger {
 }
 @media (max-width: 520px) {
   .ctx-prompt {
-    bottom: calc(142px + var(--safe-bottom));
+    /* Clear of the combat button and its training chip (5B). */
+    bottom: calc(186px + var(--safe-bottom));
   }
 }
 @media (max-height: 500px) {

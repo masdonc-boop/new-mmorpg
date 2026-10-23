@@ -254,3 +254,36 @@ describe('5A multiplayer: skills, gear and coins stay server-side', () => {
     expect(b.c.world!.player.inventory.count('coins')).toBe(150_025);
   }, 15_000);
 });
+
+describe('5B multiplayer: training mode and armour are the server’s', () => {
+  it('a training mode picked on the phone directs the server’s xp; forged xp and junk modes change nothing', async () => {
+    const { s: server, url } = await serve(':memory:');
+    const a = await join(server, url, 'Ash');
+    const p = a.s.player;
+    a.c.issue({ type: 'setFocus', focus: 'power' });
+    a.c.issue({ type: 'setFocus', focus: 'everything' } as never);
+    a.c.issue({ type: 'grantXp', skill: 'strength', amount: 5e6 } as never);
+    await pump([a], 300);
+    expect(p.focus).toBe('power');
+    expect(a.c.world!.player.focus).toBe('power');
+    const before = { ...p.skills.xp };
+    // A hit lands on the server: Strength and Hitpoints only, once.
+    const e = server.zone.enemies.find((x) => x.def.id === 'goblin')!;
+    e.hp = 1e6;
+    server.zone.act(p, () => (server.zone as unknown as { damageEnemy: (e: unknown, d: number, hit: boolean, s: string) => void }).damageEnemy(e, 10, true, 'melee'));
+    await pump([a], 200);
+    expect(p.skills.xp.strength - before.strength).toBeCloseTo(12, 6);
+    expect(p.skills.xp.hitpoints - before.hitpoints).toBeCloseTo(4, 6);
+    expect(p.skills.xp.attack).toBe(before.attack);
+    expect(p.skills.xp.defence).toBe(before.defence);
+    // The phone sees the same numbers.
+    expect(a.c.world!.player.skills.xp.strength).toBeCloseTo(p.skills.xp.strength, 6);
+    // Armour by style is computed from the server's copy of the gear.
+    p.skills.addXp('defence', xpForLevel(20));
+    p.inventory.add('steel_platebody', 1);
+    a.c.issue({ type: 'equip', slot: p.inventory.slots.findIndex((x) => x?.item === 'steel_platebody') });
+    await pump([a], 300);
+    expect(p.equipment.armourAgainst().melee).toBeCloseTo(30, 6);
+    expect(p.equipment.armourAgainst().magic).toBeCloseTo(10.5, 6);
+  }, 10_000);
+});

@@ -167,7 +167,12 @@ Tick each item as you go and note anything odd, with the time:
     - Wear a cape, gloves or bracers, boots and an amulet: each should show on your hero, and on your hero as seen from the other phone.
     - Gain a level (for example by chopping a few trees): the banner and the message log should say what the level opens.
     - Open Skills and scroll to the bottom: the combat level line should name the quickest ways to the next combat level.
-13. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
+13. **Combat training and armour** (Phase 5B).
+    - Tap the 🎯 chip on the combat button and pick Attack, Strength, Defence or Balanced. The chip should show your choice. Fight a few creatures and check that only that skill (and Hitpoints) gains xp.
+    - In the bag, press and hold a breastplate, a hide coat and a robe. Each card should show armour against melee, ranged and magic, and how it compares with what you wear.
+    - Wear metal armour and fight goblins: some misses should read "blocked".
+    - Make a pair of sabatons or handguards at the anvil (or hide boots or mireweave gloves with a needle) and wear them. They should show on the hero.
+14. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
 
 ### 5. Afterwards
 

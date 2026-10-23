@@ -173,3 +173,93 @@ Most of the foundation Phase 5A asks for was already in place, so 5A reuses it a
 - **Hands and feet tiers** above wolfhide boots and the hide bracers, and metal gauntlets or boots for melee, were held back to avoid a flood of new items before the progression above is proven on phones.
 - **Per-style armour** (separate defence against melee, ranged and magic).
 - **Melee stances and special attacks.**
+
+## 6. Phase 5B: combat depth and equipment progression
+
+### Audit (after Phase 5A)
+| Area | Already there (reused) | Added in 5B |
+|---|---|---|
+| Melee training | Four training focuses since 4B (shared, Attack, Strength, Defence), saved per character, set with a validated `setFocus` command, applied in the simulation. 5A tests showed forged xp commands are dropped | Shown as **Balanced / Attack / Strength / Defence** and picked from a chip on the combat button (it was buried in Skills); tests for the exact split and for xp never counted twice |
+| Defence | One `armour` figure per piece. Creatures' spells met half of it; blows and arrows met all of it | **Armour against each style**, from what a piece is made of |
+| Hands and feet | Wolfhide wraps and boots (tier 1); hide bracers (20, 30) | Metal handguards and sabatons for all five metals; boarhide and ridgehide boots; mireweave gloves and slippers |
+| Feedback | Floating damage numbers and "miss" | "blocked" when armour turned a hit, and a ⛨ on a hit softened by Hearth's Bulwark |
+
+### Training modes (`combatXp`, unchanged maths)
+Every point of damage the player deals gives 1.2 xp spread over the mode's skills, plus 0.4 Hitpoints xp. That is 1.6 per damage whatever the mode.
+
+| Mode | Melee | Bow or wand |
+|---|---|---|
+| Balanced | 0.4 each to Attack, Strength and Defence | 1.2 to Ranged or Magic |
+| Attack | 1.2 to Attack | 1.2 to Ranged or Magic |
+| Strength | 1.2 to Strength | 1.2 to Ranged or Magic |
+| Defence | 1.2 to Defence | 0.6 to Ranged or Magic, 0.6 to Defence |
+
+- **Where the xp comes from.** It is given only when the server lands a hit (`damageEnemy`), from the damage actually dealt. A mode change applies from the next hit.
+- **The command.** The client sends only `setFocus` with one of the four ids; anything else is refused by `validateCommand`.
+- **Unchanged ids.** The ids are the 4B ones (`shared`, `accuracy`, `power`, `defence`), so saves are untouched.
+
+### Armour against each style (`ARMOUR_VS`, `armourVs`, `Equipment.armourAgainst`)
+A piece's class is read from what it already does: metal costs magic accuracy, hide adds ranged accuracy, cloth adds magic accuracy, and everything else is plain. Its armour against an attack style is its `armour` × the factor:
+
+| Class | vs melee | vs ranged | vs magic | Reasoning |
+|---|---|---|---|---|
+| Metal | 1.0 | 1.1 | 0.35 | Stops blades, turns arrows; spells pass through |
+| Hide | 0.8 | 1.2 | 0.8 | Supple: best against arrows, fair against spells |
+| Cloth | 0.6 | 0.6 | 3.0 | Woven and proofed to turn spells; parts for steel |
+| Plain (wooden shield, capes, jewellery) | 1.0 | 1.0 | 0.5 | Exactly the rule before 5B |
+
+- **How it is used.** A creature's attack rolls against the armour for its own style, in the unchanged `hitChance`.
+- **Magic.** It is still resisted with the average of Defence and Magic.
+- **Overrides.** A piece may override its figures with `defence`, though none does yet.
+- **Exactness.** Sums are kept exact and rounded only for display, so a fresh character, or anyone in plain gear, is hit exactly as often as before.
+- **Early game is unaffected.** Every creature outside the two dungeons fights in melee. The cloth and hide melee factors only touch armour values of 1–8 at those tiers.
+- **Dungeons.** A robed mage now turns the acolytes' and the Shrinekeeper's spells much better than a knight. Plate is a little better against the tower's archers. The 4C balance fights still pass at the advised level.
+
+**Feedback**
+- **"blocked"** shows when a creature's roll would have hit bare skin but missed against your armour. This uses the same roll, so the random sequence is unchanged.
+- **A plain miss** still says "miss".
+- **A hit softened by the Bulwark** shows its damage with a ⛨.
+- **Cost:** all of this is the existing DOM floating text, with no new draw calls.
+
+### Equipment added (14 pieces, existing materials and stations only)
+| Line | Pieces | Made | Wear |
+|---|---|---|---|
+| Metal | Bronze, iron, steel, glimsteel, duskiron **sabatons** (feet) and **handguards** (hands): armour 2, 3, 5, 6, 9; glimsteel handguards +1 accuracy; duskiron −1 accuracy | Anvil, one bar, at the metal's base +6 (sabatons) and +8 (handguards), with the metal's usual xp per bar | Same Defence as the metal's helm (none, 10, 20, 30, 45) |
+| Hide | **Boarhide boots** (armour 4, +2 ranged accuracy), **ridgehide boots** (6, +3) | Needle: Crafting 29 and 41, one hide and thread | Ranged 20 and 30 |
+| Cloth | **Mireweave gloves** (2, +3 magic accuracy, +1 power), **mireweave slippers** (2, +2, +1) | Needle: Crafting 29 and 31, linen, mire oil and thread | Magic 25 |
+
+Each line now has hands and feet above tier 1. The pieces show on the hero through the 5A tint system, and bank, trade and save like any other gear. No existing item, recipe or id changed.
+
+### Android
+- **Training chip.** It sits on the combat button's upper left and shows the mode (for example "🎯 Strength", or "Ranged + Def" for a bow in Defence mode). A tap opens a four-button picker (44 px targets) with a one-line explanation. The picker closes on a choice or a tap elsewhere.
+- **Tap prompt.** On narrow screens it moved up so it never overlaps the chip.
+- **Item card.** Shows armour by style ("armour 30 melee · 33 ranged · 11 magic"). The comparison line gives one figure when all three change alike, otherwise "−14/−9/+5 (melee/ranged/magic)".
+- **Equipment box.** Shows total armour against each style.
+
+### Tests
+**`tests/phase5b.test.ts` (14 tests):**
+- the exact xp split per mode in a real fight, totals of 1.6 per damage, and xp events matching the skill totals (nothing counted twice);
+- a mode switch taking effect deterministically;
+- ranged and magic rules;
+- command validation and saves;
+- class detection for every line, the factor table and the tier-30 triangle;
+- plain gear unchanged;
+- creatures rolling against style armour;
+- "blocked", "warded" and plain-miss outcomes, including an arrow carrying "blocked" to where it lands;
+- the new pieces' recipes, tier ordering and requirements, a forge-to-wear run, saves, and the item card text.
+
+**`tests/net-progression.test.ts`:** a mode set on the phone directs the server's xp, and junk modes and forged xp change nothing. Armour is computed from the server's copy of the gear.
+
+**Performance (dungeon benchmark, software rendering):**
+
+| | Draw calls | Frame rate |
+|---|---|---|
+| Shrinekeeper fight | 136 | 16.0 fps |
+| Watchcaptain fight | 115 | 17.1 fps |
+
+These match the 4D and 5A runs, and geometries stay flat.
+
+### Deferred
+- **Per-item defence overrides** (`defence`): supported but unused, until a piece needs to break its class's rule.
+- **Linen-tier gloves and slippers:** wolfhide covers tier 1.
+- **Melee stances with level boosts, special attacks, and damage reduction from armour** (armour only lowers the chance to be hit, as before).

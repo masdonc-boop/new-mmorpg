@@ -4,7 +4,7 @@ import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } f
 import { QUESTS, requirementList } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
 import { STYLES, maxHit, type CombatStyle } from '../sim/combat';
-import { compareWorn, weaponTiming } from './compare';
+import { armourLine, compareWorn, weaponTiming } from './compare';
 import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type Passage, type WorldMap } from '../sim/worldmap';
 import { DUNGEON_AREAS, dungeonAt, type DungeonId } from '../sim/dungeonmap';
 import type { Dialogue, GameEvent, GameWorld } from '../sim/world';
@@ -75,11 +75,21 @@ const FISHING_LABELS: Partial<Record<ResourceType, string>> = {
 
 /** What each training focus does, under the Skills panel's focus buttons. */
 const FOCUS_HINT: Record<TrainingFocus, string> = {
-  shared: 'Melee xp is shared by Attack, Strength and Defence; bows and wands train Ranged or Magic.',
+  shared: 'Balanced: melee xp is shared by Attack, Strength and Defence; bows and wands train Ranged or Magic.',
   accuracy: 'Melee xp all goes to Attack; bows and wands train Ranged or Magic.',
   power: 'Melee xp all goes to Strength; bows and wands train Ranged or Magic.',
   defence: 'Melee xp all goes to Defence; bows and wands share theirs with Defence.',
 };
+
+/** The training modes as the player sees them (ids kept from 4B so saves and the server are unchanged). */
+const FOCUS_LABELS = [['shared', 'Balanced'], ['accuracy', 'Attack'], ['power', 'Strength'], ['defence', 'Defence']] as const;
+
+/** What the combat button's training chip says for a style and mode (5B). */
+export function trainingChip(style: CombatStyle, focus: TrainingFocus): string {
+  if (style === 'melee') return FOCUS_LABELS.find(([f]) => f === focus)![1];
+  const skill = style === 'ranged' ? 'Ranged' : 'Magic';
+  return focus === 'defence' ? `${skill} + Def` : skill;
+}
 
 /** What a passage's tap hint says (the Hollow, dungeon doors and stairs, the ways back out). */
 function passageHint(w: GameWorld, d: Passage): string {
@@ -107,6 +117,8 @@ export class Hud {
   private targetName!: HTMLDivElement;
   private targetFill!: HTMLDivElement;
   private styleBtn!: HTMLButtonElement;
+  private trainChip!: HTMLButtonElement;
+  private trainPop!: HTMLElement;
   private status!: HTMLDivElement;
   private log!: HTMLDivElement;
   private xpDrops!: HTMLDivElement;
@@ -289,8 +301,39 @@ export class Hud {
     mk('📊', 'Skills', 'skills');
     mk('📜', 'Quests', 'quests');
     mk('🗺️', 'Map', 'map');
-    actions.append(this.styleBtn, menu);
+    // 5B: the training mode, one tap from the combat button (it used to live only in Skills).
+    const wrap = el('div', 'style-wrap');
+    this.trainChip = el('button', 'train-chip');
+    this.trainChip.setAttribute('aria-label', 'Combat training mode');
+    this.trainPop = el('div', 'train-pop hidden');
+    this.trainChip.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      this.renderTrainPop();
+      this.trainPop.classList.toggle('hidden');
+    });
+    document.addEventListener('pointerdown', (ev) => {
+      if (!this.trainPop.contains(ev.target as Node) && ev.target !== this.trainChip) this.trainPop.classList.add('hidden');
+    });
+    wrap.append(this.trainPop, this.trainChip, this.styleBtn);
+    actions.append(wrap, menu);
     this.root.appendChild(actions);
+  }
+
+  /** The training mode picker above the combat button (5B). */
+  private renderTrainPop() {
+    const focus = this.world.player.focus;
+    this.trainPop.innerHTML = `<div class="tp-head">Combat training</div>`;
+    const row = el('div', 'tp-row');
+    for (const [f, label] of FOCUS_LABELS) {
+      const b = el('button', f === focus ? 'on' : '', label);
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        this.cb.command({ type: 'setFocus', focus: f });
+        this.trainPop.classList.add('hidden');
+      });
+      row.appendChild(b);
+    }
+    this.trainPop.append(row, el('div', 'tp-hint', FOCUS_HINT[focus]));
   }
 
   private buildPanels() {
@@ -424,6 +467,11 @@ export class Hud {
     const label = `<span class="si">${STYLE_ICON[p.style]}</span><span class="sl">${st.name}</span>${ammo !== null ? `<span class="ammo">${ammo}</span>` : ''}`;
     if (this.styleBtn.innerHTML !== label) this.styleBtn.innerHTML = label;
     this.styleBtn.dataset.style = p.style;
+    const chip = `🎯 ${trainingChip(p.style, p.focus)}`;
+    if (this.trainChip.textContent !== chip) {
+      this.trainChip.textContent = chip;
+      if (!this.trainPop.classList.contains('hidden')) this.renderTrainPop();
+    }
 
     this.updateStatus();
     this.updateBagBadge();
@@ -1158,7 +1206,7 @@ export class Hud {
         const req = Object.entries(d.equip.req ?? {}).map(([sk, l]) => `<span class="${this.world.player.skills.level(sk as SkillId) >= l ? 'req-ok' : 'req-no'}">${SKILL_INFO[sk as SkillId].name} ${l}</span>`).join(', ');
         const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
         const styled = Object.entries(d.equip.styleBonus ?? {}).flatMap(([st, v]) => [v.accuracy ? `${signed(v.accuracy)} ${st} accuracy` : '', v.power ? `${signed(v.power)} ${st} power` : '']);
-        const stats = [d.equip.accuracy ? `${signed(d.equip.accuracy)} accuracy` : '', d.equip.power ? `${signed(d.equip.power)} power` : '', d.equip.armour ? `${signed(d.equip.armour)} armour` : '', ...styled].filter(Boolean).join(' · ');
+        const stats = [d.equip.accuracy ? `${signed(d.equip.accuracy)} accuracy` : '', d.equip.power ? `${signed(d.equip.power)} power` : '', armourLine(d.equip), ...styled].filter(Boolean).join(' · ');
         const timing = d.equip.slot === 'weapon' && d.equip.style ? weaponTiming(d.equip) : '';
         info.innerHTML += `<div class="ii-stats">${stats}${timing}${d.equip.twoHanded ? ' · two-handed' : ''}${req ? ` · needs ${req}` : ''}</div>`;
         const cmp = compareWorn(this.world.player.equipment, sel.item);
@@ -1538,7 +1586,8 @@ export class Hud {
     const prof = w.player.equipment.attackProfile(w.player.style);
     const lvl = w.player.skills.level(w.player.style === 'melee' ? 'strength' : w.player.style);
     const top = maxHit({ attackLevel: lvl, strengthLevel: lvl, accuracyBonus: b.accuracy, powerBonus: b.power });
-    box.append(row, el('div', 'equip-stats', `${weapon} · accuracy ${b.accuracy} · power ${b.power} · armour ${b.armour}<br>Max hit ${top} · every ${prof.seconds}s · reach ${prof.range} tiles<br><small>Tap worn gear to take it off.</small>`));
+    const av = w.player.equipment.armourAgainst();
+    box.append(row, el('div', 'equip-stats', `${weapon} · accuracy ${b.accuracy} · power ${b.power}<br>Armour ${Math.round(av.melee)} melee · ${Math.round(av.ranged)} ranged · ${Math.round(av.magic)} magic<br>Max hit ${top} · every ${prof.seconds}s · reach ${prof.range} tiles<br><small>Tap worn gear to take it off.</small>`));
     const tools = Object.values(w.player.toolbelt.slots).filter(Boolean) as ItemId[];
     const belt = el('button', 'tb-open', `<span>🧰 Toolbelt</span><span class="tb-icons">${tools.map((t) => `<img src="${itemIcon(t)}" alt="${itemDef(t).name}">`).join('')}</span><span class="tb-count">${tools.length} ›</span>`);
     belt.addEventListener('click', () => this.toggle('toolbelt'));
@@ -1581,7 +1630,7 @@ export class Hud {
     // Combat training focus: where combat xp goes (docs/PROGRESSION.md).
     const focus = this.world.player.focus;
     const seg = el('div', 'seg focus-seg');
-    for (const [f, label] of [['shared', 'Shared'], ['accuracy', 'Attack'], ['power', 'Strength'], ['defence', 'Defence']] as const) {
+    for (const [f, label] of FOCUS_LABELS) {
       const btn = el('button', f === focus ? 'on' : '', label);
       btn.addEventListener('click', () => {
         this.cb.command({ type: 'setFocus', focus: f });

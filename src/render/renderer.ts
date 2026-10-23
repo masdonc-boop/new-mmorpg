@@ -1081,8 +1081,11 @@ export class GameRenderer {
       case 'damage': {
         const isPlayer = e.target === p.id;
         const anchor = () => this.entityAnchor(e.target);
+        // 5B: a hit softened by a vow carries a small shield; a miss your armour turned says so.
         if (e.hit && e.amount > 0) {
-          this.overlay.float(String(e.amount), isPlayer ? 'dmg-taken' : 'dmg-dealt', anchor, 1.0, 45);
+          this.overlay.float(e.outcome === 'warded' ? `${e.amount} ⛨` : String(e.amount), isPlayer ? 'dmg-taken' : 'dmg-dealt', anchor, 1.0, 45);
+        } else if (e.outcome === 'blocked') {
+          this.overlay.float('blocked', 'dmg-miss dmg-block', anchor, 0.9, 35);
         } else {
           this.overlay.float('miss', 'dmg-miss', anchor, 0.9, 35);
         }

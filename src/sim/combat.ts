@@ -65,14 +65,17 @@ export function expectedDps(level: number, accuracy: number, power: number, seco
 export interface HitResult {
   hit: boolean;
   damage: number;
+  /** The accuracy roll (0..1): below the hit chance hits. Lets the caller tell why a miss missed. */
+  roll: number;
 }
 
 export function rollHit(rng: Rng, a: AttackerStats, d: DefenderStats, fixedMax?: number): HitResult {
-  if (rng() > hitChance(a, d)) return { hit: false, damage: 0 };
+  const roll = rng();
+  if (roll > hitChance(a, d)) return { hit: false, damage: 0, roll };
   const m = fixedMax ?? maxHit(a);
   // Bias slightly upward so hits feel meaningful.
   const damage = Math.max(1, Math.round(m * (0.25 + 0.75 * Math.sqrt(rng()))));
-  return { hit: true, damage };
+  return { hit: true, damage, roll };
 }
 
 /**

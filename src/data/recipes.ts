@@ -110,6 +110,17 @@ export const RECIPES: Record<string, RecipeDef> = {
   duskiron_shield: r({ id: 'duskiron_shield', station: 'anvil', skill: 'smithing', level: 63, xp: 140, inputs: [{ item: 'duskiron_bar', qty: 2 }], output: { item: 'duskiron_shield', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   duskiron_platelegs: r({ id: 'duskiron_platelegs', station: 'anvil', skill: 'smithing', level: 67, xp: 140, inputs: [{ item: 'duskiron_bar', qty: 2 }], output: { item: 'duskiron_platelegs', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   duskiron_platebody: r({ id: 'duskiron_platebody', station: 'anvil', skill: 'smithing', level: 72, xp: 210, inputs: [{ item: 'duskiron_bar', qty: 3 }], output: { item: 'duskiron_platebody', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  // Phase 5B: sabatons (+6 on each metal's base) and handguards (+8), one bar each.
+  bronze_sabatons: r({ id: 'bronze_sabatons', station: 'anvil', skill: 'smithing', level: 7, xp: 10, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_sabatons', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  bronze_handguards: r({ id: 'bronze_handguards', station: 'anvil', skill: 'smithing', level: 9, xp: 10, inputs: [{ item: 'bronze_bar', qty: 1 }], output: { item: 'bronze_handguards', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_sabatons: r({ id: 'iron_sabatons', station: 'anvil', skill: 'smithing', level: 19, xp: 22, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_sabatons', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  iron_handguards: r({ id: 'iron_handguards', station: 'anvil', skill: 'smithing', level: 21, xp: 22, inputs: [{ item: 'iron_bar', qty: 1 }], output: { item: 'iron_handguards', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_sabatons: r({ id: 'steel_sabatons', station: 'anvil', skill: 'smithing', level: 33, xp: 34, inputs: [{ item: 'steel_bar', qty: 1 }], output: { item: 'steel_sabatons', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  steel_handguards: r({ id: 'steel_handguards', station: 'anvil', skill: 'smithing', level: 35, xp: 34, inputs: [{ item: 'steel_bar', qty: 1 }], output: { item: 'steel_handguards', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_sabatons: r({ id: 'glimsteel_sabatons', station: 'anvil', skill: 'smithing', level: 48, xp: 50, inputs: [{ item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_sabatons', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  glimsteel_handguards: r({ id: 'glimsteel_handguards', station: 'anvil', skill: 'smithing', level: 50, xp: 50, inputs: [{ item: 'glimsteel_bar', qty: 1 }], output: { item: 'glimsteel_handguards', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_sabatons: r({ id: 'duskiron_sabatons', station: 'anvil', skill: 'smithing', level: 62, xp: 70, inputs: [{ item: 'duskiron_bar', qty: 1 }], output: { item: 'duskiron_sabatons', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
+  duskiron_handguards: r({ id: 'duskiron_handguards', station: 'anvil', skill: 'smithing', level: 64, xp: 70, inputs: [{ item: 'duskiron_bar', qty: 1 }], output: { item: 'duskiron_handguards', qty: 1 }, seconds: 2.4, tool: 'hammer' }),
   // ---- Fletching (knife on logs, anywhere)
   // A rod: a log and a bowstring for line (Fletching 6).
   fishing_rod: r({ id: 'fishing_rod', station: 'fletching', skill: 'fletching', level: 6, xp: 12, inputs: [{ item: 'logs', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'fishing_rod', qty: 1 }, seconds: 1.8, tool: 'knife' }),
@@ -176,6 +187,11 @@ export const RECIPES: Record<string, RecipeDef> = {
   ridgehide_coif: r({ id: 'ridgehide_coif', station: 'crafting', skill: 'crafting', level: 42, xp: 66, inputs: [{ item: 'ridgehide', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'ridgehide_coif', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   ridgehide_chaps: r({ id: 'ridgehide_chaps', station: 'crafting', skill: 'crafting', level: 44, xp: 128, inputs: [{ item: 'ridgehide', qty: 2 }, { item: 'thread', qty: 2 }], output: { item: 'ridgehide_chaps', qty: 1 }, seconds: 1.8, tool: 'needle' }),
   ridgehide_body: r({ id: 'ridgehide_body', station: 'crafting', skill: 'crafting', level: 46, xp: 190, inputs: [{ item: 'ridgehide', qty: 3 }, { item: 'thread', qty: 3 }], output: { item: 'ridgehide_body', qty: 1 }, seconds: 1.8, tool: 'needle' }),
+  // Phase 5B: boots for the hide lines, and gloves and slippers for mireweave.
+  boarhide_boots: r({ id: 'boarhide_boots', station: 'crafting', skill: 'crafting', level: 29, xp: 42, inputs: [{ item: 'boar_leather', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'boarhide_boots', qty: 1 }, seconds: 1.8 }),
+  ridgehide_boots: r({ id: 'ridgehide_boots', station: 'crafting', skill: 'crafting', level: 41, xp: 64, inputs: [{ item: 'ridgehide', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'ridgehide_boots', qty: 1 }, seconds: 1.8 }),
+  mireweave_gloves: r({ id: 'mireweave_gloves', station: 'crafting', skill: 'crafting', level: 29, xp: 40, inputs: [{ item: 'linen', qty: 1 }, { item: 'mire_oil', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'mireweave_gloves', qty: 1 }, seconds: 1.8 }),
+  mireweave_slippers: r({ id: 'mireweave_slippers', station: 'crafting', skill: 'crafting', level: 31, xp: 42, inputs: [{ item: 'linen', qty: 1 }, { item: 'mire_oil', qty: 1 }, { item: 'thread', qty: 1 }], output: { item: 'mireweave_slippers', qty: 1 }, seconds: 1.8 }),
   mirelight_wand: r({ id: 'mirelight_wand', station: 'crafting', skill: 'crafting', level: 38, xp: 90, inputs: [{ item: 'willow_logs', qty: 1 }, { item: 'marsh_pearl', qty: 1 }, { item: 'dull_spark', qty: 8 }], output: { item: 'mirelight_wand', qty: 1 }, seconds: 2.4, tool: 'chisel' }),
   rowan_staff: r({ id: 'rowan_staff', station: 'crafting', skill: 'crafting', level: 45, xp: 120, inputs: [{ item: 'rowan_logs', qty: 2 }, { item: 'silver_bar', qty: 1 }, { item: 'dull_spark', qty: 20 }], output: { item: 'rowan_staff', qty: 1 }, seconds: 2.6, tool: 'chisel' }),
   // ---- Cooking

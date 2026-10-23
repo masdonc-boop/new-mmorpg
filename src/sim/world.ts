@@ -9,7 +9,7 @@ import { QUESTS, missingRequirements, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, XP_TABLE, type SkillId } from '../data/skills';
 import { skillUnlocks } from '../data/unlocks';
-import { STYLES, TRAINING_FOCUSES, combatXp, rollHit, type CombatStyle, type TrainingFocus } from './combat';
+import { STYLES, TRAINING_FOCUSES, combatXp, hitChance, rollHit, type CombatStyle, type TrainingFocus } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
 import { SERVICES, isConvertService } from '../data/tanning';
@@ -194,7 +194,7 @@ export type MessageTone = 'info' | 'good' | 'warn' | 'bad';
 
 /** Simulation → client events. */
 export type GameEvent =
-  | { type: 'damage'; target: number; source: number; amount: number; hit: boolean }
+  | { type: 'damage'; target: number; source: number; amount: number; hit: boolean; /** 5B: armour turned a would-be hit, or a vow softened it. */ outcome?: 'blocked' | 'warded' }
   | { type: 'attack'; source: number; target: number; style: CombatStyle }
   | { type: 'projectile'; source: number; target: number; style: CombatStyle; flight: number }
   | { type: 'death'; id: number }
@@ -725,6 +725,8 @@ interface IncomingHit {
   player: PlayerId;
   damage: number;
   hit: boolean;
+  /** Armour turned it (5B feedback). */
+  blocked: boolean;
 }
 
 interface PendingHit {
@@ -1618,7 +1620,7 @@ export class GameWorld {
       this.incoming.splice(i, 1);
       const e = this.byId.get(h.enemy);
       const q = this.players.get(h.player);
-      if (q && !q.dead && e instanceof Enemy) this.act(q, () => this.landEnemyHit(e, h.damage, h.hit));
+      if (q && !q.dead && e instanceof Enemy) this.act(q, () => this.landEnemyHit(e, h.damage, h.hit, h.blocked));
     }
   }
 
@@ -3721,34 +3723,34 @@ export class GameWorld {
     e.swingAge = 0;
     p.combatTimer = 6;
     this.emit({ type: 'attack', source: e.id, target: p.id, style });
-    // Magic is resisted with Defence and Magic together, and armour counts for half (robes are light,
-    // but a mage knows how to turn a spell; docs/DUNGEONS.md).
+    // Magic is resisted with Defence and Magic together (a mage knows how to turn a spell;
+    // docs/DUNGEONS.md). Armour counts by what it is made of against this style (5B, ARMOUR_VS).
     const magic = style === 'magic';
     const defenceLevel = (magic ? (p.skills.level('defence') + p.skills.level('magic')) / 2 : p.skills.level('defence')) * this.prayerBoost('defence');
-    const r = rollHit(
-      this.rng,
-      { attackLevel: def.attack, strengthLevel: def.strength, accuracyBonus: 0, powerBonus: 0 },
-      { defenceLevel, armour: this.playerBonuses().armour * (magic ? 0.5 : 1) },
-      def.maxHit,
-    );
+    const attacker = { attackLevel: def.attack, strengthLevel: def.strength, accuracyBonus: 0, powerBonus: 0 };
+    const r = rollHit(this.rng, attacker, { defenceLevel, armour: p.equipment.armourAgainst()[style] }, def.maxHit);
+    // A miss that would have landed on bare skin was turned by armour: shown as "blocked" (5B).
+    const blocked = !r.hit && r.roll <= hitChance(attacker, { defenceLevel, armour: 0 });
     if (style === 'melee') {
-      this.landEnemyHit(e, r.damage, r.hit);
+      this.landEnemyHit(e, r.damage, r.hit, blocked);
       return;
     }
     // Arrows and bolts fly: the hit lands when the missile arrives.
     const flight = Math.max(0.15, dist(e.x, e.z, p.x, p.z) / (style === 'magic' ? 10 : 15));
     this.emit({ type: 'projectile', source: e.id, target: p.id, style, flight });
-    this.incoming.push({ at: this.time + flight, enemy: e.id, player: p.id, damage: r.damage, hit: r.hit });
+    this.incoming.push({ at: this.time + flight, enemy: e.id, player: p.id, damage: r.damage, hit: r.hit, blocked });
   }
 
   /** A creature's hit reaching the current player. */
-  private landEnemyHit(e: Enemy, damage: number, hit: boolean) {
+  private landEnemyHit(e: Enemy, damage: number, hit: boolean, blocked = false) {
     const p = this.player;
     // Hearth's Bulwark halves creatures' hits (it softens blows; it never makes you untouchable).
-    if (p.prayers.has('hearth_bulwark') && damage > 0) damage = Math.max(1, Math.round(damage * BULWARK_DAMAGE));
+    const warded = p.prayers.has('hearth_bulwark') && damage > 0;
+    if (warded) damage = Math.max(1, Math.round(damage * BULWARK_DAMAGE));
     const dealt = Math.min(damage, p.hp);
     p.hp -= dealt;
-    this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit });
+    const outcome = blocked ? 'blocked' : warded ? 'warded' : undefined;
+    this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit, ...(outcome ? { outcome } : {}) });
     // Auto-retaliate: idle or gathering players fight back (but never override manual movement or a chosen target).
     const steering = Math.hypot(p.joy.x, p.joy.z) > 0.15 || p.path.length > 0;
     if ((!p.action || p.action.type === 'gather' || p.action.type === 'craft') && !steering && p.hp > 0) p.action = { type: 'attack', target: e.id };

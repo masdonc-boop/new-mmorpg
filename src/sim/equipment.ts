@@ -1,4 +1,4 @@
-import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
+import { EQUIP_SLOTS, armourVs, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import type { SkillId } from '../data/skills';
 import type { Inventory, ItemStack } from './inventory';
 import { STYLES, type CombatStyle } from './combat';
@@ -80,6 +80,18 @@ export class Equipment {
     const e = w ? itemDef(w).equip : undefined;
     const own = !!e && e.style === style;
     return { seconds: (own && e!.speed) || STYLES[style].attackSeconds, range: (own && e!.range) || STYLES[style].range };
+  }
+
+  /** Total armour against each attack style (5B): what a creature's melee, arrows or spells meet. */
+  armourAgainst(): Record<CombatStyle, number> {
+    const out = { melee: 0, ranged: 0, magic: 0 };
+    for (const s of EQUIP_SLOTS) {
+      const it = this.slots[s];
+      const e = it ? itemDef(it).equip : undefined;
+      if (!e) continue;
+      for (const st of ['melee', 'ranged', 'magic'] as const) out[st] += armourVs(e, st);
+    }
+    return out;
   }
 
   toJSON(): Partial<Record<EquipSlot, ItemId>> {

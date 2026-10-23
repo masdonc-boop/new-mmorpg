@@ -97,8 +97,49 @@ export interface EquipDef {
    * `accuracy`/`power` on non-weapon gear (amulets, rings) still help every style.
    */
   styleBonus?: Partial<Record<'melee' | 'ranged' | 'magic', { accuracy?: number; power?: number }>>;
+  /**
+   * Armour against each attack style, when it differs from the material's rule (`armourVs`). Rarely
+   * needed: the rule already gives metal, hide and cloth their strengths.
+   */
+  defence?: Partial<Record<'melee' | 'ranged' | 'magic', number>>;
   /** Metal/material tint for the worn model. */
   tint?: string;
+}
+
+export type ArmourClass = 'metal' | 'hide' | 'cloth' | 'plain';
+
+/**
+ * What a piece is made of, read from how it already treats the styles (docs/PROGRESSION.md 5B):
+ * metal costs magic accuracy, hide adds ranged accuracy, cloth adds magic accuracy. Everything else
+ * (wooden shields, capes, jewellery) is plain.
+ */
+export function armourClass(e: EquipDef): ArmourClass {
+  const mag = e.styleBonus?.magic?.accuracy ?? 0;
+  if (mag < 0) return 'metal';
+  if ((e.styleBonus?.ranged?.accuracy ?? 0) > 0) return 'hide';
+  if (mag > 0) return 'cloth';
+  return 'plain';
+}
+
+/**
+ * How much of a piece's armour counts against each attack style (5B). Metal stops blades and turns
+ * arrows but spells pass through it; hide is supple, best against arrows and fair against spells;
+ * woven cloth is spun to turn spells but parts for steel. Plain gear keeps the rule from before 5B
+ * (full against blows and arrows, half against spells), so a fresh character fights exactly as before.
+ */
+export const ARMOUR_VS: Record<ArmourClass, Record<'melee' | 'ranged' | 'magic', number>> = {
+  metal: { melee: 1, ranged: 1.1, magic: 0.35 },
+  hide: { melee: 0.8, ranged: 1.2, magic: 0.8 },
+  cloth: { melee: 0.6, ranged: 0.6, magic: 3 },
+  plain: { melee: 1, ranged: 1, magic: 0.5 },
+};
+
+/**
+ * A piece's armour against one attack style. Kept exact (sums are rounded only for display), so plain
+ * gear gives precisely what it gave before 5B.
+ */
+export function armourVs(e: EquipDef, style: 'melee' | 'ranged' | 'magic'): number {
+  return e.defence?.[style] ?? (e.armour ?? 0) * ARMOUR_VS[armourClass(e)][style];
 }
 
 export interface ItemDef {
@@ -342,6 +383,21 @@ export const ITEMS = {
   watchcaptain_blade: def({ id: 'watchcaptain_blade', name: 'Watchcaptain’s blade', examine: 'The last captain’s sword, still keen after a hundred years of waiting.', stackable: false, kind: 'weapon', value: 1100, equip: { slot: 'weapon', style: 'melee', accuracy: 52, power: 47, req: { attack: 50 }, tint: '#c8ccd4' }, icon: { shape: 'sword', color: '#c8ccd4', accent: '#a83a2a' } }),
   warders_longbow: def({ id: 'warders_longbow', name: 'Warder’s longbow', examine: 'A watch bow of rowan and horn, its grip worn smooth by a hundred hands.', stackable: false, kind: 'weapon', value: 1000, equip: { slot: 'weapon', style: 'ranged', speed: 2, range: 8.5, accuracy: 50, power: 51, twoHanded: true, req: { ranged: 45 }, tint: '#6a3a24' }, icon: { shape: 'bow', color: '#6a3a24', accent: '#efe8d6' } }),
   ninefold_cloak: def({ id: 'ninefold_cloak', name: 'Ninefold cloak', examine: 'A grey cloak stitched with nine silver stones. The old watch wore them.', stackable: false, kind: 'armour', value: 600, equip: { slot: 'cape', accuracy: 2, power: 2, armour: 4, req: { defence: 35 } }, icon: { shape: 'cape', color: '#6a6e76', accent: '#dfe4ea' } }),
+  // ---- Phase 5B: hands and feet for every armour line (docs/PROGRESSION.md 5B), from existing bars, hides and cloth.
+  bronze_sabatons: def({ id: 'bronze_sabatons', name: 'Bronze sabatons', examine: 'Bronze-plated boots. They ring on cobbles.', stackable: false, kind: 'armour', value: 12, equip: { slot: 'feet', styleBonus: { magic: { accuracy: -1 } }, armour: 2, tint: '#c98a4b' }, icon: { shape: 'boots', color: '#c98a4b', accent: '#7a4f2a' } }),
+  bronze_handguards: def({ id: 'bronze_handguards', name: 'Bronze handguards', examine: 'Bronze plates riveted over a leather glove.', stackable: false, kind: 'armour', value: 12, equip: { slot: 'hands', styleBonus: { magic: { accuracy: -1 }, ranged: { accuracy: -1 } }, armour: 2, tint: '#c98a4b' }, icon: { shape: 'gloves', color: '#c98a4b', accent: '#7a4f2a' } }),
+  iron_sabatons: def({ id: 'iron_sabatons', name: 'Iron sabatons', examine: 'Iron-shod boots, heavy on the stairs.', stackable: false, kind: 'armour', value: 36, equip: { slot: 'feet', styleBonus: { magic: { accuracy: -1 } }, armour: 3, req: { defence: 10 }, tint: '#a3aab3' }, icon: { shape: 'boots', color: '#a3aab3', accent: '#4e5560' } }),
+  iron_handguards: def({ id: 'iron_handguards', name: 'Iron handguards', examine: 'Iron handguards with a hinged knuckle plate.', stackable: false, kind: 'armour', value: 36, equip: { slot: 'hands', styleBonus: { magic: { accuracy: -1 }, ranged: { accuracy: -1 } }, armour: 3, req: { defence: 10 }, tint: '#a3aab3' }, icon: { shape: 'gloves', color: '#a3aab3', accent: '#4e5560' } }),
+  steel_sabatons: def({ id: 'steel_sabatons', name: 'Steel sabatons', examine: 'Steel sabatons that bend at the toe.', stackable: false, kind: 'armour', value: 66, equip: { slot: 'feet', styleBonus: { magic: { accuracy: -1 } }, armour: 5, req: { defence: 20 }, tint: '#d3d9df' }, icon: { shape: 'boots', color: '#d3d9df', accent: '#5c646e' } }),
+  steel_handguards: def({ id: 'steel_handguards', name: 'Steel handguards', examine: 'Steel handguards, close-fitted to the fingers.', stackable: false, kind: 'armour', value: 66, equip: { slot: 'hands', styleBonus: { magic: { accuracy: -1 }, ranged: { accuracy: -1 } }, armour: 5, req: { defence: 20 }, tint: '#d3d9df' }, icon: { shape: 'gloves', color: '#d3d9df', accent: '#5c646e' } }),
+  glimsteel_sabatons: def({ id: 'glimsteel_sabatons', name: 'Glimsteel sabatons', examine: 'Glimsteel sabatons, lighter than they look.', stackable: false, kind: 'armour', value: 150, equip: { slot: 'feet', styleBonus: { magic: { accuracy: -1 } }, armour: 6, req: { defence: 30 }, tint: '#cfe4f2' }, icon: { shape: 'boots', color: '#cfe4f2', accent: '#5a7a8e' } }),
+  glimsteel_handguards: def({ id: 'glimsteel_handguards', name: 'Glimsteel handguards', examine: 'Glimsteel handguards. The grip never slips.', stackable: false, kind: 'armour', value: 150, equip: { slot: 'hands', styleBonus: { magic: { accuracy: -1 }, ranged: { accuracy: -1 } }, armour: 6, accuracy: 1, req: { defence: 30 }, tint: '#cfe4f2' }, icon: { shape: 'gloves', color: '#cfe4f2', accent: '#5a7a8e' } }),
+  duskiron_sabatons: def({ id: 'duskiron_sabatons', name: 'Duskiron sabatons', examine: 'Duskiron sabatons. Every step is a decision.', stackable: false, kind: 'armour', value: 230, equip: { slot: 'feet', styleBonus: { magic: { accuracy: -1 } }, armour: 9, accuracy: -1, req: { defence: 45 }, tint: '#3e3a44' }, icon: { shape: 'boots', color: '#3e3a44', accent: '#8a7ea0' } }),
+  duskiron_handguards: def({ id: 'duskiron_handguards', name: 'Duskiron handguards', examine: 'Duskiron handguards, thick as a door hinge.', stackable: false, kind: 'armour', value: 230, equip: { slot: 'hands', styleBonus: { magic: { accuracy: -1 }, ranged: { accuracy: -1 } }, armour: 9, accuracy: -1, req: { defence: 45 }, tint: '#3e3a44' }, icon: { shape: 'gloves', color: '#3e3a44', accent: '#8a7ea0' } }),
+  boarhide_boots: def({ id: 'boarhide_boots', name: 'Boarhide boots', examine: 'Thick-soled boots for the scree. Quiet, for all that.', stackable: false, kind: 'armour', value: 60, equip: { slot: 'feet', styleBonus: { ranged: { accuracy: 2 } }, armour: 4, req: { ranged: 20 } }, icon: { shape: 'boots', color: '#7a5a3a', accent: '#4a3020' } }),
+  ridgehide_boots: def({ id: 'ridgehide_boots', name: 'Ridgehide boots', examine: 'Grey boots that grip wet rock like a stalker’s paws.', stackable: false, kind: 'armour', value: 120, equip: { slot: 'feet', styleBonus: { ranged: { accuracy: 3 } }, armour: 6, req: { ranged: 30 } }, icon: { shape: 'boots', color: '#8a8e96', accent: '#5a5e66' } }),
+  mireweave_gloves: def({ id: 'mireweave_gloves', name: 'Mireweave gloves', examine: 'Oiled linen gloves. Sparks slide off the fingertips.', stackable: false, kind: 'armour', value: 120, equip: { slot: 'hands', styleBonus: { magic: { accuracy: 3, power: 1 } }, armour: 2, req: { magic: 25 }, tint: '#4a5a4a' }, icon: { shape: 'gloves', color: '#4a5a4a', accent: '#ffffff' } }),
+  mireweave_slippers: def({ id: 'mireweave_slippers', name: 'Mireweave slippers', examine: 'Soft oiled slippers for wet shrine floors.', stackable: false, kind: 'armour', value: 110, equip: { slot: 'feet', styleBonus: { magic: { accuracy: 2, power: 1 } }, armour: 2, req: { magic: 25 }, tint: '#4a5a4a' }, icon: { shape: 'boots', color: '#4a5a4a', accent: '#ffffff' } }),
   burnt_fish: def({ id: 'burnt_fish', name: 'Burnt fish', examine: 'Charred to a crisp.', stackable: false, kind: 'material', value: 0, icon: { shape: 'fish', color: '#2e2622', accent: '#6a5a50' } }),
 } satisfies Record<string, ItemDef>;
 
