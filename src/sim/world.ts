@@ -3856,7 +3856,6 @@ export class GameWorld {
         const at = sp.kind === 'sweep' ? { x: e.x, z: e.z } : { x: p.x, z: p.z };
         e.special = { kind: sp.kind, name: sp.name, x: at.x, z: at.z, radius: sp.radius, left: sp.windup, total: sp.windup };
         e.specialTimer = sp.cooldown;
-        e.swingAge = 0;
         this.emit({ type: 'telegraph', source: e.id, text: sp.name, x: at.x, z: at.z, radius: sp.radius, seconds: sp.windup });
         return true;
       }
@@ -3896,6 +3895,7 @@ export class GameWorld {
       ring.z = e.z;
     }
     e.attackTimer = Math.max(e.attackTimer, 0.8);
+    e.swingAge = 0;
     this.emit({ type: 'impact', source: e.id, x: ring.x, z: ring.z, radius: ring.radius });
     for (const q of this.players.values()) {
       if (q.dead) continue;

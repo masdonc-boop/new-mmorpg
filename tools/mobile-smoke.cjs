@@ -242,6 +242,12 @@ const fixture = require(path.join(__dirname, '..', 'tests', 'fixtures', 'saves',
     const w = window.game.world;
     const c = w.chests.find((x) => x.dungeon === 'old_watchtower');
     w.player.dungeonClaims.old_watchtower = 1;
+    // The roof is cleared (this checks tapping the chest, not the fight beside it).
+    for (const e of w.enemies) {
+      if (Math.hypot(e.x - c.x, e.z - c.z) >= 12) continue;
+      e.state = 'dead';
+      e.respawnTimer = 999;
+    }
     const side = [[0, 1], [1, 0], [-1, 0], [0, -1]].find(([a, b]) => !w.map.blocked[Math.floor(c.z + b) * w.map.width + Math.floor(c.x + a)]);
     w.player.x = w.player.prevX = c.x + side[0];
     w.player.z = w.player.prevZ = c.z + side[1];
@@ -279,6 +285,79 @@ const fixture = require(path.join(__dirname, '..', 'tests', 'fixtures', 'saves',
   await tapAt(plate);
   check('dungeon: in a crowd, tapping the boss’s nameplate targets the boss', await waitFor((id) => { const a = window.game.world.player.action; return !!a && a.type === 'attack' && a.target === id; }, plate.id));
   await page.evaluate(() => clearInterval(window.__keepAlive));
+  // Phase 5D: a boss special on a phone screen. The ring is drawn, and steering out with the on-screen
+  // joystick avoids the blow (the game says "dodged").
+  const dodge = await page.evaluate(async () => {
+    const w = window.game.world;
+    const p = w.player;
+    const boss = w.enemies.find((e) => e.def.id === 'shrinekeeper');
+    for (const g of w.enemies.filter((e) => e.def.id === 'drowned_guardian')) {
+      g.state = 'dead';
+      g.respawnTimer = 999;
+    }
+    p.hp = p.skills.maxHp();
+    p.action = null;
+    window.__hits = [];
+    const emit = w.emit.bind(w);
+    w.emit = (e) => {
+      if (e.type === 'damage' && e.target === p.id) window.__hits.push(e.outcome || (e.hit ? 'hit' : 'miss'));
+      emit(e);
+    };
+    // Notice the ring being drawn (the renderer runs on its own frames).
+    window.__ringSeen = false;
+    const seen = setInterval(() => {
+      if (window.game.renderer.telegraphs.size > 0) window.__ringSeen = true;
+    }, 50);
+    setTimeout(() => clearInterval(seen), 4000);
+    boss.state = 'chase';
+    boss.target = p.id;
+    boss.attackTimer = 99;
+    boss.specialTimer = 0;
+    // Wait for the wind-up to begin (on a slow frame rate the game's clock runs behind).
+    for (let i = 0; i < 50 && !boss.special; i++) await new Promise((r) => setTimeout(r, 30));
+    const sp = boss.special;
+    if (!sp) return { started: false };
+    // The clearest way out of the ring (a person looks; this probes three tiles each way).
+    const rect = document.querySelector('canvas').getBoundingClientRect();
+    let ux = 1;
+    let uz = 0;
+    let bestRun = -1;
+    for (let k = 0; k < 16; k++) {
+      const ang = (k / 16) * Math.PI * 2;
+      let run = 0;
+      while (run < 6 && !w.map.blocked[Math.floor(p.z + Math.sin(ang) * (run + 1) * 0.5) * w.map.width + Math.floor(p.x + Math.cos(ang) * (run + 1) * 0.5)]) run++;
+      if (run > bestRun) {
+        bestRun = run;
+        ux = Math.cos(ang);
+        uz = Math.sin(ang);
+      }
+    }
+    const a = window.game.renderer.project(p.x, 0, p.z);
+    const b = window.game.renderer.project(p.x + ux, 0, p.z + uz);
+    const m = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { started: true, dx: (b.x - a.x) / m, dy: (b.y - a.y) / m, rect: { l: rect.left, t: rect.top, h: rect.height } };
+  });
+  if (dodge.started) {
+    const jx = 90;
+    const jy = dodge.rect.h - 150;
+    await touch('touchStart', jx, jy);
+    for (let i = 1; i <= 5; i++) {
+      await touch('touchMove', jx + dodge.dx * i * 12, jy + dodge.dy * i * 12);
+      await page.waitForTimeout(20);
+    }
+    const track = [];
+    for (let i = 0; i < 7; i++) {
+      await page.waitForTimeout(200);
+      track.push(await page.evaluate(() => { const w = window.game.world; const b = w.enemies.find((e) => e.def.id === 'shrinekeeper'); return [w.player.x.toFixed(2), w.player.z.toFixed(2), b.special ? [b.special.x.toFixed(2), b.special.z.toFixed(2), b.special.left.toFixed(2)] : null, w.player.joy.x.toFixed(2), w.player.joy.z.toFixed(2)]; }));
+    }
+    dodge.track = track;
+    await touch('touchEnd', jx + dodge.dx * 60, jy + dodge.dy * 60);
+    await page.waitForFunction(() => !window.game.world.enemies.find((e) => e.def.id === 'shrinekeeper').special, null, { timeout: 15000 }).catch(() => {});
+  }
+  const hits = await page.evaluate(() => window.__hits || []);
+  dodge.drawn = await page.evaluate(() => window.__ringSeen);
+  check('combat: a boss special shows its ring on the phone', !!dodge.drawn, JSON.stringify(dodge));
+  check('combat: steering out with the joystick dodges it', dodge.started && hits.includes('dodged') && !hits.includes('special'), JSON.stringify({ hits, track: dodge.track }));
 
   // An older save (before multiplayer) still loads.
   const old = await ctx.newPage();

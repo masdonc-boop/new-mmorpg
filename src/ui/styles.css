@@ -201,6 +201,43 @@ button {
 .drop-label {
   font-size: 15px;
 }
+/* 5D: specials, dodges, slows and elites. */
+.dmg-special {
+  font-size: 24px;
+}
+.dmg-dodged {
+  color: #9effa8;
+}
+.dmg-slow {
+  color: #8fd0ff;
+}
+.telegraph-label {
+  color: #ffb02e;
+  font-size: 15px;
+  font-weight: 900;
+}
+.telegraph-label.calm {
+  color: #f3e9c8;
+  font-size: 13px;
+}
+.elite-name {
+  color: #ffd84d;
+}
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(60, 120, 200, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+.status-chip.hidden {
+  display: none;
+}
 .dmg-block {
   color: #d8dee6;
   letter-spacing: 0.02em;

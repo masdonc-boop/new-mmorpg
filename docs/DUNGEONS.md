@@ -76,7 +76,7 @@ Each unique is a step above the best crafted gear of its slot and style (tested)
 ## Balance (tested)
 `tests/dungeon-balance.test.ts` fights each boss room in the simulation: the boss, its guards, food, and eating at half health.
 - **The advised level wins.** A solo player at level 40 in the combat skills (about combat 46), in tier-30 gear with 18 silverpike, beats both bosses with melee and with ranged. A mage beats the Shrinekeeper.
-- **Level 30 loses.**
+- **Level 30 loses.** *(Corrected in Phase 5D: the test bot fought at a tenth of full health. From full health, level 30 wins only with a full bag of food, fails without, and level 25 fails. The bosses now also have telegraphed specials; see `docs/COMBAT.md`.)*
 - **Magic against the Watchcaptain:** a solo mage at the advised level loses. Mages should bring friends or more food.
 
 ## Deferred

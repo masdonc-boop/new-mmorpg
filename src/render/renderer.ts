@@ -458,6 +458,7 @@ export class GameRenderer {
     this.updatePatches();
     this.updateHouse();
     this.updateFires(t, dt);
+    this.updateTelegraphs(dt);
     this.updateGlows(t);
     this.updateEmitters(dt, px, pz);
     this.particles.update(dt);
@@ -659,6 +660,57 @@ export class GameRenderer {
 
   private groundViews = new Map<number, { pile: GroundItem; sprite: THREE.Sprite; shadow: THREE.Mesh }>();
   private groundMats = new Map<ItemId, THREE.SpriteMaterial>();
+  // ---- Phase 5D telegraphs: a ring on the ground and a thin band sweeping out to it as the special
+  // winds up (a band, not a filled disc: few pixels to draw, which matters on phones). Two draw
+  // calls per special winding up nearby.
+  private ringGeo = new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2);
+  private fillGeo = new THREE.RingGeometry(0.8, 1, 40).rotateX(-Math.PI / 2);
+  private ringMat = new THREE.MeshBasicMaterial({ color: '#ff3b2f', transparent: true, opacity: 0.9, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  private fillMat = new THREE.MeshBasicMaterial({ color: '#ffb02e', transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1 });
+  private telegraphs = new Map<number, { ring: THREE.Mesh; fill: THREE.Mesh; left: number; total: number; key: string }>();
+
+  /**
+   * Draws each creature's special while it winds up. The countdown runs locally between snapshots
+   * (they come ten times a second), and the disc reaches the ring's edge as the blow lands.
+   */
+  private updateTelegraphs(dt: number) {
+    const map = this.world.map;
+    const live = new Set<number>();
+    for (const e of this.world.enemies) {
+      const sp = e.alive ? e.special : null;
+      if (!sp) continue;
+      live.add(e.id);
+      const key = `${sp.x.toFixed(2)},${sp.z.toFixed(2)},${sp.total}`;
+      let t = this.telegraphs.get(e.id);
+      if (!t) {
+        t = { ring: new THREE.Mesh(this.ringGeo, this.ringMat), fill: new THREE.Mesh(this.fillGeo, this.fillMat), left: sp.left, total: sp.total, key };
+        t.ring.renderOrder = t.fill.renderOrder = 2;
+        this.scene.add(t.ring, t.fill);
+        this.telegraphs.set(e.id, t);
+      }
+      // A new wind-up, or the server's count is behind ours (it never runs ahead): take the server's.
+      if (t.key !== key || sp.left < t.left - 0.15) {
+        t.key = key;
+        t.left = sp.left;
+        t.total = sp.total;
+      } else t.left = Math.max(0, t.left - dt);
+      // A sweep follows the creature (it is centred on it); the others stay where they were marked.
+      const cx = sp.kind === 'sweep' ? e.x : sp.x;
+      const cz = sp.kind === 'sweep' ? e.z : sp.z;
+      const y = groundHeight(map, cx, cz) + 0.06;
+      t.ring.position.set(cx, y, cz);
+      t.ring.scale.setScalar(sp.radius);
+      const k = 1 - t.left / Math.max(0.01, t.total);
+      t.fill.position.set(cx, y + 0.01, cz);
+      t.fill.scale.setScalar(Math.max(0.05, sp.radius * k));
+    }
+    for (const [id, t] of this.telegraphs) {
+      if (live.has(id)) continue;
+      this.scene.remove(t.ring, t.fill);
+      this.telegraphs.delete(id);
+    }
+  }
+
   private groundShadowGeo = new THREE.CircleGeometry(0.2, 14).rotateX(-Math.PI / 2);
   private groundShadowMat = new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.22, depthWrite: false });
 
@@ -978,7 +1030,9 @@ export class GameRenderer {
       const r = v.root.position;
       const a = e.alive && v.root.visible ? this.project(r.x, r.y + enemyHeight(e), r.z) : null;
       const near = Math.hypot(e.x - w.player.x, e.z - w.player.z) < 9;
-      this.overlay.plate(e.id, a, { name: e.def.name, level: e.def.level, hp: engaged ? e.hp : null, maxHp: e.def.maxHp, kind: 'enemy', show: engaged || near || e.id === sel });
+      // 5D: elites wear a gold star on their nameplate.
+      const name = e.def.elite ? `<span class="elite-name">★ ${e.def.name}</span>` : e.def.name;
+      this.overlay.plate(e.id, a, { name, level: e.def.level, hp: engaged ? e.hp : null, maxHp: e.def.maxHp, kind: 'enemy', show: engaged || near || e.id === sel });
     }
     for (const st of w.stations) {
       const near = Math.hypot(st.x - w.player.x, st.z - w.player.z) < 6;
@@ -1087,7 +1141,9 @@ export class GameRenderer {
         const anchor = () => this.entityAnchor(e.target);
         // 5B: a hit softened by a vow carries a small shield; a miss your armour turned says so.
         if (e.hit && e.amount > 0) {
-          this.overlay.float(e.outcome === 'warded' ? `${e.amount} ⛨` : String(e.amount), isPlayer ? 'dmg-taken' : 'dmg-dealt', anchor, 1.0, 45);
+          this.overlay.float(e.outcome === 'warded' ? `${e.amount} ⛨` : String(e.amount), `${isPlayer ? 'dmg-taken' : 'dmg-dealt'}${e.outcome === 'special' ? ' dmg-special' : ''}`, anchor, 1.0, 45);
+        } else if (e.outcome === 'dodged') {
+          this.overlay.float('dodged!', 'dmg-miss dmg-dodged', anchor, 1.0, 40);
         } else if (e.outcome === 'blocked') {
           this.overlay.float('blocked', 'dmg-miss dmg-block', anchor, 0.9, 35);
         } else {
@@ -1203,6 +1259,28 @@ export class GameRenderer {
             this.particles.emit({ x: r.x, y: r.y + 0.4, z: r.z, count: 12, color: ['#ffffff', '#d0d0ff'], speed: 1.5, up: 1.5, gravity: 1, life: 0.6, size: 0.08, spread: 0.5 });
           }
         }
+        break;
+      }
+      case 'telegraph': {
+        // 5D: one short warning over the creature (the ring itself comes with the creature's state).
+        const src = this.enemyViews.get(e.source);
+        if (!src) break;
+        const warn = e.radius ? `⚠ ${e.text}` : e.text;
+        // Above the nameplate, not on it.
+        const over = () => {
+          const a = this.entityAnchor(e.source);
+          return a && { ...a, y: a.y - 34 };
+        };
+        this.overlay.float(warn, e.radius ? 'telegraph-label' : 'telegraph-label calm', over, Math.min(1.8, e.seconds ?? 1.4), 18, false);
+        break;
+      }
+      case 'impact': {
+        const y = groundHeight(this.world.map, e.x, e.z);
+        this.particles.emit({ x: e.x, y: y + 0.15, z: e.z, count: 18, color: ['#c9b08a', '#8a7a62', '#ffffff'], speed: 2.4, up: 1.6, gravity: 5, life: 0.6, size: 0.1, spread: e.radius * 0.6 });
+        break;
+      }
+      case 'status': {
+        if (e.status === 'slow') this.overlay.float('slowed', 'dmg-miss dmg-slow', () => this.entityAnchor(e.target), 1.0, 30);
         break;
       }
       case 'drop': {

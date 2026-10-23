@@ -178,7 +178,14 @@ Tick each item as you go and note anything odd, with the time:
     - A first rare gear drop should say "New log entry". Open Quests: the Creature finds card should show it in colour.
     - Close the game fully, reopen it, and check the entry is still there.
     - With a full bag, the rare pile should stay on the ground, marked.
-15. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
+15. **Creature fights** (Phase 5D).
+    - Fight Grukk in the Goblin Encampment. A red ring with an orange band should mark the ground, with "⚠ Club slam" above him. Walk out with the joystick before the band reaches the edge: you should see "dodged!" and take no damage. Stay in once to see the bigger hit.
+    - Tap to attack Grukk while a ring is showing: the hero should wait at the ring's edge, not walk in.
+    - Attack a wolf near another: one more wolf should join. Bring a goblin low: it should break off and call a friend.
+    - In Mirefen, let a mire leech hit you: "slowed" and a "🐌 Slowed" chip under your health. Walking should be slower for 3 seconds.
+    - In Thornridge, find the Ironhide Bristleback (gold ★ name) and dodge its charge.
+    - On two phones, stand in a boss's ring together, then have one step out: only the one who stayed is hit.
+16. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
 
 ### 5. Afterwards
 

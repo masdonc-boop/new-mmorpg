@@ -110,6 +110,7 @@ function passageHint(w: GameWorld, d: Passage): string {
 export class Hud {
   readonly root: HTMLDivElement;
   private hpFill!: HTMLDivElement;
+  private statusChip!: HTMLDivElement;
   private hpText!: HTMLDivElement;
   private prayerFill!: HTMLDivElement;
   private prayerText!: HTMLDivElement;
@@ -228,7 +229,9 @@ export class Hud {
     this.prayerText = el('div', 'bar-text');
     this.prayerBar.append(this.prayerFill, this.prayerText);
     this.prayerBar.addEventListener('click', () => this.toggle('prayer'));
-    info.append(this.nameEl, bar, this.prayerBar);
+    // 5D: a status effect on you (slowed), shown under the bars while it lasts.
+    this.statusChip = el('div', 'status-chip hidden');
+    info.append(this.nameEl, bar, this.prayerBar, this.statusChip);
     frame.append(portrait, info);
     this.root.appendChild(frame);
 
@@ -450,6 +453,10 @@ export class Hud {
     this.hpFill.style.width = `${hpPct}%`;
     this.hpFill.classList.toggle('low', hpPct < 30);
     this.hpText.textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
+    const slowed = p.slowTimer > 0 && !p.dead;
+    const status = slowed ? `🐌 Slowed · ${Math.ceil(p.slowTimer)}s` : '';
+    if (this.statusChip.textContent !== status) this.statusChip.textContent = status;
+    this.statusChip.classList.toggle('hidden', !slowed);
     const maxPray = p.skills.level('prayer');
     this.prayerFill.style.width = `${(p.prayerPoints / maxPray) * 100}%`;
     const pt = `🕯 ${p.prayerPoints} / ${maxPray}${p.prayers.size ? ' · vows kept' : ''}`;
