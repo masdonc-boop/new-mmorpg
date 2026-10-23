@@ -86,7 +86,10 @@ function passageHint(w: GameWorld, d: Passage): string {
   if (d.id === 'hollow_up') return '🪜 Way up · climb back to daylight';
   if (d.requires) {
     const missing = w.missingFor(DUNGEONS[d.requires].requirements);
-    return missing.length ? `🚪 ${d.name} · needs ${missing.join(', ')}` : `🚪 ${d.name} · enter (Lv ${DUNGEONS[d.requires].recommended.combat}+ advised)`;
+    if (missing.length) return `🚪 ${d.name} · needs ${missing.join(', ')}`;
+    const advised = DUNGEONS[d.requires].recommended.combat;
+    const combat = w.player.skills.combatLevel();
+    return combat >= advised ? `🚪 ${d.name} · enter (combat ${advised}+ advised)` : `🚪 ${d.name} · enter: advised combat ${advised}+, you are ${combat}`;
   }
   return `🪜 ${d.name} · ${d.verb.toLowerCase()}`;
 }
@@ -1640,19 +1643,30 @@ export class Hud {
         <div class="qc-rewards">Rewards: ${q.rewards.text.join(' · ')}</div>`;
       body.appendChild(card);
     }
-    // Dungeons (Phase 4C): what each door asks, a claim waiting on the chest, and runs so far.
+    // Dungeons (Phase 4C/4D): the door's minimum requirements, the advised level, what to bring, a
+    // claim waiting on the chest, runs so far, and the collection log.
     for (const d of Object.values(DUNGEONS)) {
       const p = w.player;
+      const id = d.id as DungeonId;
       const missing = new Set(w.missingFor(d.requirements));
       const reqs = requirementList(d.requirements);
-      const claim = (p.dungeonClaims[d.id as DungeonId] ?? 0) > 0;
-      const runs = p.dungeonRuns[d.id as DungeonId] ?? 0;
-      const found = d.rewards.uniques.filter((u) => p.inventory.has(u.id) || p.equipment.count(u.id) > 0 || p.bank.count(u.id) > 0).length;
-      const card = el('div', `quest-card ${missing.size ? 'new' : 'active'}`);
-      card.innerHTML = `<div class="qc-head"><span class="qc-name">🗝️ ${d.name}</span><span class="qc-status">${claim ? 'Chest waiting' : runs ? `${runs} run${runs === 1 ? '' : 's'}` : missing.size ? 'Locked' : 'Open'}</span></div>
-        <div class="qc-sum">Boss: ${d.boss.name} (level ${d.boss.level}). Advised: combat ${d.recommended.combat}+, ${d.recommended.partySize[1] > 1 ? `alone or with up to ${d.recommended.partySize[1] - 1} friends` : 'alone'}.</div>
-        <ul class="qc-steps"><li class="req">Requires: ${reqs.map((r) => `<span class="${missing.has(r) ? 'req-no' : 'req-ok'}">${r}</span>`).join(', ')}</li></ul>
-        <div class="qc-rewards">Uniques found: ${found} of ${d.rewards.uniques.length} · ${d.rewards.uniques.map((u) => itemDef(u.id).name).join(' · ')}</div>`;
+      const claim = (p.dungeonClaims[id] ?? 0) > 0;
+      const runs = p.dungeonRuns[id] ?? 0;
+      const combat = p.skills.combatLevel();
+      const logged = d.rewards.uniques.filter((u) => p.collectionLog.has(u.id)).length;
+      const card = el('div', `quest-card dungeon-card ${missing.size ? 'new' : 'active'}`);
+      card.innerHTML = `<div class="qc-head"><span class="qc-name">🗝️ ${d.name}</span><span class="qc-status">${claim ? 'Chest waiting' : missing.size ? 'Locked' : runs ? `${runs} run${runs === 1 ? '' : 's'}` : 'Open'}</span></div>
+        <div class="dg-row"><b>Entry</b><span>${reqs.map((r) => `<span class="${missing.has(r) ? 'req-no' : 'req-ok'}">${r}</span>`).join(', ')}</span></div>
+        <div class="dg-row"><b>Advised</b><span class="${combat >= d.recommended.combat ? 'req-ok' : 'dg-warn'}">combat ${d.recommended.combat}+ (you: ${combat})</span>${d.recommended.partySize[1] > 1 ? `<span class="dg-dim"> · alone or with up to ${d.recommended.partySize[1] - 1} friends</span>` : ''}</div>
+        <div class="dg-row"><b>Gear</b><span>${d.advice.gear}</span></div>
+        <div class="dg-row"><b>Bring</b><span>${d.advice.supplies}</span></div>
+        <div class="dg-row"><b>Boss</b><span>${d.boss.name} (level ${d.boss.level}). ${d.advice.tip}</span></div>
+        <div class="dg-log"><div class="dg-log-head">Collection log <b>${logged}/${d.rewards.uniques.length}</b></div><div class="dg-items">${d.rewards.uniques
+          .map((u) => {
+            const got = p.collectionLog.has(u.id);
+            return `<div class="dg-item ${got ? 'got' : ''}" title="${itemDef(u.id).name}"><img src="${itemIcon(u.id)}" alt=""><span>${got ? itemDef(u.id).name : `${itemDef(u.id).name}<small>not found yet</small>`}</span></div>`;
+          })
+          .join('')}</div></div>`;
       body.appendChild(card);
     }
     body.appendChild(

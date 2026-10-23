@@ -163,3 +163,47 @@ describe('4C multiplayer: dungeons on the server', () => {
     expect(a.s.zoneId).toBe('brightwater');
   }, 10_000);
 });
+
+describe('4D multiplayer: the collection log is server-side and permanent', () => {
+  it('a unique found on the server reaches the phone, is saved at once, and survives a reconnect and a restart; repeated taps give one reward', async () => {
+    const dbPath = freshDb();
+    const { s: server, url } = await serve(dbPath);
+    const a = await join(server, url, 'Ash');
+    const roof = server.zone.map.passages.find((p) => p.id === 'tower_down_roof')!;
+    a.s.player.x = a.s.player.prevX = roof.arriveX;
+    a.s.player.z = a.s.player.prevZ = roof.arriveZ;
+    await pump([a], 1300);
+    const tower = server.zones.get('old_watchtower')!;
+    a.s.player.dungeonClaims.old_watchtower = 1;
+    (tower as unknown as { rng: () => number }).rng = () => 0.001;
+    const chest = tower.chests[0];
+    const side = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([x, z]) => !tower.map.blocked[Math.floor(chest.z + z) * tower.map.width + Math.floor(chest.x + x)])!;
+    a.s.player.x = a.s.player.prevX = chest.x + side[0];
+    a.s.player.z = a.s.player.prevZ = chest.z + side[1];
+    // A burst of taps (and a resend) from the phone.
+    for (let i = 0; i < 6; i++) a.c.issue({ type: 'interact', target: chest.id });
+    await pump([a], 700);
+    expect(a.s.player.dungeonRuns.old_watchtower).toBe(1);
+    expect(a.s.player.collectionLog.size).toBe(3);
+    // The phone's copy shows it (for the journal).
+    expect(a.c.world!.player.collectionLog.size).toBe(3);
+    // Saved the moment the chest opened, before any periodic save.
+    const stored = server.repos.characterFor(a.s.accountId!)!.record as { dungeons?: { log?: string[]; runs?: Record<string, number> } };
+    expect(stored.dungeons?.log?.length).toBe(3);
+    expect(stored.dungeons?.runs?.old_watchtower).toBe(1);
+    // Sold, dropped, whatever: the log stays.
+    for (const u of ['ninefold_cloak', 'warders_longbow', 'watchcaptain_blade'] as const) a.s.player.inventory.remove(u, 1);
+    // A dropped connection and back.
+    a.s.ws!.terminate();
+    await pump([a], 300);
+    const port = server.port;
+    a.c.close();
+    await server.close({ save: true });
+    running.splice(running.indexOf(server), 1);
+    const again = await serve(dbPath, port);
+    const a2 = await join(again.s, again.url, 'Ash', 'login');
+    expect([...a2.s.player.collectionLog].sort()).toEqual(['ninefold_cloak', 'warders_longbow', 'watchcaptain_blade']);
+    expect(a2.c.world!.player.collectionLog.size).toBe(3);
+    expect(a2.s.player.inventory.count('watchcaptain_blade')).toBe(0);
+  }, 20_000);
+});

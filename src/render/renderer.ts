@@ -19,6 +19,7 @@ import { buildStaticWorld, campfireGeometry, exchangePrefab, furniturePrefab, ho
 import { HOUSE, furnitureDef } from '../data/construction';
 import { buildTerrain, buildWater, setWaterQuality } from './terrain';
 import { PerfMonitor } from './perf';
+import { DUNGEONS } from '../data/dungeons';
 import { ART } from './art';
 import { makeWorldMaterial, merge } from './geom';
 import { HeroModel, type HeroGear, type HeroLook } from './hero';
@@ -1214,6 +1215,19 @@ export class GameRenderer {
     this.markers.showTap(new THREE.Vector3(x, groundHeight(this.world.map, x, z), z));
   }
 
+  /** Feedback for a tap on something (a creature, a door, a chest): the same ring, under it. */
+  showEntityTap(id: number) {
+    const v = this.enemyViews.get(id);
+    const e = v ? v.root.position : this.world.get(id);
+    if (e) this.showTapMarker(e.x, e.z);
+  }
+
+  /** The landmark a dungeon door belongs to (its scenery near the door). */
+  private landmarkOf(dungeon: string, x: number, z: number): { x: number; z: number } | null {
+    const kind = DUNGEONS[dungeon]?.landmark;
+    return this.world.map.decor.find((d) => d.kind === kind && Math.hypot(d.x - x, d.z - z) < 3) ?? null;
+  }
+
   // ---------------------------------------------------------------- picking
 
   /** Screen-space forgiving pick: nearest interactable within a finger radius, else ground. */
@@ -1225,10 +1239,13 @@ export class GameRenderer {
     const radius = Math.max(34, Math.min(rect.width, rect.height) * 0.07);
     let best: number | null = null;
     let bestD = radius;
+    // Each creature's closest sample, so a near-tie in a crowd can keep the current target.
+    const enemyD = new Map<number, number>();
     const consider = (id: number, x: number, y: number, z: number, bias = 1) => {
       const a = this.project(x, y, z);
       if (!a.visible) return;
       const d = Math.hypot(a.x - sx, a.y - sy) * bias;
+      if (enemyD.has(id) || this.enemyViews.has(id)) enemyD.set(id, Math.min(enemyD.get(id) ?? Infinity, d));
       if (d < bestD) {
         bestD = d;
         best = id;
@@ -1241,6 +1258,8 @@ export class GameRenderer {
       const h = enemyHeight(v.enemy);
       consider(v.enemy.id, r.x, r.y + h * 0.45, r.z, 0.8);
       consider(v.enemy.id, r.x, r.y + 0.1, r.z, 0.9);
+      // Its nameplate (in a crowd the label is often the clearest thing to tap).
+      consider(v.enemy.id, r.x, r.y + h + 0.3, r.z, 0.95);
     }
     for (const n of w.npcs) {
       if (w.offstage.has(n.id)) continue;
@@ -1257,10 +1276,13 @@ export class GameRenderer {
     }
     for (const n of w.nodes) {
       if (Math.abs(n.x - w.player.x) > 30 || Math.abs(n.z - w.player.z) > 30) continue;
+      // A felled tree or an emptied rock can't be worked, so it doesn't catch taps meant for the ground
+      // beside it (a stump used to swallow them).
+      if (n.depleted) continue;
       const y = groundHeight(map, n.x, n.z);
       const tree = n.def.skill === 'woodcutting';
-      consider(n.id, n.x, y + (n.depleted ? 0.2 : tree ? 1.2 : 0.4), n.z, 1.1);
-      if (tree && !n.depleted) consider(n.id, n.x, y + 2.2, n.z, 1.2);
+      consider(n.id, n.x, y + (tree ? 1.2 : 0.4), n.z, 1.1);
+      if (tree) consider(n.id, n.x, y + 2.2, n.z, 1.2);
     }
     for (const v of this.groundViews.values()) {
       const p = v.sprite.position;
@@ -1276,11 +1298,19 @@ export class GameRenderer {
     }
     for (const dw of w.doorways) {
       if (Math.abs(dw.x - w.player.x) > 30 || Math.abs(dw.z - w.player.z) > 30) continue;
-      consider(dw.id, dw.x, groundHeight(map, dw.x, dw.z) + 0.7, dw.z, 1.1);
+      // Doors, stairs and ways out are what you came for: easy to hit at foot and head height.
+      const y = groundHeight(map, dw.x, dw.z);
+      consider(dw.id, dw.x, y + 0.5, dw.z, 0.8);
+      consider(dw.id, dw.x, y + 1.6, dw.z, 0.85);
+      // A dungeon door also answers to its whole landmark (the ruin, the tower).
+      const mark = dw.def.requires ? this.landmarkOf(dw.def.requires, dw.x, dw.z) : null;
+      if (mark) for (const hy of [1.0, 2.4]) consider(dw.id, mark.x, groundHeight(map, mark.x, mark.z) + hy, mark.z, 0.9);
     }
     for (const c of w.chests) {
       if (Math.abs(c.x - w.player.x) > 30 || Math.abs(c.z - w.player.z) > 30) continue;
-      consider(c.id, c.x, groundHeight(map, c.x, c.z) + 0.5, c.z, 1.0);
+      const y = groundHeight(map, c.x, c.z);
+      consider(c.id, c.x, y + 0.5, c.z, 0.8);
+      consider(c.id, c.x, y + 1.1, c.z, 0.85);
     }
     for (const f of w.patches) {
       if (Math.abs(f.x - w.player.x) > 30 || Math.abs(f.z - w.player.z) > 30) continue;
@@ -1295,6 +1325,10 @@ export class GameRenderer {
       if (Math.abs(st.x - w.player.x) > 30 || Math.abs(st.z - w.player.z) > 30) continue;
       consider(st.id, st.x, groundHeight(map, st.x, st.z) + 0.6, st.z, 0.95);
     }
+    // A tap in a crowd that lands almost as close to the creature you are already fighting keeps it,
+    // rather than flipping to a neighbour by a few pixels.
+    const sel = this.selectedId();
+    if (best !== null && sel !== null && sel !== best && this.enemyViews.has(best) && (enemyD.get(sel) ?? Infinity) <= bestD * 1.3) best = sel;
     if (best !== null) return { kind: 'entity', id: best };
 
     const ndc = new THREE.Vector2((sx / rect.width) * 2 - 1, -(sy / rect.height) * 2 + 1);

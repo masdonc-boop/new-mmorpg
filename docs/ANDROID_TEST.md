@@ -156,7 +156,12 @@ Tick each item as you go and note anything odd, with the time:
     - At the fork, one goes north to Cairnhold and the other south to Heronwick.
     - Each should see the other leave and come back into view.
     - Note the frame rate in each settlement (Settings → Show FPS).
-11. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
+11. **Dungeons** (optional, Phase 4C/4D, needs a character that meets the requirements).
+    - Open the game with `&perf` added to the address to see the frame rate and draw calls.
+    - Tap the Old Watchtower's door, both stairs, the chest after the boss, and the way out.
+    - In the Sunken Shrine sanctum, tap the Shrinekeeper's nameplate while its guardians crowd round.
+    - Note the fps and the worst frame time during each boss fight, and whether the dim rooms are readable.
+12. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
 
 ### 5. Afterwards
 

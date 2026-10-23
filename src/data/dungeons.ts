@@ -30,8 +30,10 @@ export interface DungeonDef {
   status: 'sealed' | 'open';
   /** What the door asks before it opens (checked the same way as quest requirements). */
   requirements: QuestRequirements;
-  /** Who it is balanced for. */
+  /** Who it is balanced for (advice only: the door checks `requirements`, never this). */
   recommended: { combat: number; gearTier: number; partySize: [number, number] };
+  /** What to bring, in plain words for the journal (from the balance tests, docs/DUNGEONS.md). */
+  advice: { gear: string; supplies: string; tip: string };
   boss: { name: string; level: number; style: 'melee' | 'ranged' | 'magic' };
   /** The end chest: always some of these, plus a roll on the table, plus a chance at a unique. */
   rewards: {
@@ -51,6 +53,11 @@ export const DUNGEONS: Record<string, DungeonDef> = {
     status: 'open',
     requirements: { quests: ['lanterns_of_heronwick'], combat: 30 },
     recommended: { combat: 44, gearTier: 30, partySize: [1, 3] },
+    advice: {
+      gear: 'Tier 30: glimsteel, ridgehide or mireweave. Magic Defence helps against the acolytes and the Shrinekeeper, so a mage holds up well.',
+      supplies: '15–20 silverpike or better; spark stones or arrows to spare.',
+      tip: 'The Shrinekeeper calls its two guardians when struck, and fights faster below 40% health.',
+    },
     boss: { name: 'The Shrinekeeper', level: 52, style: 'magic' },
     rewards: {
       guaranteed: [
@@ -80,6 +87,11 @@ export const DUNGEONS: Record<string, DungeonDef> = {
     status: 'open',
     requirements: { quests: ['ninefold_watch'], combat: 35 },
     recommended: { combat: 46, gearTier: 30, partySize: [1, 3] },
+    advice: {
+      gear: 'Tier 30 melee or ranged: glimsteel or ridgehide. The captain hits hard in melee; mages in robes should bring friends.',
+      supplies: '18–20 silverpike or better.',
+      tip: 'Archers shoot from across the roof. The captain calls the sentinel and archer beside him, and fights faster below 35% health.',
+    },
     boss: { name: 'The Last Watchcaptain', level: 58, style: 'melee' },
     rewards: {
       guaranteed: [
@@ -101,3 +113,6 @@ export const DUNGEONS: Record<string, DungeonDef> = {
     },
   },
 };
+
+/** Every dungeon unique (the collection log's entries). */
+export const DUNGEON_UNIQUES: ReadonlySet<string> = new Set(Object.values(DUNGEONS).flatMap((d) => d.rewards.uniques.map((u) => u.id)));

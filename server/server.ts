@@ -234,16 +234,6 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   const connections = new Map<string, number>();
   const allowedOrigins = opts.allowedOrigins ?? null;
   const alive = new WeakMap<WebSocket, boolean>();
-  const heartbeat = setInterval(() => {
-    for (const c of wss.clients) {
-      if (alive.get(c) === false) {
-        c.terminate();
-        continue;
-      }
-      alive.set(c, false);
-      c.ping();
-    }
-  }, opts.heartbeatMs ?? 10_000);
   const limits = { connectionsPerAddress: 8, signInsPerAddress: 2, transferCooldownMs: 1000, ...opts.limits };
   const addressFails = new RateLimiter(30, 5 * 60_000, clock);
   const registrations = new RateLimiter(opts.limits?.registrationsPerHour ?? 5, 60 * 60_000, clock);
@@ -256,6 +246,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   if (!['127.0.0.1', 'localhost', '::1'].includes(host)) log('WARNING: listening beyond this machine without TLS. Development use only.');
   const wss = new WebSocketServer({ port: opts.port ?? 8787, host, maxPayload: MAX_IMPORT_MESSAGE });
   await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
+  // Started once the socket server exists: the sign-in hash above can take longer than a short heartbeat.
+  const heartbeat = setInterval(() => {
+    for (const c of wss.clients) {
+      if (alive.get(c) === false) {
+        c.terminate();
+        continue;
+      }
+      alive.set(c, false);
+      c.ping();
+    }
+  }, opts.heartbeatMs ?? 10_000);
   const address = wss.address();
   const port = typeof address === 'object' && address ? address.port : opts.port ?? 8787;
 
@@ -996,6 +997,13 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
   function routeTickEvents(zoneId: ZoneId, world: GameWorld) {
     const events = world.drainEventsWithActors().filter((e) => !SERVER_ONLY_EVENTS.has(e.event.type));
     if (!events.length) return;
+    // A dungeon chest was opened (Phase 4D): save that character at once, so a crash or restart
+    // can't roll back the claim it used (and the rewards and collection log it earned) separately.
+    for (const e of events) {
+      if (e.event.type !== 'chest') continue;
+      const s = [...sessions.values()].find((x) => x.playerId === e.actor && x.zoneId === zoneId);
+      if (s) save(s, 'chest');
+    }
     const byPlayer = new Map<PlayerId, Session>();
     for (const s of sessions.values()) if (s.ws && s.zoneId === zoneId) byPlayer.set(s.playerId, s);
     for (const { event, audience } of routeEvents(world, events)) {

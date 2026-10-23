@@ -69,7 +69,7 @@ export interface WorldState {
 }
 
 /** Player fields carried by the character record instead of snapshots. */
-const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow', 'bank', 'equipment', 'toolbelt', 'grants', 'autoGather', 'shrineHeld', 'furniture', 'laps', 'quests', 'checkpoints'] as const;
+const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow', 'bank', 'equipment', 'toolbelt', 'grants', 'autoGather', 'shrineHeld', 'furniture', 'laps', 'quests', 'checkpoints', 'focus', 'dungeonClaims', 'dungeonRuns', 'collectionLog'] as const;
 /** Never copied by snapshots: identity, and positions handled by interpolation and prediction. */
 const PLAYER_SKIP = new Set<string>(['id', 'x', 'z', 'prevX', 'prevZ', 'joy', 'prayers', 'patches', 'remote', ...CHARACTER_FIELDS]);
 /** Creature and NPC fields only their AI uses (the client never runs it). */

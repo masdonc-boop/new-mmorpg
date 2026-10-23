@@ -82,5 +82,68 @@ Each unique is a step above the best crafted gear of its slot and style (tested)
 ## Deferred
 - **Instances and parties:** dungeons are shared zones; a private run for a group needs a party system.
 - **More mechanics:** traps, puzzles, keys or levers, and boss phases beyond enrage.
-- **Collection log:** a record of uniques ever found. The journal counts uniques you currently hold.
 - **Dungeon-only resources:** no gathering inside yet.
+
+## Phase 4D: polish and stability
+
+### The collection log
+- **What it records:** every dungeon unique a character has had from a chest, for good. Selling, trading, banking, dropping or destroying the item doesn't remove it.
+- **Where it shows:** each dungeon's journal card has a row of its three uniques, found ones in colour and the rest dimmed and marked "not found yet", with a count (for example "1/3").
+- **Server-side:** the log changes only when the server opens a chest. It travels to the phone with the character record and is saved with the character. A save's log is checked against the six unique ids, so junk is dropped.
+- **Saved at once:** the server saves a character the moment their chest opens. A crash or restart can't undo the claim separately from the rewards and log entries it paid for.
+- **No double rewards:** the claim is spent before anything is given, in the same simulation step. Repeated taps or a command resent after a reconnect find the chest locked (tested with a burst of six taps).
+- **Older saves:** a save from before the log records, once, any unique the character holds (bag, worn or bank) from a dungeon they have completed. Uniques from a dungeon they never completed came by trade, so they don't count.
+
+### Guidance
+Each journal card now separates three things:
+
+| Line | Meaning |
+|---|---|
+| Entry | The door's minimum requirements (unchanged since 4C), each shown met or unmet |
+| Advised | The combat level the balance tests support, with yours beside it in amber if lower |
+| Gear / Bring / Boss | What to wear and carry, and how the boss fights |
+
+- **The door's tap hint** shows the advice and your level.
+- **Going in under the advised level** gets one message on the way in (meant for combat 44+, you are N, the way out is beside you). It never blocks an experienced player.
+
+### Touch controls
+- **Doors, stairs and ways out** are easier to tap: they are sampled at foot and head height and favoured over things near them. A dungeon door also answers to taps anywhere on its landmark (the ruin, the tower).
+- **Chests** are easier to tap the same way.
+- **In a crowd**, a creature's nameplate can be tapped. A tap that lands almost as close to your current target as to a neighbour keeps your current target.
+- **Feedback:** every tap on a thing shows the ring under it.
+- **Felled trees and emptied rocks** no longer catch taps meant for the ground beside them.
+- **Fixed: getting stuck diagonally.** Standing diagonally beside a door, chest or station, the hero now steps round to an open side. Before, the path was "already there" while still out of reach, so the hero waited forever.
+
+### Performance (measured)
+`tools/perf-dungeon.cjs` runs both boss fights in an Android-sized browser with software rendering. Compare its runs with each other, not with a phone.
+
+| | Before 4D | After 4D |
+|---|---|---|
+| Shrinekeeper fight | 12.1 fps, 250 draw calls | 16 fps, 135 draw calls |
+| Watchcaptain fight | 14.2 fps, 252 draw calls | 18 fps, 115 draw calls |
+| Live geometries | 783–912, growing with each arrow | 321–431, flat |
+
+What changed:
+- **Characters' rigid parts are merged per joint** (`src/render/bake.ts`): one vertex-coloured mesh per joint instead of a box per part. Same colours, same animation.
+- **Arrows and bolts** share one set of geometry and materials and are pooled. Each arrow used to create, and never free, a geometry and two materials.
+- **Particles** no longer allocate per frame.
+- **Creatures more than 36 tiles away** are neither drawn nor animated.
+- **No sun shadow pass underground.** The switch costs one shader recompile at the door or stairs.
+
+For measuring on a phone, add `?perf` to the address. It shows:
+- frame rate, with average, 95th-percentile and worst frame times;
+- draw calls and triangles;
+- live geometries, textures and shader programs;
+- the JS heap (Chrome);
+- animated creatures, particles and projectiles in flight.
+
+### The two intermittent tests (root causes)
+- **Ground taps on a busy screen.** Tap versus long press compared `performance.now()` inside the two touch handlers. One slow frame between them (a heavy scene or a slow phone) turned a 60 ms tap into nothing. The browser's own event timestamps now decide.
+  - With one simulated 800 ms frame: the old build moved the hero on 0 of 10 taps, the new one on 9 of 10. The miss was a tap on a blocked tile.
+  - A second, separate cause showed up while repeating the smoke test: a felled stump caught the tap (above).
+  - The smoke test waits for the outcome, since a slow frame rate also slows the game's clock.
+  - A third cause was in the test itself. Its injected `touchEnd` is sent only once the page has taken `touchStart`, so after a slow frame the two events were stamped 615–700 ms apart and read as a long press. The game issued nothing, which the diagnostics in the check now show. The smoke test now stamps its taps 60 ms apart, as a finger would.
+  - Over 12 smoke runs: 6 of 6 failed checks at that cause beforehand (in 3 runs), 6 of 6 runs passed afterwards.
+- **Server start-up race (found while repeating the suite under load).** The connection heartbeat started before the socket server existed, with a password hash in between. A slow hash and a short heartbeat made it throw (`Cannot access 'wss' before initialization`). It now starts once the server is listening.
+- **"Silent connection" reconnect test.** The test faked silence by jumping the client's clock while the server kept sending ten snapshots a second. Any snapshot that arrived first reset "last heard". The server's socket now really goes silent in the test; the product logic was right.
+  - Under full CPU load: old test 11 of 20 passes, new test 20 of 20.

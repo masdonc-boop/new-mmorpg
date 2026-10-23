@@ -28,7 +28,7 @@ import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
 import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
 import { DUNGEON_AREAS, chestOf, dungeonAt, type DungeonId } from './dungeonmap';
-import { DUNGEONS } from '../data/dungeons';
+import { DUNGEONS, DUNGEON_UNIQUES } from '../data/dungeons';
 import { LANTERN_SECONDS } from '../data/hollow';
 import { splitSave, type CharacterRecord, type ZoneState } from './records';
 import { TradeDesk, type TradeView } from './trade';
@@ -234,7 +234,7 @@ export type GameEvent =
   /** The player came through a passage (cave mouth or way up). */
   | { type: 'passage'; passage: number }
   /** A dungeon chest was opened (Phase 4C): what it gave, and whether a unique was among it. */
-  | { type: 'chest'; dungeon: DungeonId; items: { item: ItemId; qty: number }[]; unique: boolean }
+  | { type: 'chest'; dungeon: DungeonId; items: { item: ItemId; qty: number }[]; unique: boolean; logged: ItemId[] }
   /** An agility obstacle was crossed. */
   | { type: 'obstacle'; obstacle: number }
   /** A pickpocket attempt on an NPC (for its reaction). */
@@ -535,6 +535,11 @@ export class Player implements Mover {
   dungeonClaims: Partial<Record<DungeonId, number>> = {};
   /** Completed dungeon runs (chests opened), by dungeon. */
   dungeonRuns: Partial<Record<DungeonId, number>> = {};
+  /**
+   * The collection log (Phase 4D): every dungeon unique this character has had from a chest. Kept
+   * for good, whatever then happens to the item (sold, traded, banked, dropped or destroyed).
+   */
+  collectionLog = new Set<ItemId>();
   /** What happened to the player's items at their latest death (for the death screen). */
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
   /** Items carried to the shrines by faded wisps, waiting to be reclaimed for a fee. */
@@ -776,7 +781,7 @@ export interface SaveData {
   /** Gameplay options (optional for older saves). */
   options?: { autoGather?: boolean; focus?: TrainingFocus };
   /** Dungeon claims waiting and runs completed (Phase 4C). */
-  dungeons?: { claims?: Partial<Record<DungeonId, number>>; runs?: Partial<Record<DungeonId, number>> };
+  dungeons?: { claims?: Partial<Record<DungeonId, number>>; runs?: Partial<Record<DungeonId, number>>; log?: ItemId[] };
   /** Gravestones still standing (optional for older saves). */
   graves?: SavedGrave[];
   /** Items held at the shrines after a wisp faded (optional for older saves). */
@@ -1184,7 +1189,7 @@ export class GameWorld {
       equipment: p.equipment.toJSON(),
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather, focus: p.focus },
-      dungeons: { claims: { ...p.dungeonClaims }, runs: { ...p.dungeonRuns } },
+      dungeons: { claims: { ...p.dungeonClaims }, runs: { ...p.dungeonRuns }, log: [...p.collectionLog] },
       laps: p.laps,
       house: { ...p.furniture },
       ...(opts.practice === false ? {} : { exchangePractice: this.market.toJSON() }),
@@ -1232,6 +1237,16 @@ export class GameWorld {
       const r = Number(s.dungeons?.runs?.[id]);
       if (c > 0) p.dungeonClaims[id] = 1;
       if (Number.isInteger(r) && r > 0) p.dungeonRuns[id] = r;
+    }
+    p.collectionLog = new Set();
+    for (const it of Array.isArray(s.dungeons?.log) ? s.dungeons!.log! : []) if (DUNGEON_UNIQUES.has(it)) p.collectionLog.add(it);
+    // Saves from before the log (Phase 4C): a unique held anywhere, from a dungeon this character
+    // has completed, is recorded once (it can only have come from that chest or a trade after it).
+    if (!Array.isArray(s.dungeons?.log)) {
+      for (const d of Object.values(DUNGEONS)) {
+        if (!(p.dungeonRuns[d.id as DungeonId] ?? 0)) continue;
+        for (const u of d.rewards.uniques) if (p.inventory.has(u.id) || p.equipment.count(u.id) > 0 || p.bank.count(u.id) > 0) p.collectionLog.add(u.id);
+      }
     }
     if (Array.isArray(s.overflow)) {
       for (const o of s.overflow) {
@@ -1853,6 +1868,20 @@ export class GameWorld {
       if (!this.pathTo(tx, tz, false)) {
         this.message("You can't reach that.", 'warn');
         p.action = null;
+      } else if (p.path.length === 0) {
+        // Already beside it as far as paths go (a diagonal neighbour of a blocked door, chest or
+        // station) but not within reach: step round to the nearest open side, rather than wait forever.
+        const fx = Math.floor(tx);
+        const fz = Math.floor(tz);
+        const side = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+          .map(([a, b]) => ({ x: fx + a + 0.5, z: fz + b + 0.5 }))
+          .filter((q) => !this.blockedAt(q.x, q.z) && dist(q.x, q.z, tx, tz) <= range)
+          .sort((a, b) => dist(a.x, a.z, p.x, p.z) - dist(b.x, b.z, p.x, p.z))[0];
+        if (side) p.path = [side];
+        else {
+          this.message("You can't reach that.", 'warn');
+          p.action = null;
+        }
       }
     }
     return false;
@@ -2943,12 +2972,16 @@ export class GameWorld {
     for (const t of dungeon.rewards.table) if (this.rng() < t.chance) got.push({ item: t.item, qty: randInt(this.rng, t.min, t.max) });
     const uniques = dungeon.rewards.uniques.filter((u) => this.rng() < u.chance).map((u) => u.id);
     for (const u of uniques) got.push({ item: u, qty: 1 });
-    for (const g of got) this.giveItem(g.item, g.qty);
+    // The claim is spent before anything is given (one tick, server-side): a repeated tap or a
+    // resent command after a reconnect finds the chest locked.
     p.dungeonClaims[c.dungeon] = 0;
+    for (const g of got) this.giveItem(g.item, g.qty);
+    const fresh = uniques.filter((u) => !p.collectionLog.has(u));
+    for (const u of uniques) p.collectionLog.add(u);
     p.dungeonRuns[c.dungeon] = (p.dungeonRuns[c.dungeon] ?? 0) + 1;
-    this.emit({ type: 'chest', dungeon: c.dungeon, items: got, unique: uniques.length > 0 });
+    this.emit({ type: 'chest', dungeon: c.dungeon, items: got, unique: uniques.length > 0, logged: fresh });
     this.message(`You open the chest (run ${p.dungeonRuns[c.dungeon]}): ${got.map((g) => `${g.qty > 1 ? `${g.qty.toLocaleString()} ` : ''}${itemDef(g.item).name}`).join(', ')}.`, 'good');
-    for (const u of uniques) this.message(`A rare find: the ${itemDef(u).name}!`, 'good');
+    for (const u of uniques) this.message(`A rare find: the ${itemDef(u).name}!${fresh.includes(u) ? ' It is added to your collection log.' : ''}`, 'good');
   }
 
   /** Walk to a passage, then come out at the other end. */
@@ -2991,7 +3024,12 @@ export class GameWorld {
     } else if (dungeonAt(p.x, p.z)) {
       const from = dungeonAt(d.x, d.z);
       const name = DUNGEONS[dungeonAt(p.x, p.z)!].name;
-      if (!from) this.message(`You step into ${name}. ${dungeonAt(p.x, p.z) === 'sunken_shrine' ? 'Cold water drips from the vaults, and something is chanting.' : 'Dust, old banners, and the scrape of armour somewhere above.'}`, 'warn');
+      if (!from) {
+        this.message(`You step into ${name}. ${dungeonAt(p.x, p.z) === 'sunken_shrine' ? 'Cold water drips from the vaults, and something is chanting.' : 'Dust, old banners, and the scrape of armour somewhere above.'}`, 'warn');
+        // Advice, never a barrier: say so once on the way in if the character is under the advised level.
+        const dd = DUNGEONS[dungeonAt(p.x, p.z)!];
+        if (p.skills.combatLevel() < dd.recommended.combat) this.message(`${name} is meant for combat ${dd.recommended.combat}+ (you are ${p.skills.combatLevel()}). Bring plenty of food; the way out is beside you.`, 'warn');
+      }
       else this.message(d.def.verb === 'Climb' ? 'You climb the stairs.' : 'You climb down the stairs.');
     } else this.message(dungeonAt(d.x, d.z) ? 'You step back out into the open air.' : 'You climb back up into the daylight.');
   }

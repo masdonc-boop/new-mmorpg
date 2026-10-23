@@ -260,7 +260,10 @@ async function boot() {
       const hit = renderer.pick(x, y);
       if (!hit) return;
       if (hit.kind === 'entity' && net && hit.id !== world.player.id && world.players.has(hit.id)) hud.openPlayerMenu(hit.id);
-      else if (hit.kind === 'entity') issue({ type: 'interact', target: hit.id });
+      else if (hit.kind === 'entity') {
+        issue({ type: 'interact', target: hit.id });
+        renderer.showEntityTap(hit.id);
+      }
       else {
         issue({ type: 'moveTo', x: hit.x, z: hit.z });
         renderer.showTapMarker(hit.x, hit.z);

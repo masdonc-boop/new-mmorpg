@@ -324,3 +324,111 @@ describe('4C.3 the end chest', () => {
     expect(w3.player.dungeonRuns.old_watchtower).toBeUndefined();
   });
 });
+
+describe('4D the collection log', () => {
+  const openChestNow = (w: GameWorld, id: DungeonId) => {
+    const c = w.chests.find((x) => x.dungeon === id)!;
+    const [a, b] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([x, z]) => !isBlocked(map, c.x + x, c.z + z))!;
+    stand(w, c.x + a, c.z + b);
+    w.issue({ type: 'interact', target: c.id });
+    run(w, 1);
+  };
+  const lucky = (w: GameWorld) => ((w as unknown as { rng: () => number }).rng = () => 0.001);
+
+  it('records each unique from a chest for good, even after it is dropped, banked or sold', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    const p = w.player;
+    p.dungeonClaims.old_watchtower = 1;
+    lucky(w);
+    openChestNow(w, 'old_watchtower');
+    expect([...p.collectionLog].sort()).toEqual(['ninefold_cloak', 'warders_longbow', 'watchcaptain_blade']);
+    const ev = w.drainEvents().find((e) => e.type === 'chest');
+    expect(ev && ev.type === 'chest' && ev.logged.length).toBe(3);
+    // Gone from the bag entirely: still in the log.
+    for (const u of ['ninefold_cloak', 'warders_longbow', 'watchcaptain_blade'] as const) p.inventory.remove(u, 1);
+    expect(p.collectionLog.size).toBe(3);
+    // A second find of the same item isn't "new" (the bag is emptied first: the chest needs room).
+    p.inventory.slots.fill(null);
+    p.dungeonClaims.old_watchtower = 1;
+    openChestNow(w, 'old_watchtower');
+    const again = w.drainEvents().find((e) => e.type === 'chest');
+    expect(again && again.type === 'chest' && again.logged).toEqual([]);
+    expect(p.collectionLog.size).toBe(3);
+  });
+
+  it('is saved and loaded; junk in a save is ignored', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    w.player.collectionLog.add('tidecaller_wand');
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    expect(save.dungeons?.log).toEqual(['tidecaller_wand']);
+    expect([...new GameWorld({ save, map, clock: () => 0 }).player.collectionLog]).toEqual(['tidecaller_wand']);
+    save.dungeons!.log = ['tidecaller_wand', 'coins', 'not_an_item'] as never;
+    expect([...new GameWorld({ save, map, clock: () => 0 }).player.collectionLog]).toEqual(['tidecaller_wand']);
+  });
+
+  it('a save from before the log records uniques it holds from dungeons it has completed (once)', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    w.player.dungeonRuns.sunken_shrine = 2;
+    w.player.bank.add('drowned_signet', 1);
+    w.player.inventory.add('watchcaptain_blade', 1);
+    const save = JSON.parse(JSON.stringify(w.save())) as SaveData;
+    delete save.dungeons!.log;
+    const w2 = new GameWorld({ save, map, clock: () => 0 });
+    // The signet (from a completed shrine) counts; the blade doesn't (no tower runs: it came by trade).
+    expect([...w2.player.collectionLog]).toEqual(['drowned_signet']);
+  });
+
+  it('a chest can’t be opened twice on one claim, however quickly the taps come', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    const p = w.player;
+    p.dungeonClaims.sunken_shrine = 1;
+    const c = w.chests.find((x) => x.dungeon === 'sunken_shrine')!;
+    const [a, b] = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([x, z]) => !isBlocked(map, c.x + x, c.z + z))!;
+    stand(w, c.x + a, c.z + b);
+    for (let i = 0; i < 5; i++) w.issue({ type: 'interact', target: c.id });
+    run(w, 0.2);
+    for (let i = 0; i < 5; i++) w.issue({ type: 'interact', target: c.id });
+    run(w, 1);
+    expect(p.dungeonRuns.sunken_shrine).toBe(1);
+    expect(w.drainEvents().filter((e) => e.type === 'chest').length).toBe(1);
+  });
+
+  it('the guidance keeps entry requirements, advice and supplies apart; advice never blocks the door', () => {
+    for (const d of Object.values(DUNGEONS)) {
+      expect(d.recommended.combat).toBeGreaterThan(d.requirements.combat ?? 0);
+      expect(d.advice.gear.length).toBeGreaterThan(20);
+      expect(d.advice.supplies.length).toBeGreaterThan(10);
+    }
+    // Entry requirements met but below the advised level: in you go, with a warning.
+    const w = new GameWorld({ map, clock: () => 0 });
+    w.player.quests.elders_request = { stage: 3, kills: 0, done: true };
+    w.player.quests.lanterns_of_heronwick = { stage: 5, kills: 0, done: true };
+    for (const s of ['attack', 'strength', 'defence', 'hitpoints'] as const) w.player.skills.addXp(s, xpForLevel(28));
+    expect(w.player.skills.combatLevel()).toBeGreaterThanOrEqual(30);
+    expect(w.player.skills.combatLevel()).toBeLessThan(44);
+    const said = goThrough(w, 'sunken_shrine_door');
+    expect(dungeonAt(w.player.x, w.player.z)).toBe('sunken_shrine');
+    expect(said.join(' ')).toMatch(/meant for combat 44\+/);
+  });
+});
+
+describe('4D reaching things from a diagonal', () => {
+  it('standing diagonally beside a chest or door, a tap still reaches it (it used to wait forever)', () => {
+    const w = veteran(new GameWorld({ map, clock: () => 0 }));
+    const p = w.player;
+    const c = w.chests.find((x) => x.dungeon === 'old_watchtower')!;
+    p.dungeonClaims.old_watchtower = 1;
+    // The open diagonal beside the chest (where a fight had pushed the hero in the smoke test).
+    const diag = [[-1, -1], [1, -1], [-1, 1], [1, 1]].find(([a, b]) => !isBlocked(map, c.x + a, c.z + b))!;
+    stand(w, c.x + diag[0] * 1.15, c.z + diag[1] * 1.15);
+    w.issue({ type: 'interact', target: c.id });
+    run(w, 3);
+    expect(p.dungeonRuns.old_watchtower).toBe(1);
+    // And the shrine's door, from the diagonal beside its corner.
+    const door = w.doorways.find((d) => d.def.id === 'sunken_shrine_door')!;
+    stand(w, door.x - 1.15, door.z - 1.15);
+    w.issue({ type: 'interact', target: door.id });
+    run(w, 3);
+    expect(dungeonAt(p.x, p.z)).toBe('sunken_shrine');
+  });
+});

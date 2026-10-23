@@ -2832,3 +2832,67 @@ button.danger {
   white-space: pre;
   pointer-events: none;
 }
+/* Dungeon journal cards (Phase 4D): requirements, advice and the collection log. */
+.dungeon-card .dg-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.dungeon-card .dg-row > b {
+  flex: 0 0 58px;
+  color: var(--muted);
+  font-weight: 700;
+}
+.dg-warn {
+  color: #ffc46a;
+}
+.dg-dim {
+  color: var(--muted);
+}
+.dg-log {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--edge-soft);
+}
+.dg-log-head {
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+.dg-items {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.dg-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 3px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--muted);
+}
+.dg-item img {
+  width: 34px;
+  height: 34px;
+  filter: grayscale(1) brightness(0.45);
+  opacity: 0.7;
+}
+.dg-item small {
+  display: block;
+  font-size: 9.5px;
+  opacity: 0.8;
+}
+.dg-item.got {
+  color: var(--gold);
+  background: rgba(245, 197, 66, 0.1);
+}
+.dg-item.got img {
+  filter: none;
+  opacity: 1;
+}
