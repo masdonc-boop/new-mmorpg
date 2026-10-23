@@ -690,6 +690,8 @@ export class GameRenderer {
       }
       const y = groundHeight(w.map, g.x, g.z);
       v.sprite.position.set(g.x, y + 0.36 + Math.sin(t * 2.2 + g.id) * 0.04, g.z);
+      // 5C: a rare pile breathes a little larger, so it stands out without a new mesh.
+      if (g.rarity === 'rare') v.sprite.scale.setScalar(0.66 + 0.08 * (0.5 + 0.5 * Math.sin(t * 4 + g.id)));
       v.shadow.position.set(g.x, y + 0.03, g.z);
     }
     for (const [id, v] of this.groundViews) {
@@ -985,9 +987,11 @@ export class GameRenderer {
     }
     for (const v of this.groundViews.values()) {
       const g = v.pile;
-      const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < 5;
+      // Uncommon and rare piles keep their name in view a little further away, in their colour (5C).
+      const near = Math.hypot(g.x - w.player.x, g.z - w.player.z) < (g.rarity ? 9 : 5);
       const a = near ? this.project(g.x, v.sprite.position.y + 0.45, g.z) : null;
-      this.overlay.plate(g.id, a, { name: g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name, kind: 'npc', show: near });
+      const label = g.qty > 1 ? `${itemDef(g.item).name} × ${g.qty}` : itemDef(g.item).name;
+      this.overlay.plate(g.id, a, { name: g.rarity ? `<span class="loot-${g.rarity}">${label}</span>` : label, kind: 'npc', show: near });
     }
     for (const h of w.hotspots) {
       const near = Math.hypot(h.x - w.player.x, h.z - w.player.z) < 3;
@@ -1199,6 +1203,18 @@ export class GameRenderer {
             this.particles.emit({ x: r.x, y: r.y + 0.4, z: r.z, count: 12, color: ['#ffffff', '#d0d0ff'], speed: 1.5, up: 1.5, gravity: 1, life: 0.6, size: 0.08, spread: 0.5 });
           }
         }
+        break;
+      }
+      case 'drop': {
+        // 5C: where an uncommon or rare drop lands, one short label (and a burst of gold for rare).
+        // Over a network the pile can arrive a snapshot after the event: then mark it over the hero.
+        const g = this.world.groundItems.find((x) => x.id === e.ground);
+        const at = g ?? this.playerModel.root.position;
+        const y = groundHeight(this.world.map, at.x, at.z);
+        // Uncommon drops are shown by their pile's coloured name and the pickup toast alone.
+        const text = e.logged ? '📖 New log entry' : e.rarity === 'rare' ? 'Rare drop!' : '';
+        if (text) this.overlay.float(text, `drop-label loot-${e.rarity}`, () => this.project(at.x, y + 1.1, at.z), 2.2, 40);
+        if (e.rarity === 'rare') this.particles.emit({ x: at.x, y: y + 0.4, z: at.z, count: 24, color: ['#ffd84d', '#fff1a8', '#ffffff'], speed: 2.2, up: 3.5, gravity: 5, life: 1.1, size: 0.08, spread: 0.3 });
         break;
       }
       case 'levelUp': {

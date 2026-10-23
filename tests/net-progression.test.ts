@@ -287,3 +287,40 @@ describe('5B multiplayer: training mode and armour are the server’s', () => {
     expect(p.equipment.armourAgainst().magic).toBeCloseTo(10.5, 6);
   }, 10_000);
 });
+
+describe('5C multiplayer: loot and the creature log are the server’s', () => {
+  it('a rare find is rolled on the server, logged once, saved at once, reaches the phone, and survives a restart', async () => {
+    const dbPath = freshDb();
+    const { s: server, url } = await serve(dbPath);
+    const a = await join(server, url, 'Ash');
+    const p = a.s.player;
+    // The phone can't write its own log: its copy is replaced from the server's record.
+    a.c.world!.player.dropLog.add('goblin:iron_dagger');
+    a.c.issue({ type: 'logDrop', key: 'goblin:iron_dagger' } as never);
+    await pump([a], 200);
+    expect(p.dropLog.size).toBe(0);
+    const zone = server.zone;
+    const gob = zone.enemies.find((x) => x.def.id === 'goblin')!;
+    (zone as unknown as { rng: () => number }).rng = () => 0;
+    // Stand by it: the phone is sent the piles near it.
+    p.x = p.prevX = gob.x + 1;
+    p.z = p.prevZ = gob.z;
+    zone.act(p, () => (zone as unknown as { killEnemy: (e: unknown) => void }).killEnemy(gob));
+    await pump([a], 300);
+    expect([...p.dropLog].sort()).toEqual(['goblin:iron_dagger', 'goblin:iron_helm']);
+    expect([...a.c.world!.player.dropLog].sort()).toEqual(['goblin:iron_dagger', 'goblin:iron_helm']);
+    expect(a.events.filter((e) => e.type === 'drop' && e.logged).length).toBe(1);
+    // The pile reached the phone marked rare.
+    expect(a.c.world!.groundItems.find((g) => g.item === 'iron_dagger')?.rarity).toBe('rare');
+    // Saved the moment it was found, before any periodic save.
+    const stored = server.repos.characterFor(a.s.accountId!)!.record as { dropLog?: string[] };
+    expect(stored.dropLog?.sort()).toEqual(['goblin:iron_dagger', 'goblin:iron_helm']);
+    const port = server.port;
+    a.c.close();
+    await server.close({ save: true });
+    running.splice(running.indexOf(server), 1);
+    const again = await serve(dbPath, port);
+    const b = await join(again.s, again.url, 'Ash', 'login');
+    expect([...b.s.player.dropLog].sort()).toEqual(['goblin:iron_dagger', 'goblin:iron_helm']);
+  }, 15_000);
+});

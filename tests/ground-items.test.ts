@@ -32,7 +32,7 @@ describe('Monster drops on the ground', () => {
     const before = w.player.inventory.toJSON();
     const e = killSlime(w);
     expect(w.player.inventory.toJSON()).toEqual(before);
-    expect(w.groundItems.map((g) => g.item).sort()).toEqual(['air_rune', 'coins', 'slime_gel']);
+    expect(w.groundItems.map((g) => g.item).sort()).toEqual(['air_rune', 'coins', 'potato_seed', 'slime_gel']);
     for (const g of w.groundItems) {
       expect(g.owner).toBe(w.player.id);
       expect(Math.hypot(g.x - e.x, g.z - e.z)).toBeLessThan(0.9);
@@ -101,7 +101,7 @@ describe('Monster drops on the ground', () => {
     pickUp(w, cash);
     pickUp(w, cash); // second tap on a pile that is gone does nothing
     expect(w.player.inventory.count('coins')).toBe(coins + cashQty);
-    expect(w.groundItems.map((g) => g.item)).toEqual(['air_rune']);
+    expect(w.groundItems.map((g) => g.item)).toEqual(['air_rune', 'potato_seed']);
   });
 
   it('with a full inventory the pile stays on the ground and the player is told', () => {
@@ -138,10 +138,10 @@ describe('Monster drops on the ground', () => {
   it('keeps piles, owners and timers through save and load, dropping expired ones', () => {
     const w = new GameWorld();
     killSlime(w);
-    const [a, b, c] = w.groundItems;
+    const [a, b, ...gone] = w.groundItems;
     a.age = 120;
     b.age = LOOT_PRIVATE_SECONDS + 30;
-    c.age = LOOT_PRIVATE_SECONDS + LOOT_PUBLIC_SECONDS + 1;
+    for (const c of gone) c.age = LOOT_PRIVATE_SECONDS + LOOT_PUBLIC_SECONDS + 1;
     const save = JSON.parse(JSON.stringify(w.save()));
     const w2 = new GameWorld({ save });
     const got = w2.groundItems.map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age }));
@@ -155,7 +155,7 @@ describe('Monster drops on the ground', () => {
 
   it('repeated kills and pickups neither duplicate nor lose items', () => {
     const w = new GameWorld();
-    const start = w.player.inventory.count('slime_gel') + w.player.inventory.count('coins') + w.player.inventory.count('air_rune');
+    const start = w.player.inventory.count('slime_gel') + w.player.inventory.count('coins') + w.player.inventory.count('air_rune') + w.player.inventory.count('potato_seed');
     let dropped = 0;
     for (let i = 0; i < 8; i++) {
       killSlime(w);
@@ -163,7 +163,7 @@ describe('Monster drops on the ground', () => {
     }
     for (const g of w.groundItems) dropped += g.qty;
     for (const g of [...w.groundItems]) pickUp(w, g);
-    const end = w.player.inventory.count('slime_gel') + w.player.inventory.count('coins') + w.player.inventory.count('air_rune');
+    const end = w.player.inventory.count('slime_gel') + w.player.inventory.count('coins') + w.player.inventory.count('air_rune') + w.player.inventory.count('potato_seed');
     const left = w.groundItems.reduce((a, g) => a + g.qty, 0);
     expect(end + left).toBe(start + dropped);
     expect(w.player.inventory.usedSlots()).toBeLessThanOrEqual(INVENTORY_SLOTS);

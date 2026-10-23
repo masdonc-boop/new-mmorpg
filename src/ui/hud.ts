@@ -19,6 +19,8 @@ import { ExchangeView } from './exchangeview';
 import { PracticeSource, type MarketSource } from './marketsource';
 import { SHOPS, shopFor } from '../data/shops';
 import { DUNGEONS } from '../data/dungeons';
+import { DROP_LOG, type Rarity } from '../data/collection';
+import { ENEMIES } from '../data/enemies';
 import { RECIPES, STATION_INFO, isAnywhere, useCombo, usable, type AnywhereKind, type StationKind } from '../data/recipes';
 import { skillUnlocks } from '../data/unlocks';
 import { TOOL_SLOTS } from '../data/tools';
@@ -684,7 +686,7 @@ export class Hud {
         }
         break;
       case 'loot':
-        this.lootToast(e.item, e.qty);
+        this.lootToast(e.item, e.qty, e.rarity);
         this.invDirty = true;
         this.craftDirty = true;
         break;
@@ -833,8 +835,10 @@ export class Hud {
     setTimeout(() => d.remove(), 1600);
   }
 
-  private lootToast(item: ItemId, qty: number) {
-    const d = el('div', 'loot-toast', `<img src="${itemIcon(item)}" alt=""> +${qty} ${itemDef(item).name}`);
+  private lootToast(item: ItemId, qty: number, rarity?: Rarity) {
+    // 5C: uncommon and rare pickups are coloured and labelled; ordinary ones look as before.
+    const tag = rarity === 'rare' ? '<b>Rare</b> ' : rarity === 'uncommon' ? '<b>Uncommon</b> ' : '';
+    const d = el('div', `loot-toast${rarity ? ` loot-${rarity}` : ''}`, `<img src="${itemIcon(item)}" alt=""> ${tag}+${qty} ${itemDef(item).name}`);
     this.xpDrops.appendChild(d);
     setTimeout(() => d.remove(), 2000);
   }
@@ -1737,6 +1741,25 @@ export class Hud {
             return `<div class="dg-item ${got ? 'got' : ''}" title="${itemDef(u.id).name}"><img src="${itemIcon(u.id)}" alt=""><span>${got ? itemDef(u.id).name : `${itemDef(u.id).name}<small>not found yet</small>`}</span></div>`;
           })
           .join('')}</div></div>`;
+      body.appendChild(card);
+    }
+    // The creature half of the collection log (5C): boss signature drops and rare creature finds.
+    for (const g of DROP_LOG) {
+      const total = g.rows.reduce((a, r) => a + r.entries.length, 0);
+      const found = g.rows.reduce((a, r) => a + r.entries.filter((x) => w.player.dropLog.has(x.key)).length, 0);
+      const card = el('div', 'quest-card dungeon-card active');
+      card.innerHTML = `<div class="qc-head"><span class="qc-name">📖 ${g.name}</span><span class="qc-status">${found}/${total}</span></div>${g.rows
+        .map((r) => {
+          const got = r.entries.filter((x) => w.player.dropLog.has(x.key)).length;
+          return `<div class="dg-log"><div class="dg-log-head">${ENEMIES[r.source].name} <b>${got}/${r.entries.length}</b></div><div class="dg-items">${r.entries
+            .map((x) => {
+              const has = w.player.dropLog.has(x.key);
+              const name = itemDef(x.item).name;
+              return `<div class="dg-item ${has ? 'got' : ''}" title="${name}"><img src="${itemIcon(x.item)}" alt=""><span>${has ? name : `${name}<small>${x.rarity === 'rare' ? 'rare · ' : ''}not found yet</small>`}</span></div>`;
+            })
+            .join('')}</div></div>`;
+        })
+        .join('')}`;
       body.appendChild(card);
     }
     body.appendChild(

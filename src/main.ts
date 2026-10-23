@@ -172,6 +172,11 @@ async function boot() {
       case 'levelUp':
         audio.play('levelup');
         break;
+      case 'drop':
+        // A rare drop gets the quest chime; a new collection log entry is saved at once (5C).
+        if (e.rarity === 'rare') audio.play('quest');
+        if (e.logged) persist();
+        break;
       case 'quest':
         if (e.complete) audio.play('quest');
         break;

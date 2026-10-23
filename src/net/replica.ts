@@ -2,6 +2,7 @@ import { GameWorld, Player, type Appearance } from '../sim/world';
 import { Equipment } from '../sim/equipment';
 import type { EquipSlot } from '../data/items';
 import type { ItemId } from '../data/items';
+import type { Rarity } from '../data/collection';
 import type { PrayerId } from '../data/prayers';
 import type { ItemStack } from '../sim/inventory';
 import { mergeSave, type CharacterRecord } from '../sim/records';
@@ -63,13 +64,13 @@ export interface WorldState {
   /** Depleted resource nodes, and nodes hit recently (id, seconds since the hit) for the shake. */
   depleted: number[];
   hits: [number, number][];
-  ground: { id: number; item: ItemId; qty: number; x: number; z: number; owner: number | null; age: number }[];
+  ground: { id: number; item: ItemId; qty: number; x: number; z: number; owner: number | null; age: number; rarity?: Rarity }[];
   graves: { id: number; x: number; z: number; owner: number; items: ItemStack[]; age: number }[];
   fires: { id: number; x: number; z: number; life: number; age: number }[];
 }
 
 /** Player fields carried by the character record instead of snapshots. */
-const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow', 'bank', 'equipment', 'toolbelt', 'grants', 'autoGather', 'shrineHeld', 'furniture', 'laps', 'quests', 'checkpoints', 'focus', 'dungeonClaims', 'dungeonRuns', 'collectionLog'] as const;
+const CHARACTER_FIELDS = ['name', 'appearance', 'skills', 'inventory', 'overflow', 'bank', 'equipment', 'toolbelt', 'grants', 'autoGather', 'shrineHeld', 'furniture', 'laps', 'quests', 'checkpoints', 'focus', 'dungeonClaims', 'dungeonRuns', 'collectionLog', 'dropLog'] as const;
 /** Never copied by snapshots: identity, and positions handled by interpolation and prediction. */
 const PLAYER_SKIP = new Set<string>(['id', 'x', 'z', 'prevX', 'prevZ', 'joy', 'prayers', 'patches', 'remote', ...CHARACTER_FIELDS]);
 /** Creature and NPC fields only their AI uses (the client never runs it). */
@@ -166,7 +167,7 @@ export function captureState(world: GameWorld, tick: number, ack: number, radius
     hits: world.nodes.filter((n) => n.hitAge < 1).map((n) => [n.id, round(n.hitAge)] as [number, number]),
     // Only what this player may see: their own private loot and their own wisps. Ages are sent to
     // the second (the client only uses them for timers and fading), so piles don't change every snapshot.
-    ground: world.groundItems.filter((g) => !g.expired && g.visibleTo(p.id) && near(g)).map((g) => ({ id: g.id, item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: Math.floor(g.age) })),
+    ground: world.groundItems.filter((g) => !g.expired && g.visibleTo(p.id) && near(g)).map((g) => ({ id: g.id, item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: Math.floor(g.age), ...(g.rarity ? { rarity: g.rarity } : {}) })),
     graves: world.graves.filter((g) => !g.expired && g.owner === p.id).map((g) => ({ id: g.id, x: g.x, z: g.z, owner: g.owner, items: g.items.map((i) => ({ ...i })), age: Math.floor(g.age) })),
     fires: world.fires.filter((f) => !f.expired && near(f)).map((f) => ({ id: f.id, x: f.x, z: f.z, life: f.life, age: Math.floor(f.age) })),
   };

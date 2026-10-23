@@ -9,6 +9,7 @@ import { QUESTS, missingRequirements, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
 import { SKILL_INFO, XP_TABLE, type SkillId } from '../data/skills';
 import { skillUnlocks } from '../data/unlocks';
+import { DROP_LOG_KEYS, dropRarity, type Rarity } from '../data/collection';
 import { STYLES, TRAINING_FOCUSES, combatXp, hitChance, rollHit, type CombatStyle, type TrainingFocus } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
@@ -201,7 +202,9 @@ export type GameEvent =
   | { type: 'respawn'; id: number }
   | { type: 'xp'; skill: SkillId; amount: number }
   | { type: 'levelUp'; skill: SkillId; level: number; unlocked?: string[]; combat?: number }
-  | { type: 'loot'; item: ItemId; qty: number }
+  | { type: 'loot'; item: ItemId; qty: number; rarity?: Rarity }
+  /** 5C: a kill's most notable drop (rare, uncommon or a collection log find), once per kill, for its owner. */
+  | { type: 'drop'; item: ItemId; qty: number; rarity: Rarity; ground: number; logged: boolean }
   | { type: 'message'; text: string; tone: MessageTone }
   | { type: 'gather'; node: number; success: boolean }
   | { type: 'nodeDepleted'; node: number }
@@ -303,6 +306,8 @@ export class GroundItem {
     public readonly z: number,
     /** Player who earned the drop; null once it was created public. */
     public readonly owner: number | null,
+    /** 5C: how rare the drop was (common piles have none), for its look and the pickup toast. */
+    public readonly rarity?: Rarity,
   ) {}
 
   /** Whether the pile is still in its owner-only period. */
@@ -481,6 +486,8 @@ export interface SavedGroundItem {
   z: number;
   owner: number | null;
   age: number;
+  /** 5C: an uncommon or rare drop (optional; older saves have none). */
+  rarity?: Rarity;
 }
 
 export interface QuestProgress {
@@ -544,6 +551,8 @@ export class Player implements Mover {
    * for good, whatever then happens to the item (sold, traded, banked, dropped or destroyed).
    */
   collectionLog = new Set<ItemId>();
+  /** Creature drops found (Phase 5C): `creature:item` keys from DROP_LOG, kept for good. */
+  dropLog = new Set<string>();
   /** What happened to the player's items at their latest death (for the death screen). */
   lastDeath: { kept: ItemStack[]; lost: number; grave: number | null; keep: number } | null = null;
   /** Items carried to the shrines by faded wisps, waiting to be reclaimed for a fee. */
@@ -788,6 +797,8 @@ export interface SaveData {
   options?: { autoGather?: boolean; focus?: TrainingFocus };
   /** Dungeon claims waiting and runs completed (Phase 4C). */
   dungeons?: { claims?: Partial<Record<DungeonId, number>>; runs?: Partial<Record<DungeonId, number>>; log?: ItemId[] };
+  /** 5C: creature collection log entries (`creature:item`; optional, older saves start empty). */
+  dropLog?: string[];
   /** Gravestones still standing (optional for older saves). */
   graves?: SavedGrave[];
   /** Items held at the shrines after a wisp faded (optional for older saves). */
@@ -1010,7 +1021,7 @@ export class GameWorld {
         // Piles the saving player owned stay theirs even if their id has changed (saves without an
         // id are from before ids could change, when the player was always 1).
         const owner = typeof g.owner !== 'number' ? null : g.owner === savedId ? p.id : g.owner;
-        const pile = this.spawnGroundItem(g.item, qty, g.x, g.z, owner);
+        const pile = this.spawnGroundItem(g.item, qty, g.x, g.z, owner, g.rarity === 'uncommon' || g.rarity === 'rare' ? g.rarity : undefined);
         pile.age = Number.isFinite(age) && age > 0 ? age : 0;
       }
       this.groundItems = this.groundItems.filter((g) => !g.expired);
@@ -1116,7 +1127,7 @@ export class GameWorld {
    * server's, keeping existing objects (by id) so the renderer's views stay attached.
    */
   syncDynamicEntities(state: {
-    ground: { id: number; item: ItemId; qty: number; x: number; z: number; owner: number | null; age: number }[];
+    ground: { id: number; item: ItemId; qty: number; x: number; z: number; owner: number | null; age: number; rarity?: Rarity }[];
     graves: { id: number; x: number; z: number; owner: number; items: ItemStack[]; age: number }[];
     fires: { id: number; x: number; z: number; life: number; age: number }[];
   }) {
@@ -1124,7 +1135,7 @@ export class GameWorld {
     for (const g of this.groundItems) this.byId.delete(g.id);
     this.groundItems = state.ground.map((s) => {
       const old = ground.get(s.id);
-      const g = old && old.item === s.item ? old : new GroundItem(s.id, s.item, s.qty, s.x, s.z, s.owner);
+      const g = old && old.item === s.item ? old : new GroundItem(s.id, s.item, s.qty, s.x, s.z, s.owner, s.rarity);
       g.qty = s.qty;
       g.age = s.age;
       this.byId.set(g.id, g);
@@ -1165,7 +1176,7 @@ export class GameWorld {
     // Only this player's own things: wisps, and loot piles still private to them.
     const id = this.player.id;
     return {
-      ground: this.groundItems.filter((g) => !g.expired && g.owner === id && g.isPrivate).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
+      ground: this.groundItems.filter((g) => !g.expired && g.owner === id && g.isPrivate).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age, ...(g.rarity ? { rarity: g.rarity } : {}) })),
       graves: this.graves.filter((g) => !g.expired && g.owner === id).map((g) => ({ x: g.x, z: g.z, age: g.age, items: g.items.map((i) => ({ ...i })), owner: g.owner })),
     };
   }
@@ -1196,6 +1207,7 @@ export class GameWorld {
       ammoQty: p.equipment.ammoQty,
       options: { autoGather: p.autoGather, focus: p.focus },
       dungeons: { claims: { ...p.dungeonClaims }, runs: { ...p.dungeonRuns }, log: [...p.collectionLog] },
+      dropLog: [...p.dropLog],
       laps: p.laps,
       house: { ...p.furniture },
       ...(opts.practice === false ? {} : { exchangePractice: this.market.toJSON() }),
@@ -1208,7 +1220,7 @@ export class GameWorld {
       toolbelt: p.toolbelt.toJSON(),
       quests: JSON.parse(JSON.stringify(p.quests)),
       checkpoints: [...p.checkpoints],
-      ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age })),
+      ground: this.groundItems.filter((g) => !g.expired).map((g) => ({ item: g.item, qty: g.qty, x: g.x, z: g.z, owner: g.owner, age: g.age, ...(g.rarity ? { rarity: g.rarity } : {}) })),
     };
   }
 
@@ -1244,6 +1256,7 @@ export class GameWorld {
       if (c > 0) p.dungeonClaims[id] = 1;
       if (Number.isInteger(r) && r > 0) p.dungeonRuns[id] = r;
     }
+    p.dropLog = new Set((Array.isArray(s.dropLog) ? s.dropLog : []).filter((k): k is string => typeof k === 'string' && DROP_LOG_KEYS.has(k)));
     p.collectionLog = new Set();
     for (const it of Array.isArray(s.dungeons?.log) ? s.dungeons!.log! : []) if (DUNGEON_UNIQUES.has(it)) p.collectionLog.add(it);
     // Saves from before the log (Phase 4C): a unique held anywhere, from a dungeon this character
@@ -2030,13 +2043,30 @@ export class GameWorld {
     if (e.def.boss) this.creditBossKill(e);
     // Drops land on the ground where the enemy fell, reserved for the player who earned them.
     let k = 0;
+    // 5C: one feedback event per kill, for its most notable pile (a log find, else rare, else uncommon).
+    let notable: { item: ItemId; qty: number; rarity: Rarity; ground: number; score: number } | null = null;
+    let anyLogged = false;
     for (const d of e.def.drops) {
       if (this.rng() > d.chance) continue;
       const a = k++ * 2.4 + this.rng() * 0.6;
       const r = k === 1 ? 0.2 : 0.65;
       const at = this.walkableNear(e.x + Math.sin(a) * r, e.z + Math.cos(a) * r, e.x, e.z);
-      this.spawnGroundItem(d.item, randInt(this.rng, d.min, d.max), at.x, at.z, p.id);
+      const qty = randInt(this.rng, d.min, d.max);
+      // 5C: rarity from the drop's own chance; uncommon and rare piles are marked, and gear on the
+      // creature collection log is recorded the moment it drops (it is the player's, full bag or not).
+      const rarity = dropRarity(d.item, d.chance);
+      const g = this.spawnGroundItem(d.item, qty, at.x, at.z, p.id, rarity === 'common' ? undefined : rarity);
+      const key = `${e.def.id}:${d.item}`;
+      const logged = DROP_LOG_KEYS.has(key) && !p.dropLog.has(key);
+      if (logged) p.dropLog.add(key);
+      anyLogged ||= logged;
+      const score = (logged ? 4 : 0) + (rarity === 'rare' ? 2 : rarity === 'uncommon' ? 1 : 0);
+      if (score > 0 && (!notable || score > notable.score)) notable = { item: d.item, qty, rarity, ground: g.id, score };
+      const name = itemDef(d.item).name;
+      if (logged) this.message(`New collection log entry: ${name} (${e.def.name})!`, 'good');
+      else if (rarity === 'rare') this.message(`Rare drop: ${qty > 1 ? `${qty} × ` : ''}${name}!`, 'good');
     }
+    if (notable) this.emit({ type: 'drop', item: notable.item, qty: notable.qty, rarity: notable.rarity, ground: notable.ground, logged: anyLogged });
     for (const q of Object.values(QUESTS)) {
       const prog = p.quests[q.id];
       if (!prog || prog.done) continue;
@@ -2057,8 +2087,8 @@ export class GameWorld {
     return added;
   }
 
-  spawnGroundItem(item: ItemId, qty: number, x: number, z: number, owner: number | null): GroundItem {
-    const g = new GroundItem(this.nextGroundId++, item, qty, x, z, owner);
+  spawnGroundItem(item: ItemId, qty: number, x: number, z: number, owner: number | null, rarity?: Rarity): GroundItem {
+    const g = new GroundItem(this.nextGroundId++, item, qty, x, z, owner, rarity);
     this.groundItems.push(g);
     this.byId.set(g.id, g);
     return g;
@@ -2170,7 +2200,7 @@ export class GameWorld {
       return;
     }
     g.qty -= added;
-    this.emit({ type: 'loot', item: g.item, qty: added });
+    this.emit({ type: 'loot', item: g.item, qty: added, ...(g.rarity ? { rarity: g.rarity } : {}) });
     const name = itemDef(g.item).name;
     this.message(`You pick up ${added > 1 ? `${added} x ` : ''}${name}.`);
     if (g.qty <= 0) {

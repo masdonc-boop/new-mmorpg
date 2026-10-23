@@ -129,6 +129,7 @@ export const RECIPES: Record<string, RecipeDef> = {
   shortbow_u: r({ id: 'shortbow_u', station: 'fletching', skill: 'fletching', level: 4, xp: 7, inputs: [{ item: 'logs', qty: 1 }], output: { item: 'shortbow_u', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   shortbow: r({ id: 'shortbow', station: 'fletching', skill: 'fletching', level: 4, xp: 7, inputs: [{ item: 'shortbow_u', qty: 1 }, { item: 'bowstring', qty: 1 }], output: { item: 'shortbow', qty: 1 }, seconds: 1.2 }),
   riverwood_wand: r({ id: 'riverwood_wand', station: 'fletching', skill: 'fletching', level: 10, xp: 20, inputs: [{ item: 'logs', qty: 1 }, { item: 'dull_spark', qty: 4 }], output: { item: 'riverwood_wand', qty: 1 }, seconds: 1.8, tool: 'knife' }),
+  oak_wand: r({ id: 'oak_wand', station: 'fletching', skill: 'fletching', level: 14, xp: 32, inputs: [{ item: 'oak_logs', qty: 1 }, { item: 'dull_spark', qty: 6 }], output: { item: 'oak_wand', qty: 1 }, seconds: 1.8, tool: 'knife' }),
   wooden_shield: r({ id: 'wooden_shield', station: 'fletching', skill: 'fletching', level: 7, xp: 15, inputs: [{ item: 'logs', qty: 2 }], output: { item: 'wooden_shield', qty: 1 }, seconds: 1.5, tool: 'knife' }),
   // Original bows and arrows: the riverwood longbow (seasoned oak, strung in one go) and glimsteel tips.
   riverwood_longbow: r({ id: 'riverwood_longbow', station: 'fletching', skill: 'fletching', level: 24, xp: 42, inputs: [{ item: 'oak_logs', qty: 2 }, { item: 'bowstring', qty: 1 }], output: { item: 'riverwood_longbow', qty: 1 }, seconds: 2.2, tool: 'knife' }),

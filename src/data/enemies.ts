@@ -62,6 +62,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'slime_gel', min: 1, max: 2, chance: 0.8 },
       { item: 'coins', min: 2, max: 8, chance: 0.6 },
       { item: 'air_rune', min: 2, max: 5, chance: 0.25 },
+      { item: 'potato_seed', min: 1, max: 2, chance: 0.08 },
     ],
   },
   // Glimmer Hollow: slimes grown fat and dark on glimmerite dust. They wait in the dark.
@@ -90,6 +91,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'wolf_fang', min: 1, max: 1, chance: 0.2 },
       { item: 'coins', min: 5, max: 15, chance: 0.5 },
       { item: 'bronze_helm', min: 1, max: 1, chance: 0.03 },
+      { item: 'leather_boots', min: 1, max: 1, chance: 0.02 },
     ],
   },
   goblin: {
@@ -105,6 +107,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'iron_arrow', min: 5, max: 10, chance: 0.15 },
       { item: 'iron_dagger', min: 1, max: 1, chance: 0.03 },
       { item: 'iron_helm', min: 1, max: 1, chance: 0.02 },
+      { item: 'baked_potato', min: 1, max: 1, chance: 0.08 },
     ],
   },
   goblin_warlord: {
@@ -152,6 +155,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'linen', min: 1, max: 1, chance: 0.12 },
       { item: 'steel_arrow', min: 3, max: 8, chance: 0.1 },
       { item: 'iron_dagger', min: 1, max: 1, chance: 0.02 },
+      { item: 'oak_wand', min: 1, max: 1, chance: 0.015 },
     ],
   },
   // The Bog Mother: a croaker grown vast and old in the waters round the Sunken Shrine.
@@ -183,6 +187,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'coins', min: 22, max: 50, chance: 0.75 },
       { item: 'steel_arrow', min: 3, max: 8, chance: 0.1 },
       { item: 'steel_helm', min: 1, max: 1, chance: 0.02 },
+      { item: 'boarhide_boots', min: 1, max: 1, chance: 0.02 },
     ],
   },
   // Ridge stalkers: lean grey hunters of the crags, quick and patient.
@@ -199,6 +204,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'steel_arrow', min: 5, max: 12, chance: 0.15 },
       { item: 'ridgehide_vambraces', min: 1, max: 1, chance: 0.02 },
       { item: 'glimsteel_dagger', min: 1, max: 1, chance: 0.01 },
+      { item: 'ridgehide_boots', min: 1, max: 1, chance: 0.015 },
     ],
   },
   // Greymane: the stalkers' old pack-leader, denned in the ruins of the Old Watchtower.
@@ -230,6 +236,8 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'linen', min: 1, max: 2, chance: 0.2 },
       { item: 'marsh_pearl', min: 1, max: 1, chance: 0.04 },
       { item: 'mireweave_hood', min: 1, max: 1, chance: 0.02 },
+      { item: 'silverpike', min: 1, max: 1, chance: 0.1 },
+      { item: 'mireweave_gloves', min: 1, max: 1, chance: 0.02 },
     ],
   },
   // Drowned guardians: shrine wardens in weed-hung mail, standing their watch at the sanctum.
@@ -243,6 +251,8 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'coins', min: 40, max: 90, chance: 0.75 },
       { item: 'steel_bar', min: 1, max: 1, chance: 0.15 },
       { item: 'glimsteel_helm', min: 1, max: 1, chance: 0.02 },
+      { item: 'silverpike', min: 1, max: 1, chance: 0.15 },
+      { item: 'steel_handguards', min: 1, max: 1, chance: 0.025 },
     ],
   },
   // The Shrinekeeper: whatever the shrine was raised to hold, it kept. Bolts of black water, and a
@@ -272,6 +282,8 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'steel_bar', min: 1, max: 2, chance: 0.2 },
       { item: 'silver_ore', min: 1, max: 2, chance: 0.15 },
       { item: 'steel_platelegs', min: 1, max: 1, chance: 0.03 },
+      { item: 'bread', min: 1, max: 2, chance: 0.15 },
+      { item: 'steel_sabatons', min: 1, max: 1, chance: 0.03 },
     ],
   },
   // Forsworn archers: the watch's last bowmen, who barred the door and never came down.
@@ -286,6 +298,7 @@ export const ENEMIES: Record<EnemyType, EnemyDef> = {
       { item: 'steel_arrow', min: 8, max: 20, chance: 0.35 },
       { item: 'rowan_logs', min: 1, max: 1, chance: 0.1 },
       { item: 'boarhide_coif', min: 1, max: 1, chance: 0.03 },
+      { item: 'silverpike', min: 1, max: 1, chance: 0.12 },
     ],
   },
   // The Last Watchcaptain: who barred the tower, and why, is a story nobody alive can tell.

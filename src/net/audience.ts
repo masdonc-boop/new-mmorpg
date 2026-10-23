@@ -59,6 +59,7 @@ export const EVENT_AUDIENCE: Record<GameEvent['type'], AudienceKind> = {
   passage: 'self',
   prayer: 'self',
   toolbelt: 'self',
+  drop: 'self',
   shopOpen: 'self',
   tannerOpen: 'self',
   tannerClose: 'self',

@@ -172,7 +172,13 @@ Tick each item as you go and note anything odd, with the time:
     - In the bag, press and hold a breastplate, a hide coat and a robe. Each card should show armour against melee, ranged and magic, and how it compares with what you wear.
     - Wear metal armour and fight goblins: some misses should read "blocked".
     - Make a pair of sabatons or handguards at the anvil (or hide boots or mireweave gloves with a needle) and wear them. They should show on the hero.
-14. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
+14. **Loot and the collection log** (Phase 5C).
+    - Fight goblins, wolves or boars for a while. Ordinary drops look as before. Uncommon piles show a green name and rare ones a gold, pulsing name, with one "Rare drop!" label.
+    - Pick up an uncommon or rare item: the toast should say "Uncommon" or "Rare" in its colour.
+    - A first rare gear drop should say "New log entry". Open Quests: the Creature finds card should show it in colour.
+    - Close the game fully, reopen it, and check the entry is still there.
+    - With a full bag, the rare pile should stay on the ground, marked.
+15. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
 
 ### 5. Afterwards
 

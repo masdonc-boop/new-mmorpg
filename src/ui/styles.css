@@ -181,6 +181,26 @@ button {
   color: #9ecbff;
   font-size: 15px;
 }
+/* 5C: drop rarity (loot toasts, pile names, the drop label). */
+.loot-uncommon {
+  color: #8fe88a;
+}
+.loot-rare {
+  color: #ffd84d;
+}
+.loot-toast.loot-uncommon {
+  color: #8fe88a;
+}
+.loot-toast.loot-rare {
+  color: #ffd84d;
+  text-shadow: 0 1px 2px #000, 0 0 8px rgba(255, 216, 77, 0.8);
+}
+.loot-toast b {
+  font-weight: 900;
+}
+.drop-label {
+  font-size: 15px;
+}
 .dmg-block {
   color: #d8dee6;
   letter-spacing: 0.02em;

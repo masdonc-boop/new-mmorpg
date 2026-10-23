@@ -263,3 +263,95 @@ These match the 4D and 5A runs, and geometries stay flat.
 - **Per-item defence overrides** (`defence`): supported but unused, until a piece needs to break its class's rule.
 - **Linen-tier gloves and slippers:** wolfhide covers tier 1.
 - **Melee stances with level boosts, special attacks, and damage reduction from armour** (armour only lowers the chance to be hit, as before).
+
+## 7. Phase 5C: combat rewards and progression
+
+### Audit (after Phase 5B)
+| System | Already there (reused) | Gap |
+|---|---|---|
+| Loot tables | Every creature has its own table (`src/data/enemies.ts`): coins, its materials (gel, pelts, hides, oil, pearls), arrows, spark stones, and gear of its tier now and then. Each entry rolls on its own. 4B tests: value rises with level, bosses are worth five kills or more, and gear stays within a creature's tier | Little food outside goblins, nothing for dungeon sustain; the 5B hands and feet pieces dropped nowhere |
+| Drops | Piles land where the creature fell, private to the killer for a while, then public. A full bag leaves the pile on the ground. Saved with the zone. Pickup moves exactly what fits (tested against duplication in 3B) | No sense of rarity: a 1% find looked like a bone |
+| Bosses | Regional bosses with signature drops; dungeon bosses with claims and chests; dungeon uniques in the 4D collection log | Boss and creature finds were not logged anywhere |
+| Gear ladder | Melee 1/10/20/30/45; ranged 1/15/22/25/35/40; magic weapons 1/25/35/40 | **Magic had no weapon between levels 1 and 25** |
+
+### Loot changes (small, targeted)
+| Creature | Added | Why |
+|---|---|---|
+| Meadow slime (2) | Sunroot seeds 1–2 (8%) | Starts the farming loop from the first fights |
+| Timber wolf (7) | Wolfhide boots (2%) | Its own hide, made into boots |
+| Goblin raider (11) | Roasted sunroot (8%) | Food from the camp's stores |
+| Mire leech (21) | Oak wand (1.5%) | A rare route to the new wand |
+| Bristleback (24), ridge stalker (32) | Boarhide boots (2%), ridgehide boots (1.5%) | The 5B boots from their hides |
+| Drowned acolyte (34), guardian (38) | Cooked silverpike (10%, 15%); mireweave gloves (2%), steel handguards (2.5%) | Food to sustain a dungeon run; the 5B pieces |
+| Hollow sentinel (38), forsworn archer (36) | Bread 1–2 (15%), steel sabatons (3%); cooked silverpike (12%) | The same |
+
+- **Unchanged:** every boss table is exactly as before, items and chances (tested), and so is every existing entry.
+- **Economy guards (tested):**
+  - regular creatures drop gear at 3% or less, regional bosses at 15% or less;
+  - coins per kill stay below 2.5 × the creature's level, and a kill's whole expected value below 4 × its level;
+  - value still rises with level;
+  - no drop sells to a shop for more than the shop asks for it;
+  - every gear drop can also be crafted, so crafting stays the dependable route and drops are a bonus.
+
+### Rarity
+`dropRarity(item, chance)`:
+- **Rare:** 3% or less.
+- **Uncommon:** 12% or less.
+- **Common:** anything else. Coins and bones are always common.
+
+The simulation tags each uncommon or rare pile when it lands. The tag goes to the owner's phone with the pile and is saved with it.
+
+**Feedback, one event per kill, for its most notable pile:**
+- **Rare drop:** a "Rare drop!" label and a small burst of gold sparks where it landed, the quest chime, and one line in the message log.
+- **New collection log find:** "📖 New log entry" and a line in the log naming the creature. The find replaces the "rare drop" line, so nothing is said twice.
+- **Uncommon drop:** no label. Its pile name shows in green, as rare names show in gold, and both are visible from further away.
+- **Rare pile on the ground:** it gently pulses, from its existing sprite, with no new mesh.
+- **Pickup toast:** coloured, with "Uncommon" or "Rare" before the item.
+
+### The creature collection log
+`src/data/collection.ts` builds it from the drop tables:
+- **Regional bosses:** Grukk, the Bog Mother and Greymane, with their gear drops up to 15% (their signature rewards).
+- **Creature finds:** every other creature's gear dropped at 3% or less, 19 entries.
+
+Dungeon bosses pay out through their chests, which keep their own 4D log. An entry is `creature:item`, so the same item from two creatures counts twice.
+
+**Recording:**
+- **When:** the moment the item drops, full bag or not. It is the player's, as the pile is.
+- **Announced:** once; it stays for good, whatever happens to the item.
+- **Where it shows:** the journal has a card per group with a row per creature, the same look as the dungeon logs (found in colour, the rest dimmed and marked "not found yet").
+
+**Saving and safety:**
+- **Saved:** as `dropLog` on the character, checked against the known keys on load, so junk is dropped.
+- **Older saves:** they have no `dropLog` field and start empty, with their dungeon log untouched. No migration is needed.
+- **Server:** a new entry is saved straight away (as a chest is). The phone's copy is replaced from the server's record, so a client can't add entries.
+- **Offline:** the single-player game saves at once on a new entry.
+
+### Equipment
+**Oak wand** (Magic 12; accuracy 27, power 21; value 110). It is fletched from an oak log and 6 spark chips at Fletching 14 with a knife, and rarely dropped by mire leeches. It fills magic's 1–25 gap. Its damage per second lies between the riverwood wand's and the emberglass wand's (tested). It is the only new item in 5C: every style now steps at most 15 levels between weapons up to 45 (tested).
+
+### Tests
+**`tests/phase5c.test.ts` (14 tests):**
+- drop rates over 6,000 seeded kills match the tables;
+- tables are distinct, useful and within the gear-rarity limits;
+- value scales with level and the coin guards hold;
+- boss tables are unchanged, with no shop sell-back loop;
+- the rarity rule, and rare piles marked and announced once per kill with the pickup toast carrying rarity;
+- a full bag leaves a rare pile marked on the ground, through a save;
+- log contents, record-once, save and load, junk keys, older saves, and per-creature entries;
+- the weapon gaps, oak wand damage per second and value, every gear drop also craftable, and the oak wand made end to end.
+
+**`tests/net-progression.test.ts`:** a log find is rolled on the server, is logged once, is saved at once, reaches the phone with its pile marked rare, and survives a restart. The phone can't write its own log.
+
+**Performance:** draw calls (135–140 and 114–117) and geometries are unchanged. The benchmark machine for this phase was slower than for earlier phases, so 5B and 5C were built and run alternately on it:
+
+| Build | Shrinekeeper | Watchcaptain |
+|---|---|---|
+| 5B | 13.2 and 13.3 fps | 14.6 and 15.0 fps |
+| 5C | 13.5 and 12.3 fps | 15.0 and 14.8 fps |
+
+There is no regression.
+
+### Deferred
+- **A shared "rare drop table"** across creatures, as some games have: each creature's own table is enough for now.
+- **Showing drop rates in the game**, for example on a creature's examine.
+- **Rarity for gathering and thieving finds:** gems in nets, for example.

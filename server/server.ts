@@ -999,10 +999,11 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
     if (!events.length) return;
     // A dungeon chest was opened (Phase 4D): save that character at once, so a crash or restart
     // can't roll back the claim it used (and the rewards and collection log it earned) separately.
+    // A new creature collection log entry (5C) is saved straight away too, so it survives a reload.
     for (const e of events) {
-      if (e.event.type !== 'chest') continue;
+      if (e.event.type !== 'chest' && !(e.event.type === 'drop' && e.event.logged)) continue;
       const s = [...sessions.values()].find((x) => x.playerId === e.actor && x.zoneId === zoneId);
-      if (s) save(s, 'chest');
+      if (s) save(s, e.event.type === 'chest' ? 'chest' : 'collection');
     }
     const byPlayer = new Map<PlayerId, Session>();
     for (const s of sessions.values()) if (s.ws && s.zoneId === zoneId) byPlayer.set(s.playerId, s);
