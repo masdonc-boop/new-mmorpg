@@ -154,7 +154,7 @@ Everything here runs in the simulation, which is the server.
 
 **`tests/dungeon-balance.test.ts`:** the results above.
 
-**`tools/mobile-smoke.cjs`:** on an Android-sized screen, a boss's ring is drawn, and steering out with the on-screen joystick dodges it.
+**`tools/mobile-smoke.cjs`:** on an Android-sized screen, a boss's ring is drawn, and steering with the on-screen joystick during the wind-up dodges it. The steering starts just before the wind-up: in software rendering each injected touch waits for a frame of a few per second, which a phone doesn't. Reaction time is covered by the simulation tests above.
 
 ## Not done (deferred)
 - **Line of sight:** creatures still notice and shoot through walls, as before 5D. Elites are placed away from walls to avoid it, but the ordinary archer on the tower's second floor can reach the roof's edge.
