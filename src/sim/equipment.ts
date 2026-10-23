@@ -1,7 +1,7 @@
 import { EQUIP_SLOTS, isItemId, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import type { SkillId } from '../data/skills';
 import type { Inventory, ItemStack } from './inventory';
-import type { CombatStyle } from './combat';
+import { STYLES, type CombatStyle } from './combat';
 
 export type EquipFailure = 'notEquippable' | 'level' | 'space' | 'empty';
 
@@ -69,6 +69,17 @@ export class Equipment {
     const we = w ? itemDef(w).equip : undefined;
     const matches = !!we && we.style === style;
     return { weapon: matches ? w : null, accuracy: matches ? (we!.accuracy ?? 0) : 0, power: matches ? (we!.power ?? 0) : 0, armour, extraAccuracy, extraPower };
+  }
+
+  /**
+   * Seconds between attacks and reach for a combat style: the worn weapon's own when it is made for
+   * that style and has them, otherwise the style's (the training weapon's).
+   */
+  attackProfile(style: CombatStyle): { seconds: number; range: number } {
+    const w = this.slots.weapon;
+    const e = w ? itemDef(w).equip : undefined;
+    const own = !!e && e.style === style;
+    return { seconds: (own && e!.speed) || STYLES[style].attackSeconds, range: (own && e!.range) || STYLES[style].range };
   }
 
   toJSON(): Partial<Record<EquipSlot, ItemId>> {

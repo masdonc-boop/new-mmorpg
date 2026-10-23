@@ -7,7 +7,8 @@ import { SHOPS, sellPrice, shopFor, type ShopDef } from '../data/shops';
 import { NPCS, pickpocketChance, type NpcDef, type NpcId } from '../data/npcs';
 import { QUESTS, missingRequirements, type QuestDef } from '../data/quests';
 import { RESOURCES, gatherChance, type ResourceDef } from '../data/resources';
-import { SKILL_INFO, type SkillId } from '../data/skills';
+import { SKILL_INFO, XP_TABLE, type SkillId } from '../data/skills';
+import { skillUnlocks } from '../data/unlocks';
 import { STYLES, TRAINING_FOCUSES, combatXp, rollHit, type CombatStyle, type TrainingFocus } from './combat';
 import { Inventory, addTo, type ItemStack } from './inventory';
 import { Equipment, equipFromInventory, unequipToInventory } from './equipment';
@@ -26,6 +27,9 @@ import { toolLabel, type ToolCategory } from '../data/tools';
 import { Bank, depositInventory, depositItem, depositStacks, withdrawItem, type TransferResult } from './bank';
 import { findPath, simplifyPath, type PathPoint } from './pathfinding';
 import { Skills } from './skills';
+
+/** The skills that make up the combat level. */
+const COMBAT_SKILLS: ReadonlySet<SkillId> = new Set(['attack', 'strength', 'defence', 'hitpoints', 'ranged', 'magic', 'prayer']);
 import { T, generateWorld, inHollow, isBlocked, regionAt, tileAt, type Checkpoint, type Passage, type WorldMap } from './worldmap';
 import { DUNGEON_AREAS, chestOf, dungeonAt, type DungeonId } from './dungeonmap';
 import { DUNGEONS, DUNGEON_UNIQUES } from '../data/dungeons';
@@ -196,7 +200,7 @@ export type GameEvent =
   | { type: 'death'; id: number }
   | { type: 'respawn'; id: number }
   | { type: 'xp'; skill: SkillId; amount: number }
-  | { type: 'levelUp'; skill: SkillId; level: number }
+  | { type: 'levelUp'; skill: SkillId; level: number; unlocked?: string[]; combat?: number }
   | { type: 'loot'; item: ItemId; qty: number }
   | { type: 'message'; text: string; tone: MessageTone }
   | { type: 'gather'; node: number; success: boolean }
@@ -1895,7 +1899,8 @@ export class GameWorld {
       return;
     }
     const style = STYLES[p.style];
-    if (!this.approach(e.x, e.z, style.range, !joystickActive)) return;
+    const profile = p.equipment.attackProfile(p.style);
+    if (!this.approach(e.x, e.z, profile.range, !joystickActive)) return;
     if (!joystickActive) p.facing = Math.atan2(e.x - p.x, e.z - p.z);
     if (p.attackTimer > 0) return;
     if (this.tooDark()) {
@@ -1918,7 +1923,7 @@ export class GameWorld {
     }
 
     p.facing = Math.atan2(e.x - p.x, e.z - p.z);
-    p.attackTimer = style.attackSeconds;
+    p.attackTimer = profile.seconds;
     p.swingAge = 0;
     p.combatTimer = 6;
     const sk = p.skills;
@@ -2717,11 +2722,23 @@ export class GameWorld {
     const r = this.player.skills.addXp(skill, amount);
     this.emit({ type: 'xp', skill, amount });
     if (r.newLevel > r.oldLevel) {
-      this.emit({ type: 'levelUp', skill, level: r.newLevel });
+      // What the new level opens (5A): every unlock passed on the way, for the banner and the log.
+      const unlocked = skillUnlocks(skill).filter((u) => u.level > r.oldLevel && u.level <= r.newLevel).map((u) => u.text);
+      const combatBefore = COMBAT_SKILLS.has(skill) ? this.combatLevelAt(skill, r.oldLevel) : 0;
+      const combat = COMBAT_SKILLS.has(skill) ? this.player.skills.combatLevel() : 0;
+      this.emit({ type: 'levelUp', skill, level: r.newLevel, unlocked, ...(combat > combatBefore ? { combat } : {}) });
       this.message(`Congratulations! Your ${SKILL_INFO[skill].name} level is now ${r.newLevel}.`, 'good');
+      if (unlocked.length) this.message(`New: ${unlocked.slice(0, 4).join('; ')}${unlocked.length > 4 ? ` and ${unlocked.length - 4} more (see Skills)` : ''}.`, 'good');
+      if (combat > combatBefore) this.message(`Your combat level is now ${combat}.`, 'good');
       if (skill === 'hitpoints') this.player.hp += (r.newLevel - r.oldLevel) * 10;
       if (skill === 'prayer') this.player.prayerPoints += r.newLevel - r.oldLevel;
     }
+  }
+
+  /** The player's combat level with one skill at another level (for "combat level up" news). */
+  private combatLevelAt(skill: SkillId, level: number): number {
+    const xp = { ...this.player.skills.xp, [skill]: XP_TABLE[level] };
+    return new Skills(xp).combatLevel();
   }
 
   private canGather(n: ResourceNode, verbose: boolean): boolean {

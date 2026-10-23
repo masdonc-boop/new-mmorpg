@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GameWorld, type GameEvent } from '../src/sim/world';
 import { INVENTORY_SLOTS, Inventory } from '../src/sim/inventory';
-import { ITEMS, dropNeedsConfirm, itemDef, type ItemId } from '../src/data/items';
+import { COIN_STACK, ITEMS, dropNeedsConfirm, itemDef, type ItemId } from '../src/data/items';
 import { RESOURCES } from '../src/data/resources';
 import { isBlocked } from '../src/sim/worldmap';
 
@@ -53,7 +53,7 @@ describe('Item definitions', () => {
       if (r.rareDrop) expect(itemDef(r.rareDrop.item).stackable).toBe(false);
     }
     for (const id of ['coins', 'bronze_arrow', 'air_rune'] as ItemId[]) expect(itemDef(id).stackable).toBe(true);
-    for (const d of Object.values(ITEMS)) expect(d.maxStack).toBe(d.stackable ? 99_999 : 1);
+    for (const d of Object.values(ITEMS)) expect(d.maxStack, d.id).toBe(d.id === 'coins' ? COIN_STACK : d.stackable ? 99_999 : 1);
   });
 
   it('asks before dropping tools and valuable items but not cheap ones', () => {

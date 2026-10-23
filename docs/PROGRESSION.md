@@ -113,3 +113,63 @@ Hitpoints always gains its share. The total xp per damage is unchanged, so no fo
 - **Gloves, boots, capes, amulets and rings** are not drawn on the hero; head, body, legs, weapon and shield are.
 - **A Cairnhold tanner:** hides go to Rook in Brightwater.
 - ~~The dungeons themselves~~: built in Phase 4C (`docs/DUNGEONS.md`); the planned uniques are now items.
+
+## 5. Phase 5A: core progression and equipment
+
+### Audit (October 2026, after Phase 4D)
+Most of the foundation Phase 5A asks for was already in place, so 5A reuses it and fills the gaps.
+
+| Area | Already working (reused) | Gap found |
+|---|---|---|
+| Skills and xp | 19 independent skills, 1–99 on one exponential curve (`XP_TABLE`), xp only from simulation actions, capped at 200 million; Attack, Strength and Defence trained separately with the training focus (4B); Devotion is Brightwater's prayer skill | A level up said nothing about what it opened |
+| Combat level | Derived from Attack, Strength, Defence, Hitpoints, Ranged, Magic and half of Devotion | Not explained anywhere in the game |
+| Equipment | 11 slots, requirements checked on wear, style bonuses, two-handed rules, swaps that never lose items; tiers 1–45 for all three styles plus the dungeon uniques | Every weapon of a style attacked at the same pace and reach, so daggers were simply weaker swords; no comparison with worn gear; capes, gloves, boots and amulets were invisible on the hero |
+| Production loops | Mining → Smithing → gear; Woodcutting → Fletching → bows and arrows; Fishing → Cooking → food; drops → Crafting; 28-slot bag with one slot per gathered resource; stations; burn chances | None blocking (recipe data now checked for loops) |
+| Economy | Shops pay 40% of value; tanner and sawmill fees; trades and the Exchange keep items whole; anti-duplication tests from 3B; money-from-nothing tests from 4B | **Coins stopped at 99,999 in the bag** while a bank slot holds two billion: a wealthy player couldn't sell, and chests waited for space |
+| Persistence and authority | Saves keep xp, gear, bag, bank, quests and the collection log; the server runs the simulation and only accepts validated intents | No test that forged xp or level commands are refused over the network |
+
+### What 5A changed
+- **Weapon pace and reach.** Weapons may now have their own seconds between attacks (`speed`) and reach in tiles (`range`), used by the simulation, the bow animation and the item card. Damage per second stays within a few percent of the sword or shortbow of the same tier (tested), so the choice is how a weapon fights, not a hidden best.
+
+  | Weapon | Pace | Reach | Stat change |
+  |---|---|---|---|
+  | Daggers (bronze to glimsteel) | 1.5 s (swords 1.6) | 1.5 | none: smaller, quicker hits |
+  | Duskiron warhammer | 1.9 s | 1.5 | power 52 → 76: fewer, heavier blows |
+  | Riverwood, rowan and Warder's longbows | 2.0 s (shortbows 1.8) | 8.5 (shortbows 7) | power 21 → 28, 32 → 44, 36 → 51 |
+  | Rowan staff | 2.5 s (wands 2.2) | 7.5 (wands 6.5) | power 35 → 50 |
+
+  The dungeon uniques are still "a step above" their peers, now compared by damage per second.
+- **Item card on Android:** pace and reach for weapons, each requirement met or unmet, and a line comparing the item with what is worn in its slot (each stat up or down, quicker or slower, more or less reach).
+- **Equipment box:** max hit, seconds between attacks and reach for the current style.
+- **Level ups:** the banner and the log list what the level opens (every unlock passed, if several levels came at once), and say when the combat level rises.
+- **Combat level:** the Skills panel explains the formula in a line and lists the quickest ways to the next combat level (for example "2 Attack or Strength, 2 Defence or Hitpoints, 15 Ranged").
+- **Visible gear:** capes, gloves and bracers, boots and amulets now show on the hero, as colours on the existing cloak, hands, boots and a small pendant. The model's shapes are unchanged, and the parts are merged into the existing meshes, so there are no extra draw calls.
+- **Coins:** a bag stack of coins now holds up to two billion, the same as a bank slot. The limit is still enforced: a sale or a chest that would pass it is refused whole.
+
+### Not changed (on purpose)
+- **The xp curve.** It is the long-standing classic exponential curve. The originality rules allow "1–99 on an exponential curve" as a general mechanic. Changing it would move every existing character's levels, which is a destructive migration that needs the owner's decision.
+- **The combat formulas** (`hitChance`, `maxHit`, the training focus): weapon pace changes how often they are used, not what they compute.
+- **Item ids, recipes and requirements:** no ids changed, so saves, banks, offers and the collection log load as before.
+
+### Tests (`tests/phase5a.test.ts`, plus one server test in `tests/net-progression.test.ts`)
+- **XP and levels:** both directions at every level, the 200-million cap, and junk save values.
+- **Combat level:** every route the breakdown names really raises the level, by exactly that many levels.
+- **Level-up events:** unlock news, and the combat level news.
+- **Weapons:**
+  - pace and reach for each type;
+  - damage per second level within a tier;
+  - higher tiers always better;
+  - in a real fight a dagger strikes more often than a sword.
+- **Equipping:** requirements, slot rules, nothing lost on a refusal, and the item card comparison.
+- **Economy:**
+  - the coin limit and selling past 99,999;
+  - stackability rules and value ladders within a slot and style;
+  - recipe data (levels, xp, no self-feeding recipes);
+  - no profitable sell-back.
+- **Saves:** xp, gear, pace and the collection log carry through; older saves with the re-tuned weapons load unchanged.
+- **Server:** gear above your level is refused, forged xp and level commands are dropped, a phone editing its own copy changes nothing, and earned gear and a large purse survive a restart.
+
+### Deferred
+- **Hands and feet tiers** above wolfhide boots and the hide bracers, and metal gauntlets or boots for melee, were held back to avoid a flood of new items before the progression above is proven on phones.
+- **Per-style armour** (separate defence against melee, ranged and magic).
+- **Melee stances and special attacks.**

@@ -172,7 +172,7 @@ describe('4B.3 ranged and magic chains, end to end', () => {
     expect(wear(w, 'rowan_longbow')).toBe(true);
     expect(wear(w, 'steel_arrow')).toBe(true);
     p.style = 'ranged';
-    expect(w.playerBonuses()).toMatchObject({ weapon: 'rowan_longbow', accuracy: 46 + 2, power: 32 + 3 });
+    expect(w.playerBonuses()).toMatchObject({ weapon: 'rowan_longbow', accuracy: 46 + 2, power: 44 + 3 });
   });
 
   it('hides: boar and stalker hides → the tanner → boarhide and ridgehide armour, worn at Ranged 20 and 30', () => {
@@ -247,7 +247,7 @@ describe('4B.3 ranged and magic chains, end to end', () => {
     expect(wear(w, 'rowan_staff')).toBe(true);
     expect(p.equipment.slots.shield).toBeNull();
     p.style = 'magic';
-    expect(w.playerBonuses()).toMatchObject({ weapon: 'rowan_staff', accuracy: 42, power: 35 });
+    expect(w.playerBonuses()).toMatchObject({ weapon: 'rowan_staff', accuracy: 42, power: 50 });
   });
 
   it('new gear and materials bank and come back whole (non-stackable logs one per slot, arrows as a stack)', () => {

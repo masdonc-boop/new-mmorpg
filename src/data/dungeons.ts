@@ -107,7 +107,7 @@ export const DUNGEONS: Record<string, DungeonDef> = {
       ],
       uniques: [
         { id: 'watchcaptain_blade', name: 'Watchcaptain’s blade', slot: 'weapon', style: 'melee', target: { accuracy: 52, power: 47 }, req: { attack: 50 }, chance: 0.02 },
-        { id: 'warders_longbow', name: 'Warder’s longbow', slot: 'weapon', style: 'ranged', target: { accuracy: 50, power: 36 }, req: { ranged: 45 }, chance: 0.02 },
+        { id: 'warders_longbow', name: 'Warder’s longbow', slot: 'weapon', style: 'ranged', target: { accuracy: 50, power: 51 }, req: { ranged: 45 }, chance: 0.02 },
         { id: 'ninefold_cloak', name: 'Ninefold cloak', slot: 'cape', target: { armour: 4, accuracy: 2, power: 2 }, req: { defence: 35 }, chance: 0.03 },
       ],
     },

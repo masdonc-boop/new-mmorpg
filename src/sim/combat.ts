@@ -51,6 +51,17 @@ export function maxHit(a: AttackerStats): number {
   return Math.max(1, Math.floor(6 + a.strengthLevel * 1.1 + a.powerBonus * 0.5));
 }
 
+/**
+ * Average damage per second against a target of a given Defence (no armour), from the same rules as
+ * a real fight: hit chance × average hit ÷ seconds between attacks. Used to keep weapon types of a
+ * tier level with each other (tests) and for the item card's damage rating.
+ */
+export function expectedDps(level: number, accuracy: number, power: number, seconds: number, targetDefence = level): number {
+  const a = { attackLevel: level, strengthLevel: level, accuracyBonus: accuracy, powerBonus: power };
+  // rollHit's average: max × (0.25 + 0.75 × E[√u]) with E[√u] = 2/3.
+  return (hitChance(a, { defenceLevel: targetDefence, armour: 0 }) * maxHit(a) * 0.75) / seconds;
+}
+
 export interface HitResult {
   hit: boolean;
   damage: number;

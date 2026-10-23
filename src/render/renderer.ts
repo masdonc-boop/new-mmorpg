@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { lerp } from '../core/math';
 import { NPCS, type NpcId } from '../data/npcs';
-import { STYLES } from '../sim/combat';
 import { SKILL_INFO } from '../data/skills';
 import { BANK_COUNTER, EXCHANGE, groundHeight, inHollow } from '../sim/worldmap';
 import { dungeonAt } from '../sim/dungeonmap';
@@ -175,6 +174,15 @@ export class GameRenderer {
     }
     const sh = eq.get('shield');
     if (sh) gear.shield = { tint: tint('shield')!, wooden: sh.startsWith('wooden') };
+    // Capes, gloves, boots and amulets take their item's tint, or failing that its icon colour.
+    const colour = (slot: EquipSlot) => {
+      const it = eq.get(slot);
+      return it ? (itemDef(it).equip?.tint ?? itemDef(it).icon.color) : undefined;
+    };
+    gear.cape = colour('cape');
+    gear.hands = colour('hands');
+    gear.feet = colour('feet');
+    gear.neck = colour('neck');
     return gear;
   }
 
@@ -392,7 +400,7 @@ export class GameRenderer {
       let draw = 0;
       if (tool === 'bow' && ready && !p.dead) {
         const target = attacking && p.action?.type === 'attack' ? world.enemyById(p.action.target) : null;
-        const inRange = !!target && Math.hypot(target.x - p.x, target.z - p.z) <= STYLES.ranged.range + 0.5;
+        const inRange = !!target && Math.hypot(target.x - p.x, target.z - p.z) <= p.equipment.attackProfile('ranged').range + 0.5;
         aim = inRange || p.swingAge < 1.2 ? 1 : 0;
         draw = inRange ? Math.min(1, Math.max(0, 1 - (p.attackTimer - 0.05) / 0.8)) : 0;
       }

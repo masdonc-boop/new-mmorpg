@@ -207,3 +207,50 @@ describe('4D multiplayer: the collection log is server-side and permanent', () =
     expect(a2.s.player.inventory.count('watchcaptain_blade')).toBe(0);
   }, 20_000);
 });
+
+describe('5A multiplayer: skills, gear and coins stay server-side', () => {
+  it('the server refuses gear above your level and forged xp, accepts it once earned, and keeps it all through a restart', async () => {
+    const dbPath = freshDb();
+    const { s: server, url } = await serve(dbPath);
+    const a = await join(server, url, 'Ash');
+    const p = a.s.player;
+    p.inventory.add('rowan_longbow', 1);
+    p.inventory.add('coins', 150_000);
+    await pump([a], 200);
+    const slot = () => p.inventory.slots.findIndex((x) => x?.item === 'rowan_longbow');
+    // Ranged 1: the phone asks, the server says no, and the bow stays in the bag.
+    a.c.issue({ type: 'equip', slot: slot() });
+    await pump([a], 300);
+    expect(p.equipment.get('weapon')).toBeNull();
+    expect(p.inventory.count('rowan_longbow')).toBe(1);
+    // Commands that would hand out xp, or a level, don't exist; a phone editing its own copy changes nothing.
+    const xpBefore = { ...p.skills.xp };
+    a.c.issue({ type: 'grantXp', skill: 'ranged', amount: 1e7 } as never);
+    a.c.issue({ type: 'setLevel', skill: 'ranged', level: 99 } as never);
+    a.c.world!.player.skills.xp.ranged = 1e7;
+    a.c.issue({ type: 'equip', slot: slot() });
+    await pump([a], 300);
+    expect(p.skills.xp).toEqual(xpBefore);
+    expect(p.equipment.get('weapon')).toBeNull();
+    // Earned on the server: now it goes on, with the longbow's own pace and reach.
+    p.skills.addXp('ranged', xpForLevel(40));
+    a.c.issue({ type: 'equip', slot: slot() });
+    await pump([a], 300);
+    expect(p.equipment.get('weapon')).toBe('rowan_longbow');
+    expect(p.equipment.attackProfile('ranged')).toEqual({ seconds: 2, range: 8.5 });
+    expect(a.c.world!.player.equipment.get('weapon')).toBe('rowan_longbow');
+    // A restart keeps the level, the worn bow and a purse past the old 99,999 cap.
+    server.saveAll();
+    const port = server.port;
+    a.c.close();
+    await server.close({ save: true });
+    running.splice(running.indexOf(server), 1);
+    const again = await serve(dbPath, port);
+    const b = await join(again.s, again.url, 'Ash', 'login');
+    expect(b.s.player.skills.level('ranged')).toBe(40);
+    expect(b.s.player.equipment.get('weapon')).toBe('rowan_longbow');
+    expect(b.s.player.inventory.count('coins')).toBe(150_025);
+    await pump([b], 300);
+    expect(b.c.world!.player.inventory.count('coins')).toBe(150_025);
+  }, 15_000);
+});

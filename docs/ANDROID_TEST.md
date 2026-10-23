@@ -161,7 +161,13 @@ Tick each item as you go and note anything odd, with the time:
     - Tap the Old Watchtower's door, both stairs, the chest after the boss, and the way out.
     - In the Sunken Shrine sanctum, tap the Shrinekeeper's nameplate while its guardians crowd round.
     - Note the fps and the worst frame time during each boss fight, and whether the dim rooms are readable.
-12. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
+12. **Progression and gear** (Phase 5A).
+    - Press and hold a weapon or a piece of armour in the bag: the card should show its stats, its pace and reach (weapons), what it needs, and how it compares with what you wear.
+    - Open the bag's equipment box: under the slots it shows your max hit, how often you attack, and your reach.
+    - Wear a cape, gloves or bracers, boots and an amulet: each should show on your hero, and on your hero as seen from the other phone.
+    - Gain a level (for example by chopping a few trees): the banner and the message log should say what the level opens.
+    - Open Skills and scroll to the bottom: the combat level line should name the quickest ways to the next combat level.
+13. **Server restart.** Stop the server (Ctrl+C) and start it again with the same command. Both phones should reconnect by themselves within a few seconds, with everything as it was.
 
 ### 5. Afterwards
 

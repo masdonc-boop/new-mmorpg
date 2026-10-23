@@ -883,6 +883,19 @@ button.danger {
 .skills-total b {
   color: var(--gold);
 }
+.skills-combat {
+  margin: 6px auto 0;
+  max-width: 520px;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0.85;
+}
+.ii-cmp {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
 .quest-card {
   padding: 10px;
   margin-bottom: 8px;

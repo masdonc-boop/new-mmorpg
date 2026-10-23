@@ -3,7 +3,8 @@ import type { ResourceType } from '../data/resources';
 import { EQUIP_SLOTS, dropNeedsConfirm, itemDef, type EquipSlot, type ItemId } from '../data/items';
 import { QUESTS, requirementList } from '../data/quests';
 import { SKILL_IDS, SKILL_INFO, xpForLevel, MAX_LEVEL, type SkillId } from '../data/skills';
-import { STYLES, type CombatStyle } from '../sim/combat';
+import { STYLES, maxHit, type CombatStyle } from '../sim/combat';
+import { compareWorn, weaponTiming } from './compare';
 import { HOLLOW, HOLLOW_LAYOUT, T, inHollow, type Passage, type WorldMap } from '../sim/worldmap';
 import { DUNGEON_AREAS, dungeonAt, type DungeonId } from '../sim/dungeonmap';
 import type { Dialogue, GameEvent, GameWorld } from '../sim/world';
@@ -629,7 +630,10 @@ export class Hud {
         break;
       case 'levelUp':
         this.skillsDirty = true;
-        this.flashBanner(`${SKILL_INFO[e.skill].glyph} ${SKILL_INFO[e.skill].name} level ${e.level}!`, 'levelup');
+        {
+          const extra = [e.unlocked?.length ? `New: ${e.unlocked.slice(0, 2).join(' · ')}${e.unlocked.length > 2 ? ` +${e.unlocked.length - 2}` : ''}` : '', e.combat ? `Combat level ${e.combat}` : ''].filter(Boolean);
+          this.flashBanner(`${SKILL_INFO[e.skill].glyph} ${SKILL_INFO[e.skill].name} level ${e.level}!${extra.map((x) => `<div class="rb-lv">${x}</div>`).join('')}`, 'levelup');
+        }
         break;
       case 'loot':
         this.lootToast(e.item, e.qty);
@@ -1155,7 +1159,10 @@ export class Hud {
         const signed = (n: number) => (n > 0 ? `+${n}` : `−${-n}`);
         const styled = Object.entries(d.equip.styleBonus ?? {}).flatMap(([st, v]) => [v.accuracy ? `${signed(v.accuracy)} ${st} accuracy` : '', v.power ? `${signed(v.power)} ${st} power` : '']);
         const stats = [d.equip.accuracy ? `${signed(d.equip.accuracy)} accuracy` : '', d.equip.power ? `${signed(d.equip.power)} power` : '', d.equip.armour ? `${signed(d.equip.armour)} armour` : '', ...styled].filter(Boolean).join(' · ');
-        info.innerHTML += `<div class="ii-stats">${stats}${d.equip.twoHanded ? ' · two-handed' : ''}${req ? ` · needs ${req}` : ''}</div>`;
+        const timing = d.equip.slot === 'weapon' && d.equip.style ? weaponTiming(d.equip) : '';
+        info.innerHTML += `<div class="ii-stats">${stats}${timing}${d.equip.twoHanded ? ' · two-handed' : ''}${req ? ` · needs ${req}` : ''}</div>`;
+        const cmp = compareWorn(this.world.player.equipment, sel.item);
+        if (cmp) info.innerHTML += `<div class="ii-cmp">${cmp}</div>`;
         const wear = el('button', 'primary', d.equip.slot === 'weapon' ? 'Wield' : 'Wear');
         wear.addEventListener('click', () => {
           this.cb.command({ type: 'equip', slot: this.selectedSlot! });
@@ -1528,7 +1535,10 @@ export class Hud {
     }
     const b = w.playerBonuses();
     const weapon = b.weapon ? itemDef(b.weapon).name : `${STYLES[w.player.style].weapon} (training)`;
-    box.append(row, el('div', 'equip-stats', `${weapon} · accuracy ${b.accuracy} · power ${b.power} · armour ${b.armour}<br><small>Tap worn gear to take it off.</small>`));
+    const prof = w.player.equipment.attackProfile(w.player.style);
+    const lvl = w.player.skills.level(w.player.style === 'melee' ? 'strength' : w.player.style);
+    const top = maxHit({ attackLevel: lvl, strengthLevel: lvl, accuracyBonus: b.accuracy, powerBonus: b.power });
+    box.append(row, el('div', 'equip-stats', `${weapon} · accuracy ${b.accuracy} · power ${b.power} · armour ${b.armour}<br>Max hit ${top} · every ${prof.seconds}s · reach ${prof.range} tiles<br><small>Tap worn gear to take it off.</small>`));
     const tools = Object.values(w.player.toolbelt.slots).filter(Boolean) as ItemId[];
     const belt = el('button', 'tb-open', `<span>🧰 Toolbelt</span><span class="tb-icons">${tools.map((t) => `<img src="${itemIcon(t)}" alt="${itemDef(t).name}">`).join('')}</span><span class="tb-count">${tools.length} ›</span>`);
     belt.addEventListener('click', () => this.toggle('toolbelt'));
@@ -1615,6 +1625,17 @@ export class Hud {
     }
     body.appendChild(grid);
     body.appendChild(el('div', 'skills-total', `Total level <b>${s.totalLevel()}</b> · Combat level <b>${s.combatLevel()}</b>`));
+    // How the combat level is worked out, and the quickest ways to raise it (5A).
+    const cb = s.combatBreakdown();
+    const names = (ids: SkillId[]) => ids.map((id) => SKILL_INFO[id].name).join(' or ');
+    const routes = cb.next.slice(0, 3).map((r) => `${r.levels} ${names(r.skills)}`).join(', ');
+    body.appendChild(
+      el(
+        'div',
+        'skills-combat',
+        `<b>Combat level</b> = a quarter of (Defence + Hitpoints + half Devotion), plus your best style (${STYLES[cb.style].name}). ${routes ? `Next level with ${routes}.` : 'You are at the highest combat level.'}`,
+      ),
+    );
   }
 
   private renderQuests() {
@@ -1850,3 +1871,4 @@ function formatQty(n: number): string {
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
+

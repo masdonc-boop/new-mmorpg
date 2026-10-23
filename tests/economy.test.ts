@@ -7,6 +7,7 @@ import { ENEMIES } from '../src/data/enemies';
 import { QUESTS } from '../src/data/quests';
 import { RESOURCES } from '../src/data/resources';
 import { DUNGEONS as DUNGEONS_DATA } from '../src/data/dungeons';
+import { STYLES, expectedDps } from '../src/sim/combat';
 
 /** The cheapest any shop sells an item for (Infinity if none does). */
 const buy = (item: ItemId) => Math.min(...Object.values(SHOPS).flatMap((s) => s.stock.filter((x) => x.item === item).map((x) => x.price)), Infinity);
@@ -112,7 +113,13 @@ describe('4B.4/4C dungeon rules', () => {
         const peers = Object.values(ITEMS).filter((i) => i.equip?.slot === u.slot && helps(i) && !uniqueIds.has(i.id));
         const best = Math.max(0, ...peers.map((i) => (i.equip!.accuracy ?? 0) + (i.equip!.power ?? 0) + (i.equip!.armour ?? 0) + Object.values(i.equip!.styleBonus ?? {}).reduce((a, b) => a + (b.accuracy ?? 0) + (b.power ?? 0), 0)));
         const t = u.target;
-        expect((t.accuracy ?? 0) + (t.power ?? 0) + (t.armour ?? 0), u.id).toBeGreaterThan(best);
+        if (u.slot === 'weapon') {
+          // Weapons have their own speeds (5A), so compare damage per second at the unique's level.
+          const lvl = Math.max(...Object.values(u.req));
+          const dps = (i: (typeof ITEMS)[keyof typeof ITEMS]) => expectedDps(lvl, i.equip!.accuracy ?? 0, i.equip!.power ?? 0, i.equip!.speed ?? STYLES[u.style!].attackSeconds);
+          const bestDps = Math.max(...peers.map(dps));
+          expect(dps(ITEMS[u.id as keyof typeof ITEMS]), u.id).toBeGreaterThan(bestDps);
+        } else expect((t.accuracy ?? 0) + (t.power ?? 0) + (t.armour ?? 0), u.id).toBeGreaterThan(best);
       }
     }
   });

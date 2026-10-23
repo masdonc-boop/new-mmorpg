@@ -46,6 +46,11 @@ export interface HeroGear {
   body?: string;
   legs?: string;
   shield?: { tint: string; wooden?: boolean };
+  /** Phase 5A: the remaining worn slots, as colours on the existing parts (no new body shapes). */
+  cape?: string;
+  hands?: string;
+  feet?: string;
+  neck?: string;
 }
 
 interface PartOpts {
@@ -273,7 +278,7 @@ export class HeroModel {
     const trousers = look.trousers;
     const outer = look.outer ?? (look.robe ? shade(tunic, 0.7) : PALETTE.leather);
     const accent = look.accent ?? PALETTE.gold;
-    const boots = PALETTE.leatherDark;
+    const boots = look.gear?.feet ? shade(look.gear.feet, 0.8) : PALETTE.leatherDark;
     const robe = !!look.robe;
     const guard = look.armor === 'guard';
     if (look.height) this.root.scale.setScalar(look.height);
@@ -370,7 +375,14 @@ export class HeroModel {
       torso.push(cpart(new THREE.TorusGeometry(cw * 0.93, 0.02, 4, 20), PALETTE.leatherDark, { y: 0.21, sz: 0.88, rx: Math.PI / 2, ry: 0.6 }));
     }
     if (fem) torso.push(cpart(Sph(1, 10, 7), tunic, { y: 0.27, z: 0.1, sx: 0.17, sy: 0.085, sz: 0.08 }));
-    if (look.cape) torso.push(cpart(lathe([[0.2, 0.42], [0.25, 0.2], [0.3, -0.25]], 10, Math.PI * 1.2), look.cape, { sz: 0.85 }));
+    const capeColour = look.gear?.cape ?? look.cape;
+    if (capeColour) torso.push(cpart(lathe([[0.2, 0.42], [0.25, 0.2], [0.3, -0.25]], 10, Math.PI * 1.2), capeColour, { sz: 0.85 }));
+    if (look.gear?.neck) {
+      // A fine chain at the collar and a pendant resting on the chest.
+      // Sits just outside a breastplate (the outermost torso layer), so it shows over any armour.
+      torso.push(cpart(Tor(0.152, 0.009, 14), shade(look.gear.neck, 1.1), { y: 0.43, rx: Math.PI / 2 + 0.3, sz: 0.88 }));
+      torso.push(cpart(new THREE.OctahedronGeometry(0.036, 0), look.gear.neck, { y: 0.33, z: (cw + 0.05) * 0.84 + 0.015, sz: 0.6 }));
+    }
     if (look.gear?.body) {
       // Breastplate shell over the jerkin, with a raised centre ridge and a lower rim.
       const pt = look.gear.body;
@@ -394,14 +406,16 @@ export class HeroModel {
         upper.push(cpart(Tor(0.105 * limb, 0.012, 12), shade(plate, 0.75), { y: -0.02, rx: Math.PI / 2 }));
       }
       this.addMesh(j[`arm${side}`], upper);
-      const cuff = robe ? tunic : PALETTE.leather;
+      const gloves = look.gear?.hands;
+      const hand = gloves ?? skin;
+      const cuff = gloves ? shade(gloves, 0.85) : robe ? tunic : PALETTE.leather;
       this.addMesh(j[`elbow${side}`], [
         cpart(Cap(0.064 * limb, 0.13), robe ? tunic : skin, { y: -0.1 }),
         cpart(Cyl(robe ? 0.085 : 0.074 * limb, robe ? 0.1 : 0.068 * limb, robe ? 0.13 : 0.12, 10), cuff, { y: robe ? -0.15 : -0.14, ao: 0.2, mottle: 0.05 }),
         cpart(Tor(robe ? 0.09 : 0.072 * limb, 0.009, 10), robe ? accent : shade(cuff, 0.7), { y: -0.1, rx: Math.PI / 2 }),
-        cpart(Sph(1, 10, 7), skin, { y: -0.245, sx: 0.06 * limb, sy: 0.068, sz: 0.048 }),
-        cpart(Sph(1, 10, 7), skin, { y: -0.292, z: 0.016, sx: 0.058 * limb, sy: 0.04, sz: 0.05, ao: 0.15 }),
-        cpart(Cap(0.022, 0.045, 2, 6), skin, { x: -sx * 0.045, y: -0.24, z: 0.035, rz: sx * 0.55, rx: -0.45 }),
+        cpart(Sph(1, 10, 7), hand, { y: -0.245, sx: 0.06 * limb, sy: 0.068, sz: 0.048 }),
+        cpart(Sph(1, 10, 7), hand, { y: -0.292, z: 0.016, sx: 0.058 * limb, sy: 0.04, sz: 0.05, ao: 0.15 }),
+        cpart(Cap(0.022, 0.045, 2, 6), hand, { x: -sx * 0.045, y: -0.24, z: 0.035, rz: sx * 0.55, rx: -0.45 }),
       ]);
       const sh = look.gear?.shield;
       if (side === 'L' && sh) {
