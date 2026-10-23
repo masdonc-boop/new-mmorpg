@@ -35,7 +35,7 @@ const isGear = (item: ItemId) => !!itemDef(item).equip && !itemDef(item).stackab
 
 /**
  * What counts: for the regional bosses, their gear drops up to 15% (their signature rewards); for
- * every other creature, gear it drops at 3% or less (its rare finds). Dungeon bosses pay out through
+ * every other creature, gear it drops at 3% or less (its rare finds; 6% for elites). Dungeon bosses pay out through
  * their chests, already logged.
  */
 function build(): LogGroup[] {
@@ -44,7 +44,8 @@ function build(): LogGroup[] {
   const all = Object.values(ENEMIES).sort((a, b) => a.level - b.level);
   for (const e of all) {
     if (e.boss && ['shrinekeeper', 'watchcaptain'].includes(e.id)) continue;
-    const limit = e.boss ? 0.15 : 0.03;
+    // Elites (5D) drop their base creature's gear at up to twice the chance, and have their own rows.
+    const limit = e.boss ? 0.15 : e.elite ? 0.06 : 0.03;
     const entries = e.drops
       .filter((d) => isGear(d.item) && d.chance <= limit)
       .map((d) => ({ key: `${e.id}:${d.item}`, source: e.id, item: d.item, rarity: dropRarity(d.item, d.chance) }));

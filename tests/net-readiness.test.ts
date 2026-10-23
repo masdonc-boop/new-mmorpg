@@ -272,7 +272,7 @@ describe('3A.1 event audiences', () => {
   it('every event kind is classified', () => {
     const kinds = new Set(Object.values(EVENT_AUDIENCE));
     expect([...kinds].sort()).toEqual(['nearby', 'self', 'zone']);
-    expect(Object.keys(EVENT_AUDIENCE).length).toBe(51);
+    expect(Object.keys(EVENT_AUDIENCE).length).toBe(54);
   });
 
   it('routes events: messages and loot to the player, gathering to those nearby, depletion to the zone', () => {

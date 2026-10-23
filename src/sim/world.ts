@@ -195,7 +195,13 @@ export type MessageTone = 'info' | 'good' | 'warn' | 'bad';
 
 /** Simulation → client events. */
 export type GameEvent =
-  | { type: 'damage'; target: number; source: number; amount: number; hit: boolean; /** 5B: armour turned a would-be hit, or a vow softened it. */ outcome?: 'blocked' | 'warded' }
+  | { type: 'damage'; target: number; source: number; amount: number; hit: boolean; /** 5B: armour turned a would-be hit, or a vow softened it; 5D: a special stepped out of. */ outcome?: 'blocked' | 'warded' | 'dodged' | 'special' }
+  /** 5D: a creature announces something (a special winding up, with its ring; a retreat). */
+  | { type: 'telegraph'; source: number; text: string; x?: number; z?: number; radius?: number; seconds?: number }
+  /** 5D: a special attack landed (where, and how wide), for the effect. */
+  | { type: 'impact'; source: number; x: number; z: number; radius: number }
+  /** 5D: a status effect on a player (only slow for now). */
+  | { type: 'status'; target: number; status: 'slow'; seconds: number }
   | { type: 'attack'; source: number; target: number; style: CombatStyle }
   | { type: 'projectile'; source: number; target: number; style: CombatStyle; flight: number }
   | { type: 'death'; id: number }
@@ -572,6 +578,9 @@ export class Player implements Mover {
   buryTimer = 0;
   /** Seconds left stunned after a failed pickpocket (no moving or acting). */
   stunTimer = 0;
+  /** Phase 5D: slowed by a creature (movement only) for this long, to this share of normal speed. */
+  slowTimer = 0;
+  slowFactor = 1;
   thieveTimer = 0;
   /** Furniture built in the house, by space id. */
   furniture: Record<string, string> = {};
@@ -646,6 +655,16 @@ export class Enemy implements Mover {
   enraged = false;
   /** Players who have hurt it since it last respawned (a boss's kill credits each of them). */
   hitBy = new Set<PlayerId>();
+  // ---- Phase 5D (docs/COMBAT.md); public so they replicate with the creature.
+  /** A special attack winding up: the ring the players see, and how long until it lands. */
+  special: { kind: 'slam' | 'sweep' | 'charge'; name: string; x: number; z: number; radius: number; left: number; total: number } | null = null;
+  /** Seconds until it may start its special again (counts down only while fighting). */
+  specialTimer = 0;
+  /** A charge in progress: where it is rushing to. */
+  dash: { x: number; z: number } | null = null;
+  /** Breaking off (retreat): seconds left; it retreats once per life. */
+  fleeTimer = 0;
+  fled = false;
 
   constructor(public id: number, public def: EnemyDef, public spawnX: number, public spawnZ: number, rng: Rng) {
     this.x = this.prevX = spawnX;
@@ -1714,6 +1733,10 @@ export class GameWorld {
     p.repathTimer -= dt;
     p.buryTimer -= dt;
     p.moving = false;
+    if (p.slowTimer > 0 && (p.slowTimer -= dt) <= 0) {
+      p.slowTimer = 0;
+      p.slowFactor = 1;
+    }
 
     if (p.dead) {
       p.deathTimer -= dt;
@@ -1915,6 +1938,9 @@ export class GameWorld {
     }
     const style = STYLES[p.style];
     const profile = p.equipment.attackProfile(p.style);
+    // 5D: the auto-approach never walks you into a creature's special while it winds up; it waits at
+    // the edge (you can still steer in with the joystick, and attack if already in reach).
+    if (!joystickActive && dist(p.x, p.z, e.x, e.z) > profile.range && this.ringAhead(p.x, p.z)) return;
     if (!this.approach(e.x, e.z, profile.range, !joystickActive)) return;
     if (!joystickActive) p.facing = Math.atan2(e.x - p.x, e.z - p.z);
     if (p.attackTimer > 0) return;
@@ -1991,9 +2017,31 @@ export class GameWorld {
     return true;
   }
 
+  /** Whether a special is winding up close by, with this point outside its ring (5D: hold back). */
+  ringAhead(x: number, z: number): boolean {
+    for (const e of this.enemies) {
+      const r = e.special;
+      if (!r || !e.alive) continue;
+      const d = dist(x, z, r.x, r.z);
+      if (d > r.radius && d < r.radius + 1.6) return true;
+    }
+    return false;
+  }
+
   /** Walking speed: Agility makes you a little quicker on your feet (up to 8% faster at level 41). */
   playerSpeed(): number {
-    return PLAYER_SPEED * (1 + agilitySpeedBonus(this.player.skills.level('agility')));
+    const p = this.player;
+    return PLAYER_SPEED * (1 + agilitySpeedBonus(p.skills.level('agility'))) * (p.slowTimer > 0 ? p.slowFactor : 1);
+  }
+
+  /** Slows the current player for a while (the stronger slow wins; a fresh one restarts the clock). */
+  private slowPlayer(factor: number, seconds: number, by: string) {
+    const p = this.player;
+    const fresh = p.slowTimer <= 0;
+    p.slowFactor = fresh ? factor : Math.min(p.slowFactor, factor);
+    p.slowTimer = Math.max(p.slowTimer, seconds);
+    if (fresh) this.message(`${by} slows you down.`, 'bad');
+    this.emit({ type: 'status', target: p.id, status: 'slow', seconds: p.slowTimer });
   }
 
   /** Shots or casts left for the current style (worn ammo for bows, spark stones in the bag for magic). */
@@ -3637,6 +3685,10 @@ export class GameWorld {
         e.hp = def.maxHp;
         e.enraged = false;
         e.hitBy.clear();
+        e.special = null;
+        e.dash = null;
+        e.fled = false;
+        e.fleeTimer = 0;
         e.x = e.prevX = e.spawnX;
         e.z = e.prevZ = e.spawnZ;
         this.emit({ type: 'respawn', id: e.id });
@@ -3711,11 +3763,19 @@ export class GameWorld {
           break;
         }
         const dPlayer = dist(e.x, e.z, p.x, p.z);
+        if (this.updateEnemyTactics(e, p, dPlayer, dSpawn, dt)) break;
         this.turnToward(e, p.x, p.z, dt);
         if (dPlayer > def.attackRange * 0.9) {
           const step = def.speed * dt;
           this.moveEntity(e, (p.x - e.x) / dPlayer, (p.z - e.z) / dPlayer, step);
           e.moving = true;
+        } else if (def.kite && dPlayer < def.kite) {
+          // Keeps its distance (5D): backs off while it reloads, never past its leash or into a wall.
+          const away = this.awayFrom(e, p, dPlayer);
+          if (away) {
+            this.moveEntity(e, away.x, away.z, def.speed * 0.7 * dt);
+            e.moving = true;
+          }
         }
         if (dPlayer <= def.attackRange && e.attackTimer <= 0) this.act(p, () => this.enemyAttack(e));
         break;
@@ -3737,6 +3797,120 @@ export class GameWorld {
         e.hp = Math.min(def.maxHp, e.hp + def.maxHp * 0.2 * dt);
         break;
       }
+    }
+  }
+
+  /**
+   * Phase 5D tactics during a chase: a special winding up or a charge under way, a retreat, or the
+   * start of a special. Returns true when it used the creature's turn (no ordinary move or attack).
+   */
+  private updateEnemyTactics(e: Enemy, p: Player, dPlayer: number, dSpawn: number, dt: number): boolean {
+    const def = e.def;
+    if (e.special) {
+      e.special.left -= dt;
+      if (e.special.kind !== 'charge' || !e.dash) this.turnToward(e, e.special.x, e.special.z, dt);
+      if (e.special.left > 0) return true;
+      if (e.special.kind === 'charge') {
+        e.dash = { x: e.special.x, z: e.special.z };
+        e.special.left = 0;
+      } else {
+        this.resolveSpecial(e);
+        return true;
+      }
+    }
+    if (e.dash) {
+      // A charge: a quick rush to the marked spot, then the blow lands there.
+      const d = dist(e.x, e.z, e.dash.x, e.dash.z);
+      const step = Math.max(def.speed * 3.2, 9) * dt;
+      const moved = d > 0.05 ? this.moveEntity(e, (e.dash.x - e.x) / d, (e.dash.z - e.z) / d, Math.min(step, d)) : 0;
+      e.moving = true;
+      if (d <= step || moved < Math.min(step, d) * 0.3) {
+        e.dash = null;
+        this.resolveSpecial(e);
+      }
+      return true;
+    }
+    if (e.fleeTimer > 0) {
+      e.fleeTimer -= dt;
+      // Breaks off: away from the player, but never off its leash (so it doesn't reset to full health).
+      const away = this.awayFrom(e, p, dPlayer);
+      if (away) {
+        this.moveEntity(e, away.x, away.z, def.speed * 0.85 * dt);
+        this.turnToward(e, e.x + away.x, e.z + away.z, dt);
+        e.moving = true;
+      }
+      if (e.fleeTimer <= 0) e.attackTimer = Math.max(e.attackTimer, 0.5);
+      return true;
+    }
+    if (def.retreat && !e.fled && e.hp < def.maxHp * def.retreat.below) {
+      e.fled = true;
+      e.fleeTimer = def.retreat.seconds;
+      const helped = this.callKin(e, p.id, 7, 1);
+      this.emit({ type: 'telegraph', source: e.id, text: helped ? 'calls for help!' : 'flees!' });
+      return true;
+    }
+    if (def.special) {
+      e.specialTimer -= dt;
+      if (e.specialTimer <= 0 && dPlayer <= def.special.range) {
+        const sp = def.special;
+        const at = sp.kind === 'sweep' ? { x: e.x, z: e.z } : { x: p.x, z: p.z };
+        e.special = { kind: sp.kind, name: sp.name, x: at.x, z: at.z, radius: sp.radius, left: sp.windup, total: sp.windup };
+        e.specialTimer = sp.cooldown;
+        e.swingAge = 0;
+        this.emit({ type: 'telegraph', source: e.id, text: sp.name, x: at.x, z: at.z, radius: sp.radius, seconds: sp.windup });
+        return true;
+      }
+    }
+    void dSpawn;
+    return false;
+  }
+
+  /**
+   * The most direct open way from a creature away from a player (straight back, else up to 90° to
+   * either side), keeping a tile clear of walls ahead and within 80% of its leash; null if cornered.
+   */
+  private awayFrom(e: Enemy, p: { x: number; z: number }, d: number): { x: number; z: number } | null {
+    const base = Math.atan2(e.z - p.z, e.x - p.x);
+    for (const off of [0, 0.5, -0.5, 1, -1, 1.5, -1.5]) {
+      const a = base + (d > 0.01 ? off : off + 1);
+      const ux = Math.cos(a);
+      const uz = Math.sin(a);
+      if (isBlocked(this.map, e.x + ux * 0.9, e.z + uz * 0.9)) continue;
+      if (dist(e.x + ux * 0.9, e.z + uz * 0.9, e.spawnX, e.spawnZ) >= e.def.leashRange * 0.8) continue;
+      return { x: ux, z: uz };
+    }
+    return null;
+  }
+
+  /**
+   * A special lands: everyone still inside the ring is hit (no accuracy roll; stepping out is the
+   * defence). Positions are the server's, read now, so a player who moved out in time is safe.
+   */
+  private resolveSpecial(e: Enemy) {
+    const sp = e.def.special;
+    const ring = e.special;
+    e.special = null;
+    if (!sp || !ring) return;
+    if (ring.kind === 'sweep') {
+      ring.x = e.x;
+      ring.z = e.z;
+    }
+    e.attackTimer = Math.max(e.attackTimer, 0.8);
+    this.emit({ type: 'impact', source: e.id, x: ring.x, z: ring.z, radius: ring.radius });
+    for (const q of this.players.values()) {
+      if (q.dead) continue;
+      const inside = dist(q.x, q.z, ring.x, ring.z) <= ring.radius;
+      if (!inside) {
+        // The one it aimed at, if close by, is told it got away.
+        if (q.id === e.target && dist(q.x, q.z, ring.x, ring.z) < ring.radius + 5) this.act(q, () => this.emit({ type: 'damage', target: q.id, source: e.id, amount: 0, hit: false, outcome: 'dodged' }));
+        continue;
+      }
+      const damage = Math.max(1, Math.round(e.def.maxHit * sp.damage * (0.75 + 0.25 * this.rng())));
+      this.act(q, () => {
+        q.combatTimer = 6;
+        this.landEnemyHit(e, damage, true, false, true);
+        if (sp.slow && !q.dead) this.slowPlayer(sp.slow.factor, sp.slow.seconds, e.def.name);
+      });
     }
   }
 
@@ -3772,15 +3946,17 @@ export class GameWorld {
   }
 
   /** A creature's hit reaching the current player. */
-  private landEnemyHit(e: Enemy, damage: number, hit: boolean, blocked = false) {
+  private landEnemyHit(e: Enemy, damage: number, hit: boolean, blocked = false, special = false) {
     const p = this.player;
     // Hearth's Bulwark halves creatures' hits (it softens blows; it never makes you untouchable).
     const warded = p.prayers.has('hearth_bulwark') && damage > 0;
     if (warded) damage = Math.max(1, Math.round(damage * BULWARK_DAMAGE));
     const dealt = Math.min(damage, p.hp);
     p.hp -= dealt;
-    const outcome = blocked ? 'blocked' : warded ? 'warded' : undefined;
+    const outcome = blocked ? 'blocked' : warded ? 'warded' : special ? 'special' : undefined;
     this.emit({ type: 'damage', target: p.id, source: e.id, amount: dealt, hit, ...(outcome ? { outcome } : {}) });
+    const sl = e.def.slowOnHit;
+    if (sl && hit && dealt > 0 && p.hp > 0 && this.rng() < sl.chance) this.slowPlayer(sl.factor, sl.seconds, e.def.name);
     // Auto-retaliate: idle or gathering players fight back (but never override manual movement or a chosen target).
     const steering = Math.hypot(p.joy.x, p.joy.z) > 0.15 || p.path.length > 0;
     if ((!p.action || p.action.type === 'gather' || p.action.type === 'craft') && !steering && p.hp > 0) p.action = { type: 'attack', target: e.id };
@@ -3790,19 +3966,40 @@ export class GameWorld {
   /** A boss with `rally` calls the creatures round it to join the fight against this player. */
   private rally(e: Enemy, target: PlayerId) {
     const r = e.def.rally;
-    if (!r) return;
-    for (const o of this.enemies) {
-      if (o === e || !o.alive || o.state === 'chase' || dist(o.x, o.z, e.x, e.z) > r) continue;
+    if (r) {
+      for (const o of this.enemies) {
+        if (o === e || !o.alive || o.state === 'chase' || dist(o.x, o.z, e.x, e.z) > r) continue;
+        o.state = 'chase';
+        o.target = target;
+        o.attackTimer = Math.max(o.attackTimer, 0.8);
+      }
+    }
+    if (e.def.pack) this.callKin(e, target, e.def.pack.radius, e.def.pack.max);
+  }
+
+  /**
+   * Pack help (5D): up to `max` idle creatures of the same kind within `radius` join the fight, nearest
+   * first. They don't call others in turn, so a pack never snowballs across a whole region.
+   */
+  private callKin(e: Enemy, target: PlayerId, radius: number, max: number): number {
+    const kin = this.enemies
+      .filter((o) => o !== e && o.alive && o.def.id === e.def.id && o.state !== 'chase' && dist(o.x, o.z, e.x, e.z) <= radius)
+      .sort((a, b) => dist(a.x, a.z, e.x, e.z) - dist(b.x, b.z, e.x, e.z))
+      .slice(0, max);
+    for (const o of kin) {
       o.state = 'chase';
       o.target = target;
-      o.attackTimer = Math.max(o.attackTimer, 0.8);
+      o.attackTimer = Math.max(o.attackTimer, 1.2);
     }
+    return kin.length;
   }
 
   private killPlayer() {
     const p = this.player;
     p.dead = true;
     p.deathTimer = 20;
+    p.slowTimer = 0;
+    p.slowFactor = 1;
     p.action = null;
     p.path = [];
     p.joy.x = p.joy.z = 0;

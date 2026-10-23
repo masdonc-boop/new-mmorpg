@@ -16,6 +16,10 @@ export type AudienceKind = 'self' | 'nearby' | 'zone';
 
 export const EVENT_AUDIENCE: Record<GameEvent['type'], AudienceKind> = {
   damage: 'nearby',
+  // Phase 5D: specials, their impact and status effects are seen by everyone near.
+  telegraph: 'nearby',
+  impact: 'nearby',
+  status: 'nearby',
   attack: 'nearby',
   projectile: 'nearby',
   death: 'nearby',
@@ -81,7 +85,11 @@ export interface RoutedEvent {
 function anchorOf(e: GameEvent): number | null {
   switch (e.type) {
     case 'damage':
+    case 'status':
       return e.target;
+    case 'telegraph':
+    case 'impact':
+      return e.source;
     case 'attack':
     case 'projectile':
       return e.source;

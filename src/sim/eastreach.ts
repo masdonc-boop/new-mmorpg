@@ -408,7 +408,10 @@ function buildCairnhold(c: Ctx, seed: number) {
   rowans.forEach(([x, z, n], i) => scatterNodes(c, 'rowan', x, z, n, 6, seed ^ (0x20a0 + i), slope));
 
   // Boars on the heath below the crags; stalkers up among them; Greymane by the tower.
+  const herd = c.map.enemySpawns.length;
   spawnCreatures(c, 'bristleback', 160, 47, 8, 5, seed ^ 0xb0a1);
+  // Phase 5D: the herd's old bull is an elite, the Ironhide Bristleback (same spot, same count).
+  if (c.map.enemySpawns[herd]) c.map.enemySpawns[herd].type = 'ironhide_bristleback';
   spawnCreatures(c, 'bristleback', 140, 20, 5, 3, seed ^ 0xb0a2);
   spawnCreatures(c, 'ridge_stalker', 177, 30, 5, 4, seed ^ 0x57a1);
   spawnCreatures(c, 'ridge_stalker', 186, 45, 4, 2, seed ^ 0x57a2);

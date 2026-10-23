@@ -53,7 +53,8 @@ describe('4B.3 economy: no money from nothing', () => {
 
 describe('4B.4 loot tables', () => {
   const value = (id: keyof typeof ENEMIES) => ENEMIES[id].drops.reduce((a, d) => a + d.chance * ((d.min + d.max) / 2) * (d.item === 'coins' ? 1 : itemDef(d.item).value), 0);
-  const regular = Object.values(ENEMIES).filter((e) => !e.boss).sort((a, b) => a.level - b.level);
+  // Elites (5D) are rarer, slower to return variants and are compared with their base creature instead.
+  const regular = Object.values(ENEMIES).filter((e) => !e.boss && !e.elite).sort((a, b) => a.level - b.level);
   const bosses = Object.values(ENEMIES).filter((e) => e.boss);
 
   it('regular creatures are worth more the tougher they are (expected value per kill rises with level)', () => {

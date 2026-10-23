@@ -85,7 +85,9 @@ describe('4A.3 Thornridge: landmarks, spawns and resources', () => {
   it('creatures spawn on open ground (not in water, rock walls, roads or the outpost) and can be reached', () => {
     const here = w.enemies.filter((e) => inHighlands(e.spawnX, e.spawnZ));
     const count = (id: string) => here.filter((e) => e.def.id === id).length;
-    expect(count('bristleback')).toBe(8);
+    // One of the herd is its elite since 5D (same spot, same count).
+    expect(count('bristleback') + count('ironhide_bristleback')).toBe(8);
+    expect(count('ironhide_bristleback')).toBe(1);
     expect(count('ridge_stalker')).toBe(6);
     expect(count('greymane')).toBe(1);
     for (const e of here) {

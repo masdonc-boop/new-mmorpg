@@ -11,7 +11,7 @@ import type { EnemyType } from '../data/enemies';
  * Legend: # wall, . floor, E the way out, 1–4 stairs (1↔2, 3↔4), ~ glowing pool (blocked),
  * o pillar, b brazier, C the end chest, and creatures: a drowned acolyte, l mire leech,
  * g drowned guardian, K the Shrinekeeper; s hollow sentinel, r forsworn archer, W the Last
- * Watchcaptain. Nothing here runs at module load (worldmap.ts imports this module, and it imports
+ * Watchcaptain; A and R their elites (the Drowned Tidecaller, the Forsworn Marksman). Nothing here runs at module load (worldmap.ts imports this module, and it imports
  * worldmap.ts back).
  */
 
@@ -38,7 +38,7 @@ export const DUNGEON_AREAS: Record<DungeonId, DungeonArea> = {
     layout: [
       '##################################',
       '#......####.........##############',
-      '#.E....####...a..o..##...........#',
+      '#.E....####...A..o..##...........#',
       '#......####.........##..g........#',
       '#.b..........~~~.......o.......b.#',
       '#......####.~~~~~..##............#',
@@ -63,7 +63,7 @@ export const DUNGEON_AREAS: Record<DungeonId, DungeonArea> = {
       '##........###........###........##',
       '#.E.....1..#.2.....3..#.4........#',
       '#.b........#.........b#.......b..#',
-      '#...s..s...#..r....r..#..s.......#',
+      '#...s..s...#..R....r..#..s.......#',
       '#..........#..........#..........#',
       '#..oo..oo..#..oo..oo..#....W.....#',
       '#..........#..........#..........#',
@@ -91,6 +91,9 @@ const CREATURES: Record<string, EnemyType> = {
   s: 'hollow_sentinel',
   r: 'forsworn_archer',
   W: 'watchcaptain',
+  // Elites (Phase 5D): one per dungeon, away from the boss rooms.
+  A: 'drowned_tidecaller',
+  R: 'forsworn_marksman',
 };
 
 /** Which dungeon a point is in, if any. */

@@ -30,6 +30,8 @@ function goThrough(w: GameWorld, id: string) {
 function veteran(w: GameWorld) {
   for (const q of ['elders_request', 'lanterns_of_heronwick', 'ninefold_watch']) w.player.quests[q] = { stage: 9, kills: 0, done: true };
   for (const s of ['attack', 'strength', 'defence', 'hitpoints'] as const) w.player.skills.addXp(s, xpForLevel(45));
+  // At full health for their level (the boss rooms' specials since 5D hit a 100-health visitor hard).
+  w.player.hp = w.player.skills.maxHp();
   return w;
 }
 

@@ -42,6 +42,8 @@ describe('5C loot tables', () => {
   it('every creature has its own table, with something useful beyond coins, and gear stays rare', () => {
     const seen = new Set<string>();
     for (const e of Object.values(ENEMIES)) {
+      // Elites (5D) deliberately carry their base creature's table (richer); every other table is its own.
+      if (e.elite) continue;
       const sig = JSON.stringify(e.drops.map((d) => d.item).sort());
       expect(seen.has(sig), `${e.id} shares a table`).toBe(false);
       seen.add(sig);
@@ -51,7 +53,7 @@ describe('5C loot tables', () => {
         expect(d.chance, `${e.id} ${d.item}`).toBeLessThanOrEqual(1);
         expect(d.min, `${e.id} ${d.item}`).toBeLessThanOrEqual(d.max);
         // Regular creatures drop gear at 3% or less; regional bosses at 15% or less.
-        if (itemDef(d.item).equip && !itemDef(d.item).stackable) expect(d.chance, `${e.id} ${d.item}`).toBeLessThanOrEqual(e.boss ? 0.15 : 0.03);
+        if (itemDef(d.item).equip && !itemDef(d.item).stackable) expect(d.chance, `${e.id} ${d.item}`).toBeLessThanOrEqual(e.boss ? 0.15 : e.elite ? 0.06 : 0.03);
       }
     }
     // Food or other consumables from the creatures players farm most (sustain in the dungeons).
@@ -62,7 +64,8 @@ describe('5C loot tables', () => {
 
   it('rewards rise with difficulty without flooding the economy', () => {
     const regular = Object.values(ENEMIES).filter((e) => !e.boss).sort((a, b) => a.level - b.level);
-    for (let i = 1; i < regular.length; i++) expect(value(regular[i].id), regular[i].id).toBeGreaterThanOrEqual(value(regular[i - 1].id) * 0.9);
+    const ladder = regular.filter((e) => !e.elite);
+    for (let i = 1; i < ladder.length; i++) expect(value(ladder[i].id), ladder[i].id).toBeGreaterThanOrEqual(value(ladder[i - 1].id) * 0.9);
     for (const e of regular) {
       // Coins per kill stay below 2.5 per creature level (the shops' prices are tens of coins).
       const coins = e.drops.filter((d) => d.item === 'coins').reduce((a, d) => a + d.chance * (d.min + d.max) / 2, 0);
@@ -164,7 +167,7 @@ describe('5C creature collection log', () => {
     const finds = DROP_LOG.find((g) => g.id === 'creatures')!;
     for (const r of finds.rows) {
       expect(ENEMIES[r.source].boss).toBeFalsy();
-      for (const x of r.entries) expect(ENEMIES[r.source].drops.find((d) => d.item === x.item)!.chance).toBeLessThanOrEqual(0.03);
+      for (const x of r.entries) expect(ENEMIES[r.source].drops.find((d) => d.item === x.item)!.chance).toBeLessThanOrEqual(ENEMIES[r.source].elite ? 0.06 : 0.03);
     }
     // The dungeon uniques stay in their own (4D) log; no overlap.
     for (const k of DROP_LOG_KEYS) expect(k).not.toMatch(/^(shrinekeeper|watchcaptain):/);
